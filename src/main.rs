@@ -403,6 +403,26 @@ fn read_note(dir: String, path: String) -> Result<NoteContent, String> {
     res
 }
 
+fn save_note_impl(root: &Path, rel: &str, tags: &[String], body: &str) -> Result<NoteMeta, String> {
+    let full = resolve_in_root(root, rel)?;
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = render_frontmatter(tags, body);
+    // Skip the write when the on-disk content is already identical. A
+    // no-op write still updates the file mtime, which (a) re-sorts the
+    // note list and (b) under `tauri dev` trips the file watcher,
+    // restarting the app right after every open ("window closes, list
+    // disappears" loop).
+    let existing = fs::read_to_string(&full).ok();
+    if existing.as_deref() != Some(content.as_str()) {
+        fs::write(&full, content).map_err(|e| e.to_string())?;
+    }
+    // Re-read via the root-relative path (not strip_prefix on the
+    // canonicalized path, which fails on Windows `\\?\` paths).
+    read_meta(Path::new(rel), &full).ok_or_else(|| "failed to read note back".into())
+}
+
 #[tauri::command]
 fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, String> {
     eprintln!(
@@ -410,19 +430,7 @@ fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, 
         args.tags,
         args.body.len()
     );
-    let root = Path::new(&dir);
-    let res = (|| {
-        let full = resolve_in_root(root, &path)?;
-        if let Some(parent) = full.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let content = render_frontmatter(&args.tags, &args.body);
-        fs::write(&full, content).map_err(|e| e.to_string())?;
-        // Re-read via the root-relative path (not strip_prefix on the
-        // canonicalized path, which fails on Windows `\\?\` paths).
-        read_meta(Path::new(&path), &full)
-            .ok_or_else(|| "failed to read note back".into())
-    })();
+    let res = save_note_impl(Path::new(&dir), &path, &args.tags, &args.body);
     match &res {
         Ok(_) => eprintln!("[rustmd] save_note ok"),
         Err(e) => eprintln!("[rustmd] save_note ERR: {e}"),
@@ -741,6 +749,47 @@ mod tests {
         );
         let meta = read_meta(Path::new(rel), &full).expect("read_meta after save");
         assert_eq!(meta.path, rel);
+    }
+
+    #[test]
+    fn save_note_impl_skips_write_when_content_identical() {
+        let dir = std::env::temp_dir().join("rustmd_test_save_noop");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let args = SaveNoteArgs {
+            tags: vec!["a".into()],
+            body: "hello\n".into(),
+        };
+        let meta = save_note_impl(&dir, "note.md", &args.tags, &args.body).unwrap();
+        assert_eq!(meta.path, "note.md");
+        let mtime_before = fs::metadata(dir.join("note.md"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        // Wait longer than the filesystem mtime resolution, then save the
+        // identical content again: the file must NOT be rewritten.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        save_note_impl(&dir, "note.md", &args.tags, &args.body).unwrap();
+        let mtime_after = fs::metadata(dir.join("note.md"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(
+            mtime_before, mtime_after,
+            "identical content must not rewrite the file"
+        );
+        // Different content still writes.
+        let changed = SaveNoteArgs {
+            tags: vec!["a".into()],
+            body: "changed\n".into(),
+        };
+        save_note_impl(&dir, "note.md", &changed.tags, &changed.body).unwrap();
+        let mtime_changed = fs::metadata(dir.join("note.md"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_ne!(mtime_before, mtime_changed, "changed content must be written");
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -1,7 +1,7 @@
 import './style.css';
 import { api } from './api.js';
 import { createEditor } from './editor.js';
-import { renderPreview, buildExportHtml } from './preview.js';
+import { renderPreview, buildExportHtml, setPreviewTheme } from './preview.js';
 import { exportPng, exportPdf } from './export.js';
 
 // ---------------- State ----------------
@@ -109,8 +109,14 @@ function applyTheme(theme) {
   state.theme = theme;
   document.body.dataset.theme = theme;
   localStorage.setItem('rustmd-theme', theme);
+  setPreviewTheme(theme);
   const link = $('hljs-theme');
   if (link) link.href = theme === 'dark' ? '/hljs/github-dark.css' : '/hljs/github.css';
+  // Mermaid bakes its theme in at render time; re-render the open note so
+  // diagrams match the new theme.
+  if (state.current && editor && editor.state.doc.length) {
+    renderPreview(editor.state.doc.toString(), previewEl);
+  }
 }
 
 $('btn-theme').addEventListener('click', () => {
@@ -337,6 +343,11 @@ function renderNoteList() {
 // ---------------- Note selection & editing ----------------
 
 let editor = null;
+// True while we dispatch a programmatic document replacement (loading a
+// note, clearing after delete). CodeMirror fires its update listener
+// synchronously during dispatch, which would otherwise mark the note as
+// dirty and schedule a spurious save of the just-loaded content.
+let suppressChange = false;
 
 function initEditor() {
   editor = createEditor(editorHolder, { onChange: onEditorChange });
@@ -353,6 +364,7 @@ function initEditor() {
 }
 
 function onEditorChange() {
+  if (suppressChange) return;
   if (!state.current) return;
   state.pendingSave = true;
   statusSave.textContent = '未保存…';
@@ -403,7 +415,12 @@ async function selectNote(path) {
     const content = await api.readNote(state.dir, path);
     state.current = path;
     state.tagsOfCurrent = content.tags;
+    // Loading must not mark the note dirty (a spurious save right after
+    // opening would re-touch the file and, under `tauri dev`, retrigger the
+    // file watcher → app restart loop → "window closed" + "files gone").
+    suppressChange = true;
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: content.body } });
+    suppressChange = false;
     editor.scrollDOM.scrollTop = 0;
     renderPreview(content.body, previewEl);
     noteTitle.value = stemOf(path);
@@ -692,7 +709,7 @@ async function runExport(kind) {
   let payload;
   if (kind === 'html') {
     payload = {
-      data: buildExportHtml(title, body, state.theme),
+      data: await buildExportHtml(title, body, state.theme),
       ext: 'html',
       mime: 'text/html',
       opts: { title: '导出 HTML', filterName: 'HTML 文件', extensions: ['html', 'htm'] },

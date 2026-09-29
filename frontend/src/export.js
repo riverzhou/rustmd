@@ -20,14 +20,17 @@ function buildStage(markdownSource) {
   article.className = 'markdown-body';
   stage.appendChild(article);
   document.body.appendChild(stage);
-  renderPreview(markdownSource, article);
-  return stage;
+  // renderPreview is async (mermaid diagrams render in the background);
+  // awaiting it before rasterizing guarantees the SVGs are in the DOM.
+  const ready = renderPreview(markdownSource, article);
+  return { stage, ready };
 }
 
 async function renderToCanvas(markdownSource) {
   const { default: html2canvas } = await import('html2canvas');
-  const stage = buildStage(markdownSource);
+  const { stage, ready } = buildStage(markdownSource);
   try {
+    await ready;
     // Drop the max-width so the article fills the stage at STAGE_WIDTH - 2*PAD_X.
     const article = stage.firstElementChild;
     article.style.maxWidth = `${CONTENT_WIDTH}px`;
