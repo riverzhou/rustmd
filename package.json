@@ -1,0 +1,28 @@
+{
+  "name": "rustmd",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config frontend/vite.config.js",
+    "build": "vite build --config frontend/vite.config.js",
+    "preview": "vite preview --config frontend/vite.config.js",
+    "tauri": "tauri",
+    "icons": "node scripts/gen-icons.mjs"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/language-data": "^6.5.0",
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "codemirror": "^6.0.1",
+    "highlight.js": "^11.10.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "vite": "^6.0.0"
+  }
+}
