@@ -10,6 +10,7 @@ let mermaidTheme = null;
 
 export function setPreviewTheme(theme) {
   mermaidTheme = theme;
+  mmdCache.clear(); // rendered SVGs are theme-dependent
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
@@ -93,6 +94,14 @@ function preprocessDetails(md) {
 
 let mmdCounter = 0;
 
+// Rendered-diagram cache, keyed by theme + source. Re-rendering an unchanged
+// diagram (debounced per-keystroke preview updates, the off-screen export
+// stage) must not re-run mermaid's layout engine — it copies the cached SVG
+// instead. Without this, a note with several diagrams exhausts the WebView2
+// renderer on typing and on export ("Page crashed!").
+const mmdCache = new Map();
+const MMD_CACHE_MAX = 128;
+
 /// Render markdown into a container: GFM + code highlighting + mermaid
 /// diagrams. Resolves when every diagram has rendered (or fallen back to
 /// its source). Each diagram block is swapped for a host div, so stale
@@ -110,7 +119,16 @@ async function renderMarkdownInto(container, markdownSource) {
       host.className = 'mermaid-diagram';
       el.parentElement.replaceWith(host);
       try {
-        const { svg } = await mermaid.render('mmd-' + ++mmdCounter, el.textContent);
+        const source = el.textContent;
+        const key = mermaidTheme + '\u0000' + source;
+        let svg = mmdCache.get(key);
+        if (svg === undefined) {
+          ({ svg } = await mermaid.render('mmd-' + ++mmdCounter, source));
+          if (mmdCache.size >= MMD_CACHE_MAX) {
+            mmdCache.delete(mmdCache.keys().next().value); // drop oldest entry
+          }
+          mmdCache.set(key, svg);
+        }
         host.innerHTML = svg;
       } catch (err) {
         const codeEl = document.createElement('code');

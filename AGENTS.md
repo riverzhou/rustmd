@@ -52,6 +52,11 @@ If a new Tauri *plugin* or capability is used, permissions must be added to
   silently bind IPv6-only and WebView2 fails to connect. `strictPort: true` — a
   stray node/vite holding port 5173 makes `tauri dev` serve stale content or a
   white window.
+- **Any write inside the project dir while `tauri dev` runs → app restart.**
+  The dev watcher watches the whole project (no exclude option). E.g. running
+  `npm run build` (writes `frontend/dist`) mid-session kills and restarts the
+  app — looks like a crash to the user. Do frontend builds before starting
+  `tauri dev`, or accept the one restart.
 - `gen/schemas` is Tauri codegen output — never edit by hand.
 - `frontend/dist` and `target/` are build artifacts (gitignored); the release
   exe embeds `frontend/dist` at build time, so rebuild the exe after frontend

@@ -20,6 +20,7 @@ const state = {
   filter: { folder: null, tag: null, query: '' },
   searchHits: null,
   saveTimer: null,
+  previewTimer: null,
   pendingSave: false,
 };
 
@@ -371,7 +372,16 @@ function onEditorChange() {
   statusSave.className = 'saving';
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(saveCurrent, 500);
-  renderPreview(editor.state.doc.toString(), previewEl);
+  // Debounce the preview: re-parsing the whole document (and re-rendering
+  // every mermaid diagram) on each keystroke used to exhaust the WebView2
+  // renderer. 250 ms is imperceptible and collapses a typing burst into one
+  // render. The path guard drops the update if the note is switched/closed
+  // before the timer fires.
+  const path = state.current;
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(() => {
+    if (state.current === path) renderPreview(editor.state.doc.toString(), previewEl);
+  }, 250);
   updateCounts();
 }
 
@@ -422,6 +432,7 @@ async function selectNote(path) {
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: content.body } });
     suppressChange = false;
     editor.scrollDOM.scrollTop = 0;
+    clearTimeout(state.previewTimer); // drop the previous note's pending update
     renderPreview(content.body, previewEl);
     noteTitle.value = stemOf(path);
     renderTagEditor();
