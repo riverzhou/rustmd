@@ -1006,6 +1006,21 @@ mark {
   font-family: var(--font-mono);
 }
 
+/* MathJax formulas (rendered from $...$ / $$...$$ delimiters). SVG output
+   inherits currentColor, so only layout needs styling here. */
+.markdown-body mjx-container {
+  color: inherit;
+}
+
+.markdown-body mjx-container[display="true"] {
+  display: block;
+  margin: 1.2em 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
 /* Collapsible raw-HTML <details> blocks */
 .markdown-body details {
   margin: 1em 0;

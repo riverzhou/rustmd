@@ -16,4 +16,11 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'es2022',
   },
+  optimizeDeps: {
+    // MathJax is a browser IIFE bundle loaded lazily via dynamic import only
+    // when a note contains math. Without an explicit entry the dev server
+    // does not pre-bundle it and the bare specifier fails to resolve in the
+    // browser at runtime ("Failed to resolve module specifier").
+    include: ['mathjax/tex-svg.js'],
+  },
 });

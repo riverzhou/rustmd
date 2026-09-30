@@ -4,6 +4,108 @@ import mermaid from 'mermaid';
 
 marked.setOptions({ gfm: true, breaks: true });
 
+// ---------------- MathJax (LaTeX math) ----------------
+// MathJax is a heavy (~1 MB) browser build, so it is loaded lazily — only
+// when the note source actually contains math delimiters outside code
+// fences. The dynamic import (rather than a static one) guarantees the
+// window.MathJax config below is in place before the library boots.
+// SVG output is used so exported HTML files are fully self-contained
+// (no web-font files to inline), and rendering stays theme-agnostic
+// (glyphs inherit currentColor).
+
+const MATHJAX_CONFIG = {
+  tex: {
+    inlineMath: [
+      ['$', '$'],
+      ['\\(', '\\)'],
+    ],
+    displayMath: [
+      ['$$', '$$'],
+      ['\\[', '\\]'],
+    ],
+    processEscapes: true,
+  },
+  svg: { fontCache: 'local' },
+  startup: { typeset: false },
+  options: {
+    enableMenu: false,
+    // The a11y document class re-applies these switches from its menu
+    // settings during startup, which would spawn a speech-rules web worker
+    // (MathJax option `options.worker`). In this bundled webview app the
+    // worker URL is unreachable and its never-settling promise hangs
+    // typesetPromise forever, so disable enrichment at the source.
+    menuOptions: {
+      settings: {
+        enrich: false,
+        speech: false,
+        braille: false,
+        assistiveMml: false,
+      },
+    },
+  },
+};
+
+/// Belt-and-braces: force the a11y switches off on the live document right
+/// before typesetting (covers the case where the a11y class re-applies its
+/// menu defaults after our config was consumed).
+function disableMathJaxA11y(MathJax) {
+  const opts = MathJax.startup.document && MathJax.startup.document.options;
+  if (opts) {
+    opts.enableEnrichment = false;
+    opts.enableSpeech = false;
+    opts.enableBraille = false;
+  }
+}
+
+let mathJaxPromise = null;
+
+function ensureMathJax() {
+  if (!mathJaxPromise) {
+    window.MathJax = MATHJAX_CONFIG;
+    mathJaxPromise = import('mathjax/tex-svg.js')
+      .then(() => window.MathJax.startup.promise)
+      .then(() => {
+        // NB: in MathJax 4 startup.promise resolves with undefined (unlike
+        // v3, which resolved with the MathJax object) — read the global.
+        const MathJax = window.MathJax;
+        disableMathJaxA11y(MathJax);
+        return MathJax;
+      })
+      .catch((err) => {
+        mathJaxPromise = null; // allow a retry on the next render
+        throw err;
+      });
+  }
+  return mathJaxPromise;
+}
+
+/// True when the source has `$`/`$$` math delimiters outside fenced code
+/// blocks (cheap gate so the MathJax bundle is never loaded for math-free
+/// notes). Inline-code spans are ignored; MathJax itself skips <code> and
+/// <pre> elements during typesetting, so a stray `$` there is harmless.
+function sourceHasMath(md) {
+  return splitCodeSegments(md).some((s) => !s.code && mdSourceHasMath(s.text));
+}
+
+function mdSourceHasMath(text) {
+  // `$$` block delimiter, or an inline `$x$` pair.
+  if (text.includes('$$')) return true;
+  const re = /(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/;
+  return re.test(text);
+}
+
+/// Typeset all math in a rendered container. Resolves even when typesetting
+/// fails: the raw `$...$` source stays visible instead of a blank page.
+async function typesetMath(container) {
+  try {
+    const MathJax = await ensureMathJax();
+    disableMathJaxA11y(MathJax);
+    await MathJax.typesetPromise([container]);
+  } catch (err) {
+    console.error('MathJax 渲染失败：', err);
+  }
+}
+
 // ---------------- Mermaid theme ----------------
 
 let mermaidTheme = null;
@@ -113,8 +215,7 @@ async function renderMarkdownInto(container, markdownSource) {
     hljs.highlightElement(el);
   }
   const blocks = [...container.querySelectorAll('pre code.language-mermaid')];
-  await Promise.all(
-    blocks.map(async (el, i) => {
+  const jobs = blocks.map(async (el, i) => {
       const host = document.createElement('div');
       host.className = 'mermaid-diagram';
       el.parentElement.replaceWith(host);
@@ -140,8 +241,11 @@ async function renderMarkdownInto(container, markdownSource) {
         note.textContent = 'Mermaid 渲染失败：' + (err && err.message ? err.message : err);
         host.appendChild(note);
       }
-    })
-  );
+  });
+  if (sourceHasMath(markdownSource)) {
+    jobs.push(typesetMath(container));
+  }
+  await Promise.all(jobs);
 }
 
 export function renderPreview(markdownSource, container) {
@@ -228,6 +332,11 @@ export async function buildExportHtml(title, markdownSource, theme) {
  }
  .mermaid-diagram svg { max-width: 100%; height: auto; }
  .mermaid-error { margin-top: 8px; font-size: 12px; color: ${isDark ? '#ff6369' : '#e5484d'}; text-align: left; }
+ mjx-container { color: inherit; }
+ mjx-container[display="true"] {
+   display: block; margin: 1.2em 0; text-align: center;
+   overflow-x: auto; overflow-y: hidden; max-width: 100%;
+ }
  details {
    border: 1px solid ${isDark ? '#262a33' : '#e2e5ec'};
    border-radius: 8px;
