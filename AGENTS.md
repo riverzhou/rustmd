@@ -7,7 +7,7 @@ single file, frontend is frameworkless vanilla JS bundled by Vite 6.
 
 | Task | Command |
 | --- | --- |
-| Dev (hot reload) | `scripts\run-dev.bat` (= `npx tauri dev`) |
+| Dev (frontend hot reload) | `scripts\run-dev.bat` (= `npx tauri dev --no-watch`) |
 | Release exe (no installer) | `scripts\run-build.bat` (= `npx tauri build --no-bundle`) |
 | Rust unit tests | `C:\Users\River\.cargo\bin\cargo.exe test` |
 | Frontend only (browser + mock data) | `npm run dev` → http://localhost:5173 |
@@ -52,11 +52,13 @@ If a new Tauri *plugin* or capability is used, permissions must be added to
   silently bind IPv6-only and WebView2 fails to connect. `strictPort: true` — a
   stray node/vite holding port 5173 makes `tauri dev` serve stale content or a
   white window.
-- **Any write inside the project dir while `tauri dev` runs → app restart.**
-  The dev watcher watches the whole project (no exclude option). E.g. running
-  `npm run build` (writes `frontend/dist`) mid-session kills and restarts the
-  app — looks like a crash to the user. Do frontend builds before starting
-  `tauri dev`, or accept the one restart.
+- **`tauri dev` runs with `--no-watch`** (wired in
+  `scripts/launch-dev.mjs`). The Tauri dev watcher has no exclude option and
+  watches the whole project dir, so any in-project write (a note saved into
+  the examples vault, an export into the repo, `npm run build`) killed and
+  restarted the app — users experienced it as a crash. Consequence: Rust
+  code or `tauri.conf.json` edits are NOT picked up automatically — restart
+  `scripts\run-dev.bat` after editing Rust. Frontend (vite) HMR is unaffected.
 - `gen/schemas` is Tauri codegen output — never edit by hand.
 - `frontend/dist` and `target/` are build artifacts (gitignored); the release
   exe embeds `frontend/dist` at build time, so rebuild the exe after frontend

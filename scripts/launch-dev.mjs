@@ -45,8 +45,15 @@ if (port !== PREFERRED_PORT) {
 const tmpCfg = path.join(os.tmpdir(), `rustmd-tauri-dev-${process.pid}.json`);
 fs.writeFileSync(tmpCfg, JSON.stringify({ build: { devUrl } }, null, 2));
 
+// --no-watch: the Tauri dev file watcher has no exclude option and watches
+// the whole project dir, so ANY in-project write (a note saved into the
+// examples vault, a PNG exported into the repo, even `npm run build`) killed
+// and restarted the app — experienced by users as a crash. Cost: Rust code
+// or tauri.conf.json changes are not picked up automatically; restart
+// scripts\run-dev.bat after editing Rust. Vite HMR for the frontend is
+// unaffected.
 const isWin = process.platform === 'win32';
-const tauri = spawn(isWin ? 'npx.cmd' : 'npx', ['tauri', 'dev', '--config', tmpCfg], {
+const tauri = spawn(isWin ? 'npx.cmd' : 'npx', ['tauri', 'dev', '--config', tmpCfg, '--no-watch'], {
   cwd: root,
   stdio: 'inherit',
   env: process.env,
