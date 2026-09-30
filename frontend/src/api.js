@@ -49,6 +49,7 @@ export const api = {
   searchNotes: (dir, query) => invoke('search_notes', { dir, query }),
   writeText: (path, content) => invoke('write_text', { path, content }),
   writeBytes: (path, data) => invoke('write_bytes', { path, data }),
+  fetchImageBytes: (url) => invoke('fetch_image_bytes', { url }),
 };
 
 // ---------------- Browser mock ----------------
@@ -218,6 +219,16 @@ function mockInvoke(cmd, args) {
           case 'write_bytes':
             console.log('[mock] write_bytes', args.path, args.data.length, 'bytes');
             return resolve(null);
+          case 'fetch_image_bytes':
+            // Best-effort real fetch in browser dev (works for hosts that
+            // send CORS headers); the Tauri backend has no such restriction.
+            fetch(args.url)
+              .then((r) =>
+                r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))
+              )
+              .then((buf) => resolve(new Uint8Array(buf)))
+              .catch((e) => Promise.reject(e.message || String(e)));
+            return;
           default:
             throw new Error(`unknown command ${cmd}`);
         }

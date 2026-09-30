@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -591,6 +592,40 @@ fn write_bytes(path: String, data: Vec<u8>) -> Result<(), String> {
     fs::write(Path::new(&path), data).map_err(|e| e.to_string())
 }
 
+/// Fetch a remote image (http/https only). Used by PNG/PDF export:
+/// html2canvas cannot draw cross-origin images into its canvas (CORS
+/// taint), which is why external pictures came out blank. The backend
+/// fetch is unrestricted, so the frontend swaps remote `<img>` sources
+/// for blob URLs built from these bytes before rasterizing.
+#[tauri::command]
+fn fetch_image_bytes(url: String) -> Result<Vec<u8>, String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("only http/https URLs are allowed".into());
+    }
+    const LIMIT: u64 = 25 * 1024 * 1024; // 25 MB
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?
+        .get(&url)
+        .send()
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}", status.as_str()));
+    }
+    let mut bytes = Vec::new();
+    // Read at most LIMIT+1 so an oversized response is detected, not buffered.
+    response
+        .take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > LIMIT {
+        return Err("image too large (> 25 MB)".into());
+    }
+    Ok(bytes)
+}
+
 fn main() {
     // Diagnostic: mark Rust panics so they are easy to find in `tauri dev` output.
     std::panic::set_hook({
@@ -624,7 +659,8 @@ fn main() {
             move_note,
             search_notes,
             write_text,
-            write_bytes
+            write_bytes,
+            fetch_image_bytes
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -728,6 +764,14 @@ mod tests {
         assert_eq!(sanitize_filename("..."), "untitled");
         assert_eq!(sanitize_filename(""), "untitled");
         assert_eq!(sanitize_filename("my note"), "my note");
+    }
+
+    #[test]
+    fn fetch_image_bytes_rejects_non_http() {
+        // Must fail fast on the scheme check, before any network access.
+        assert!(fetch_image_bytes("file:///C:/Windows/system32".into()).is_err());
+        assert!(fetch_image_bytes("ftp://example.com/x.png".into()).is_err());
+        assert!(fetch_image_bytes("data:image/png;base64,AAAA".into()).is_err());
     }
 
     #[cfg(windows)]

@@ -192,6 +192,59 @@ function preprocessDetails(md) {
     .join('\n');
 }
 
+// ---------------- Math protection ----------------
+// marked applies markdown escaping to plain text, which mangles TeX:
+// `\\` (the matrix row separator) collapses to a lone `\`, and spacing
+// commands like `\,` lose their backslash entirely. Every matrix /
+// align / cases block is destroyed before MathJax ever sees it.
+//
+// Fix: swap math segments for opaque word tokens *before* marked.parse
+// (tokens survive markdown untouched — no backslashes, no line breaks,
+// so no `\<br>` either) and restore the raw TeX into the DOM afterwards.
+// MathJax then typesets the pristine source.
+
+const mathToken = (i) => `RMDMATH${i}X`;
+
+function protectMathInText(text, store) {
+  // Display math first ($$...$$, may span lines), then inline $...$.
+  // Same inline-math heuristics as mdSourceHasMath above.
+  let out = text.replace(/\$\$([\s\S]*?)\$\$/g, (m) => {
+    store.push(m);
+    return mathToken(store.length - 1);
+  });
+  out = out.replace(/(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/g, (m, pre) => {
+    store.push(m.slice(pre.length));
+    return pre + mathToken(store.length - 1);
+  });
+  return out;
+}
+
+function protectMath(md, store) {
+  // Fenced code is left alone so samples that *show* math syntax stay literal.
+  return splitCodeSegments(md)
+    .map((s) => (s.code ? s.text : protectMathInText(s.text, store)))
+    .join('\n');
+}
+
+function restoreMath(container, store) {
+  if (!store.length) return;
+  // Tokens are plain alphanumeric words, so marked never splits one across
+  // text nodes — a per-node string replace is sufficient.
+  const nodes = [];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    let value = node.nodeValue;
+    for (let i = 0; i < store.length; i++) {
+      const token = mathToken(i);
+      if (value.includes(token)) {
+        value = value.split(token).join(store[i]);
+      }
+    }
+    node.nodeValue = value;
+  }
+}
+
 // ---------------- Rendering ----------------
 
 let mmdCounter = 0;
@@ -209,7 +262,10 @@ const MMD_CACHE_MAX = 128;
 /// its source). Each diagram block is swapped for a host div, so stale
 /// renders of a previously-opened note only ever write into detached DOM.
 async function renderMarkdownInto(container, markdownSource) {
-  container.innerHTML = marked.parse(preprocessDetails(markdownSource));
+  const mathStore = [];
+  const guarded = protectMath(markdownSource, mathStore);
+  container.innerHTML = marked.parse(preprocessDetails(guarded));
+  restoreMath(container, mathStore);
   for (const el of container.querySelectorAll('pre code')) {
     if (el.classList.contains('language-mermaid')) continue;
     hljs.highlightElement(el);
