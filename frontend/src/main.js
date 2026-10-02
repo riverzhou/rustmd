@@ -14,9 +14,10 @@ const state = {
   current: null, // relative path
   tagsOfCurrent: [],
   view: localStorage.getItem('rustmd-view') || 'split',
-  theme:
-    localStorage.getItem('rustmd-theme') ||
-    (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  // Default theme is LIGHT regardless of the OS setting (v1.0): the app's
+  // light palette is the house style. A manual toggle is still persisted in
+  // localStorage and always wins once the user has chosen one.
+  theme: localStorage.getItem('rustmd-theme') || 'light',
   filter: { folder: null, tag: null, query: '' },
   searchHits: null,
   saveTimer: null,
