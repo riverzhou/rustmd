@@ -767,6 +767,23 @@ mod tests {
     }
 
     #[test]
+    fn fetch_image_bytes_fetches_remote_image() {
+        // Network test: exercises the real reqwest+rustls path used by the
+        // PNG/PDF export. Skips itself when the machine is offline.
+        let bytes = fetch_image_bytes("https://picsum.photos/id/237/200/150".into());
+        let bytes = match bytes {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("skipping fetch_image_bytes_fetches_remote_image (offline?): {e}");
+                return;
+            }
+        };
+        assert!(bytes.len() > 1000, "suspiciously small image: {} bytes", bytes.len());
+        // JPEG SOI marker (picsum serves jpeg)
+        assert_eq!(&bytes[0..2], &[0xFF, 0xD8], "unexpected magic bytes");
+    }
+
+    #[test]
     fn fetch_image_bytes_rejects_non_http() {
         // Must fail fast on the scheme check, before any network access.
         assert!(fetch_image_bytes("file:///C:/Windows/system32".into()).is_err());

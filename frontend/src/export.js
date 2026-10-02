@@ -32,32 +32,70 @@ function buildStage(markdownSource) {
 
 /// html2canvas cannot draw cross-origin images into its canvas (CORS taint),
 /// which is why external pictures came out blank in exports. Fetch them
-/// through the backend (no CORS restriction there) and swap the src for a
-/// blob URL before rasterizing. Returns the blob URLs to revoke later.
+/// through the backend (no CORS restriction there) and swap the src for an
+/// inline data: URL before rasterizing.
+///
+/// Why data: and not blob: — the selftest pipeline probe proved that in
+/// this app's WebView2, `<img src="blob:...">` fires `error` and never
+/// decodes (complete=true, naturalWidth=0) even for a typed blob, while
+/// the SAME bytes load fine from the original https URL. Data URLs are
+/// same-origin by definition: no CORS taint, no blob-URL quirk, and
+/// html2canvas rasterizes them reliably.
+///
+/// NB: the load wait uses `load`/`error` events, NOT img.decode() — in
+/// Chromium/WebView2, decode() never settles for object/data URLs (the
+/// image itself is fully loaded), which hung the whole export.
 async function inlineRemoteImages(stage) {
   const remotes = [...stage.querySelectorAll('img')].filter((img) => {
     const src = img.currentSrc || img.getAttribute('src') || '';
     return /^https?:\/\//i.test(src);
   });
-  const blobUrls = [];
   await Promise.all(
     remotes.map(async (img) => {
       const src = img.currentSrc || img.getAttribute('src');
       try {
         const bytes = await api.fetchImageBytes(src);
-        const url = URL.createObjectURL(
-          new Blob([bytes], { type: guessImageMime(bytes) })
-        );
-        blobUrls.push(url);
         img.removeAttribute('srcset');
-        img.src = url;
-        await img.decode();
+        img.src = bytesToDataUrl(bytes, guessImageMime(bytes));
+        await waitImageLoad(img);
       } catch (err) {
         console.warn('外链图片拉取失败，导出中该位置将为空白：', src, err);
       }
     })
   );
-  return blobUrls;
+}
+
+/// Base64 data: URL from raw bytes (chunked: String.fromCharCode.apply
+/// on 25 MB of bytes would overflow the call stack). Exported for the dev
+/// selftest's image-presence verification.
+export function bytesToDataUrl(bytes, mime) {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+
+/// Resolve once `img` has loaded its current src (or reject on error /
+/// 20 s timeout). Event-based because img.decode() hangs on blob: URLs.
+function waitImageLoad(img, timeoutMs = 20000) {
+  if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => { cleanup(); reject(new Error('image load timeout')); },
+      timeoutMs
+    );
+    function cleanup() {
+      clearTimeout(timer);
+      img.removeEventListener('load', onLoad);
+      img.removeEventListener('error', onError);
+    }
+    function onLoad() { cleanup(); resolve(); }
+    function onError() { cleanup(); reject(new Error('image load error')); }
+    img.addEventListener('load', onLoad, { once: true });
+    img.addEventListener('error', onError, { once: true });
+  });
 }
 
 function guessImageMime(bytes) {
@@ -84,31 +122,28 @@ async function renderToCanvas(markdownSource) {
     await ready;
     // Drop the max-width so the article fills the stage at STAGE_WIDTH - 2*44.
     stage.firstElementChild.style.maxWidth = `${CONTENT_WIDTH}px`;
-    const blobUrls = await inlineRemoteImages(stage);
-    try {
-      const cssWidth = stage.offsetWidth;
-      const cssHeight = stage.offsetHeight;
-      // Keep the canvas bounded for very long notes (scale may drop below 3).
-      const scale =
-        cssHeight * SCALE > MAX_CANVAS_HEIGHT
-          ? Math.max(1, MAX_CANVAS_HEIGHT / cssHeight)
-          : SCALE;
-      const canvas = await html2canvas(stage, {
-        scale,
-        backgroundColor: getComputedStyle(stage).backgroundColor,
-        useCORS: true,
-        logging: false,
-      });
-      return {
-        canvas,
-        scale,
-        cssWidth,
-        cssHeight,
-        pageCuts: computePageCuts(stage),
-      };
-    } finally {
-      blobUrls.forEach((u) => URL.revokeObjectURL(u));
-    }
+    // Remote images are swapped for inline data: URLs (nothing to revoke).
+    await inlineRemoteImages(stage);
+    const cssWidth = stage.offsetWidth;
+    const cssHeight = stage.offsetHeight;
+    // Keep the canvas bounded for very long notes (scale may drop below 3).
+    const scale =
+      cssHeight * SCALE > MAX_CANVAS_HEIGHT
+        ? Math.max(1, MAX_CANVAS_HEIGHT / cssHeight)
+        : SCALE;
+    const canvas = await html2canvas(stage, {
+      scale,
+      backgroundColor: getComputedStyle(stage).backgroundColor,
+      useCORS: true,
+      logging: false,
+    });
+    return {
+      canvas,
+      scale,
+      cssWidth,
+      cssHeight,
+      pageCuts: computePageCuts(stage),
+    };
   } finally {
     stage.remove();
   }
@@ -125,6 +160,10 @@ function computePageCuts(stage) {
   const content = PDF_PAGE_HEIGHT - PAD_TOP; // room a block gets before a break
   const cuts = [];
   let pageStart = 0; // stage-relative css px where the current page begins
+  let prevBottom = 0; // bottom of the last block — a cut must never land
+  //                       INSIDE a block, so when the inter-block gap is
+  //                       smaller than PAD_TOP (collapsed margins) the cut
+  //                       is clamped to prevBottom instead of top - PAD_TOP.
   for (const el of article.children) {
     const rect = el.getBoundingClientRect();
     const top = rect.top - stageTop;
@@ -134,10 +173,14 @@ function computePageCuts(stage) {
         cuts.push(t);
       }
       pageStart = cuts[cuts.length - 1];
+      prevBottom = top + height;
     } else if (top - pageStart > content) {
-      const cut = top - PAD_TOP;
+      const cut = Math.max(top - PAD_TOP, prevBottom);
       cuts.push(cut);
       pageStart = cut;
+      prevBottom = top + height;
+    } else {
+      prevBottom = top + height;
     }
   }
   return { cuts, total };

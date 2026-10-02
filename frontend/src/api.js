@@ -49,7 +49,20 @@ export const api = {
   searchNotes: (dir, query) => invoke('search_notes', { dir, query }),
   writeText: (path, content) => invoke('write_text', { path, content }),
   writeBytes: (path, data) => invoke('write_bytes', { path, data }),
-  fetchImageBytes: (url) => invoke('fetch_image_bytes', { url }),
+  /// Tauri deserializes a Rust `Vec<u8>` into a plain array-like object,
+  /// NOT a `Uint8Array`. That breaks two things downstream:
+  ///   - `new Blob([bytes])` — a non-BufferSource Blob part is stringified,
+  ///     so the blob contains the text "137,80,71,73,..." and no <img> can
+  ///     ever decode it (this is why remote images were blank in exports);
+  ///   - `bytes.subarray(...)` — a typed-array method, not present on the
+  ///     plain object.
+  /// Normalize at the boundary so every consumer sees a real typed array.
+  /// (The browser mock already returns a Uint8Array; the instanceof check
+  /// makes the conversion a no-op there.)
+  fetchImageBytes: async (url) => {
+    const data = await invoke('fetch_image_bytes', { url });
+    return data instanceof Uint8Array ? data : Uint8Array.from(data);
+  },
 };
 
 // ---------------- Browser mock ----------------

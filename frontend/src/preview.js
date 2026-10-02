@@ -59,22 +59,49 @@ function disableMathJaxA11y(MathJax) {
 
 let mathJaxPromise = null;
 
+// TeX extensions imported statically so their macros work OFFLINE. The full
+// tex-svg bundle registers most commands, but a handful (below) are only
+// "CheckAutoload" placeholders: on first use MathJax fetches
+// `input/tex/extensions/<name>.js` from the network. In this bundled app that
+// URL 404s/502s, the fetch fails, and MathJax aborts the WHOLE typeset batch
+// (leaving raw `$...$` source or "Extension … failed to load" in the preview
+// — seen with `\textcolor{red}{E}` in the math-formula guide). Importing the
+// modules registers them, and `loader.preLoaded` tells MathJax's require
+// registry they are already loaded so no fetch is ever attempted.
+// If you add macros here that are still autoload-only, add them to this map
+// (static specifiers on purpose: Vite must see each one to bundle it).
+const MATHJAX_EXT_MODULES = {
+  // [\textcolor \color \definecolor \colorbox \fcolorbox]
+  color: () => import('mathjax/input/tex/extensions/color.js'),
+  // [\href \data \class \style \cssId]
+  html: () => import('mathjax/input/tex/extensions/html.js'),
+  // [\unicode \U \char]
+  unicode: () => import('mathjax/input/tex/extensions/unicode.js'),
+};
+
 function ensureMathJax() {
   if (!mathJaxPromise) {
     window.MathJax = MATHJAX_CONFIG;
-    mathJaxPromise = import('mathjax/tex-svg.js')
-      .then(() => window.MathJax.startup.promise)
-      .then(() => {
-        // NB: in MathJax 4 startup.promise resolves with undefined (unlike
-        // v3, which resolved with the MathJax object) — read the global.
-        const MathJax = window.MathJax;
-        disableMathJaxA11y(MathJax);
-        return MathJax;
-      })
-      .catch((err) => {
-        mathJaxPromise = null; // allow a retry on the next render
-        throw err;
-      });
+    mathJaxPromise = (async () => {
+      await import('mathjax/tex-svg.js');
+      await Promise.all(Object.values(MATHJAX_EXT_MODULES).map((load) => load()));
+      for (const name of Object.keys(MATHJAX_EXT_MODULES)) {
+        try {
+          window.MathJax.loader.preLoaded(`[tex]/${name}`);
+        } catch (err) {
+          console.warn(`MathJax preLoaded(${name}) 失败：`, err);
+        }
+      }
+      await window.MathJax.startup.promise;
+      // NB: in MathJax 4 startup.promise resolves with undefined (unlike
+      // v3, which resolved with the MathJax object) — read the global.
+      const MathJax = window.MathJax;
+      disableMathJaxA11y(MathJax);
+      return MathJax;
+    })().catch((err) => {
+      mathJaxPromise = null; // allow a retry on the next render
+      throw err;
+    });
   }
   return mathJaxPromise;
 }
@@ -96,11 +123,29 @@ function mdSourceHasMath(text) {
 
 /// Typeset all math in a rendered container. Resolves even when typesetting
 /// fails: the raw `$...$` source stays visible instead of a blank page.
-async function typesetMath(container) {
+///
+/// `spans` are the per-formula wrapper elements from restoreMath(). The
+/// batch pass is fast, but a single invalid formula makes MathJax reject
+/// the WHOLE batch — which is how one typo can leave an entire note full of
+/// raw `$...$` text. On failure we re-typeset each formula individually:
+/// the broken one keeps its raw source, the rest render.
+async function typesetMath(container, spans) {
   try {
     const MathJax = await ensureMathJax();
     disableMathJaxA11y(MathJax);
-    await MathJax.typesetPromise([container]);
+    try {
+      await MathJax.typesetPromise([container]);
+    } catch (err) {
+      console.error('MathJax 批量渲染失败，回退为逐公式渲染：', err);
+      for (const span of spans) {
+        if (span.querySelector('mjx-container')) continue; // done in the batch pass
+        try {
+          await MathJax.typesetPromise([span]);
+        } catch (e) {
+          console.error('MathJax 公式渲染失败（保留原文）：', e);
+        }
+      }
+    }
   } catch (err) {
     console.error('MathJax 渲染失败：', err);
   }
@@ -205,10 +250,23 @@ function preprocessDetails(md) {
 
 const mathToken = (i) => `RMDMATH${i}X`;
 
+// Display-math delimiters must be *standalone*: the opening `$$` starts at
+// the beginning of a line (or after whitespace) and the closing `$$` ends
+// the line (or is followed by whitespace). Otherwise a stray `$$` quoted
+// mid-sentence — e.g. a syntax guide writing `使用双 $$ 包裹` — pairs up
+// with the next real delimiter and swallows the surrounding prose into a
+// bogus "formula" (which then makes MathJax reject the whole note).
+// NB: the `g` flag is load-bearing — String.replace with a non-global
+// regex only replaces the FIRST match, so without it only the first
+// $$…$$ block of the note would be protected and every later display
+// formula (matrices, align, cases …) would hit marked's escaping
+// (`\\` row separators collapse) and render as a single squashed line.
+const DISPLAY_MATH_RE = /(?<=^|\s)\$\$([\s\S]*?)\$\$(?=\s|$)/gm;
+
 function protectMathInText(text, store) {
   // Display math first ($$...$$, may span lines), then inline $...$.
   // Same inline-math heuristics as mdSourceHasMath above.
-  let out = text.replace(/\$\$([\s\S]*?)\$\$/g, (m) => {
+  let out = text.replace(DISPLAY_MATH_RE, (m) => {
     store.push(m);
     return mathToken(store.length - 1);
   });
@@ -226,23 +284,41 @@ function protectMath(md, store) {
     .join('\n');
 }
 
+/// Swap each token for a dedicated <span class="rm-math"> holding the raw
+/// TeX, and return the spans. Tokens are plain alphanumeric words, so
+/// marked never splits one across text nodes. Per-formula spans let
+/// typesetMath typeset (and fall back) formula by formula — one bad formula
+/// must not take down the rest of the note.
 function restoreMath(container, store) {
-  if (!store.length) return;
-  // Tokens are plain alphanumeric words, so marked never splits one across
-  // text nodes — a per-node string replace is sufficient.
+  const spans = [];
+  if (!store.length) return spans;
   const nodes = [];
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
-    let value = node.nodeValue;
+    const value = node.nodeValue;
+    const hits = [];
     for (let i = 0; i < store.length; i++) {
-      const token = mathToken(i);
-      if (value.includes(token)) {
-        value = value.split(token).join(store[i]);
-      }
+      const p = value.indexOf(mathToken(i));
+      if (p !== -1) hits.push([p, i]);
     }
-    node.nodeValue = value;
+    if (!hits.length) continue;
+    hits.sort((a, b) => a[0] - b[0]);
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (const [p, i] of hits) {
+      if (p > pos) frag.appendChild(document.createTextNode(value.slice(pos, p)));
+      const span = document.createElement('span');
+      span.className = 'rm-math';
+      span.textContent = store[i];
+      frag.appendChild(span);
+      spans.push(span);
+      pos = p + mathToken(i).length;
+    }
+    if (pos < value.length) frag.appendChild(document.createTextNode(value.slice(pos)));
+    node.parentNode.replaceChild(frag, node);
   }
+  return spans;
 }
 
 // ---------------- Rendering ----------------
@@ -265,7 +341,7 @@ async function renderMarkdownInto(container, markdownSource) {
   const mathStore = [];
   const guarded = protectMath(markdownSource, mathStore);
   container.innerHTML = marked.parse(preprocessDetails(guarded));
-  restoreMath(container, mathStore);
+  const mathSpans = restoreMath(container, mathStore);
   for (const el of container.querySelectorAll('pre code')) {
     if (el.classList.contains('language-mermaid')) continue;
     hljs.highlightElement(el);
@@ -299,7 +375,7 @@ async function renderMarkdownInto(container, markdownSource) {
       }
   });
   if (sourceHasMath(markdownSource)) {
-    jobs.push(typesetMath(container));
+    jobs.push(typesetMath(container, mathSpans));
   }
   await Promise.all(jobs);
 }
