@@ -7,7 +7,11 @@
 
 ## [Unreleased]
 
-（暂无变更）
+### 移除（Removed）
+
+- 开发期遗留的 Rust 端诊断日志：`list_notes` / `read_note` / `save_note`
+  的 `eprintln!` 调用日志，以及 panic hook、窗口关闭/销毁、应用退出的
+  stderr 打印（release 构建中为 no-op，行为无任何变化）。
 
 ## [1.0.0] - 2026-10-02
 

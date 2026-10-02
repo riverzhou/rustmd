@@ -376,32 +376,19 @@ fn sanitize_filename(s: &str) -> String {
 
 #[tauri::command]
 fn list_notes(dir: String) -> Result<Vec<NoteMeta>, String> {
-    eprintln!("[rustmd] list_notes dir={dir}");
-    let res = collect_notes(Path::new(&dir));
-    match &res {
-        Ok(n) => eprintln!("[rustmd] list_notes ok, {} notes", n.len()),
-        Err(e) => eprintln!("[rustmd] list_notes ERR: {e}"),
-    }
-    res
+    collect_notes(Path::new(&dir))
 }
 
 #[tauri::command]
 fn read_note(dir: String, path: String) -> Result<NoteContent, String> {
-    eprintln!("[rustmd] read_note dir={dir} path={path}");
-    let res = (|| {
-        let full = resolve_in_root(Path::new(&dir), &path)?;
-        let text = fs::read_to_string(&full).map_err(|e| e.to_string())?;
-        let (tags, body) = parse_frontmatter(&text);
-        Ok(NoteContent {
-            tags,
-            body,
-            mtime: mtime_of(&full),
-        })
-    })();
-    if res.is_err() {
-        eprintln!("[rustmd] read_note ERR: {}", res.as_ref().err().unwrap());
-    }
-    res
+    let full = resolve_in_root(Path::new(&dir), &path)?;
+    let text = fs::read_to_string(&full).map_err(|e| e.to_string())?;
+    let (tags, body) = parse_frontmatter(&text);
+    Ok(NoteContent {
+        tags,
+        body,
+        mtime: mtime_of(&full),
+    })
 }
 
 fn save_note_impl(root: &Path, rel: &str, tags: &[String], body: &str) -> Result<NoteMeta, String> {
@@ -426,17 +413,7 @@ fn save_note_impl(root: &Path, rel: &str, tags: &[String], body: &str) -> Result
 
 #[tauri::command]
 fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, String> {
-    eprintln!(
-        "[rustmd] save_note dir={dir} path={path} tags={:?} body_len={}",
-        args.tags,
-        args.body.len()
-    );
-    let res = save_note_impl(Path::new(&dir), &path, &args.tags, &args.body);
-    match &res {
-        Ok(_) => eprintln!("[rustmd] save_note ok"),
-        Err(e) => eprintln!("[rustmd] save_note ERR: {e}"),
-    }
-    res
+    save_note_impl(Path::new(&dir), &path, &args.tags, &args.body)
 }
 
 #[tauri::command]
@@ -627,28 +604,8 @@ fn fetch_image_bytes(url: String) -> Result<Vec<u8>, String> {
 }
 
 fn main() {
-    // Diagnostic: mark Rust panics so they are easy to find in `tauri dev` output.
-    std::panic::set_hook({
-        let default = std::panic::take_hook();
-        Box::new(move |info| {
-            eprintln!("[rustmd] === RUST PANIC ===");
-            default(info);
-        })
-    });
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        // Diagnostic: log window close/destroy and app exit to stderr so a
-        // "flashed and exited" session leaves a trace in `tauri dev` output.
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { .. } => {
-                eprintln!("[rustmd] window {} close requested", window.label())
-            }
-            tauri::WindowEvent::Destroyed => {
-                eprintln!("[rustmd] window {} destroyed", window.label())
-            }
-            _ => {}
-        })
         .invoke_handler(tauri::generate_handler![
             list_notes,
             read_note,
@@ -662,12 +619,8 @@ fn main() {
             write_bytes,
             fetch_image_bytes
         ])
-        .build(tauri::generate_context!())
-        .expect("error while running tauri application")
-        .run(|_app, event| match event {
-            tauri::RunEvent::Exit => eprintln!("[rustmd] run event: EXIT (last window closed)"),
-            _ => {}
-        });
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
 #[cfg(test)]
