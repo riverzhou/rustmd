@@ -11,7 +11,17 @@ single file, frontend is frameworkless vanilla JS bundled by Vite 6.
 | Release exe (no installer) | `scripts\run-build.bat` (= `npx tauri build --no-bundle`) |
 | Rust unit tests | `C:\Users\River\.cargo\bin\cargo.exe test` |
 | Frontend only (browser + mock data) | `npm run dev` → http://localhost:5173 |
+| E2E self-test (render + export `examples\`) | `RUSTMD_SELFTEST=1 scripts\run-dev.bat` |
 | Regenerate app icons | `npm run icons` (uses `scripts/gen-icons.mjs`) |
+
+E2E self-test (dev builds only, `import.meta.env.DEV`): the dev window renders
+every note in `examples\` through the real pipeline, exports PNG + PDF for each,
+and verifies residual raw math, remote images in the exported PNG (2D NCC), and
+multi-line math geometry. Artifacts + `report.json` land in
+`%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`; `report.ok === false` means
+failures. `examples\` doubles as the regression vault (the math-formula guide
+guards the `$$` display-math protection — see `DISPLAY_MATH_RE` in
+`frontend/src/preview.js`).
 
 - `cargo`/`rustup` are **not on this shell's PATH** — always use the `scripts\run-*.bat`
   wrappers or the absolute path `C:\Users\River\.cargo\bin\cargo.exe`.

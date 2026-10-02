@@ -13,7 +13,7 @@
 - 编辑器 + 实时预览：编辑 / 分栏 / 预览 三种视图（快捷键 Ctrl+1 / Ctrl+2 / Ctrl+3），分栏可拖动；输入 500ms 防抖自动保存
 - 全文搜索：大小写不敏感，列表高亮命中片段
 - 文件夹与标签：子目录即文件夹；标签以 chips 形式编辑，持久化为 front matter
-- 导出：HTML（带内嵌样式、跟随当前主题）/ 高清 PNG（2x 渲染，约 192 DPI）/ PDF（单页长文档，尺寸随内容），一键导出
+- 导出：HTML（带内嵌样式、跟随当前主题）/ 高清 PNG（3x 渲染，约 288 DPI）/ PDF（多页、无损 PNG 切片，尺寸随内容），外链图片自动内联，一键导出
 - 深色 / 浅色主题，跟随系统，可手动切换
 - 首选项（目录、视图、主题、侧边栏、分栏比例）保存在 WebView 的 localStorage
 
@@ -41,13 +41,31 @@ http://localhost:5173 ）使用内置内存 mock 数据，方便纯前端调试�
 
 测试笔记目录：`C:\Users\River\AppData\Local\Temp\rustmd-test-notes`
 
+## 更新日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 测试
+
+后端单元测试：
 
 ```bat
 C:\Users\River\.cargo\bin\cargo.exe test
 ```
 
-覆盖 front matter 解析、标题提取、片段生成、文件名清理、路径逃逸防护。
+覆盖 front matter 解析、标题提取、片段生成、文件名清理、路径逃逸防护、
+`fetch_image_bytes` 网络拉取（离线时自动跳过）。
+
+端到端自测（真实应用内渲染 + 导出校验，仅 dev 构建）：
+
+```bat
+RUSTMD_SELFTEST=1 scripts\run-dev.bat
+```
+
+dev 窗口会渲染 `examples\` 下全部示例笔记，逐一导出 PNG/PDF 并校验：
+残留未渲染公式、外链图片是否真的出现在导出的 PNG 中（2D NCC 匹配）、
+多行公式（矩阵 / align / cases）是否被压成单行。产物与 `report.json` 写入
+`%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`，`report.ok = false` 即表示有失败项。
 
 ## 目录结构
 
