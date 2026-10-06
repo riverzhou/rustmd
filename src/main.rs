@@ -1,10 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ---------------- Types ----------------
 
@@ -603,9 +605,232 @@ fn fetch_image_bytes(url: String) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+// ---------------- Vault image serving (`rmd` protocol) ----------------
+//
+// The webview page origin (tauri://localhost in release, the Vite dev
+// server in dev) cannot read the filesystem: a relative <img> src like
+// `chart.png` resolves against the APP URL and 404s, and file:///… is
+// blocked for an http origin. Notes reference vault files by path, so the
+// frontend rewrites local image sources to the `rmd` custom URI scheme,
+// which this serves strictly from the CURRENTLY OPEN notes root.
+//
+// URL contract (the platform origin uses the same workaround form Tauri/
+// wry use for the asset protocol on Windows — WebView2 cannot serve a
+// bare custom scheme, so it is intercepted as `http://rmd.localhost/*`):
+//   Windows: http://rmd.localhost/<percent-encoded absolute path>
+//   others:  rmd://localhost/<percent-encoded absolute path>
+// The handler always receives the reverted `rmd://localhost/…` URI.
+//
+// The notes root is dynamic (the user opens arbitrary folders), so unlike
+// the static-scope asset protocol it is set at runtime via
+// `set_notes_root`, and every request is containment-checked against it —
+// the same escape-guard posture as `resolve_in_root` for note paths.
+// Images OUTSIDE the open vault are refused by design.
+
+const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
+const CACHE_MAX_ENTRIES: usize = 64;
+const NOT_FOUND: &str = "file not found";
+const TOO_LARGE: &str = "image too large (> 25 MB)";
+
+/// Resolve an absolute path requested from the webview and verify it
+/// stays inside the notes root. Canonicalization (rather than component
+/// walking) resolves `..`, junctions and case, so an escaped path cannot
+/// sneak through — the same posture as `resolve_in_root`.
+fn resolve_vault_file(root: &Path, path_str: &str) -> Result<PathBuf, String> {
+    let p = Path::new(path_str);
+    if !p.is_absolute() {
+        return Err("absolute path required".into());
+    }
+    if !p.exists() {
+        return Err(NOT_FOUND.into());
+    }
+    let file = strip_extended_prefix(&fs::canonicalize(p).map_err(|e| e.to_string())?);
+    let canon_root =
+        strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
+    if !file.starts_with(&canon_root) {
+        return Err("path escapes notes root".into());
+    }
+    Ok(file)
+}
+
+/// Content type by file extension. (Magic-byte sniffing would be more
+/// thorough, but notes embed images by extension and this keeps the
+/// handler dependency-free; unknown extensions still display — browsers
+/// sniff image bytes on their own.)
+fn mime_for_path(p: &Path) -> &'static str {
+    match p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("avif") => "image/avif",
+        Some("svg") => "image/svg+xml",
+        Some("ico") => "image/x-icon",
+        _ => "application/octet-stream",
+    }
+}
+
+/// mtime-validated byte cache for vault files. The preview re-renders
+/// (debounced) on every keystroke and each render re-requests every
+/// `<img>` through the protocol — without this, every render would
+/// re-read multi-MB images from disk.
+struct VaultFileCache {
+    entries: Mutex<HashMap<PathBuf, (SystemTime, Vec<u8>)>>,
+}
+
+impl VaultFileCache {
+    fn new() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Returns the file bytes, serving from the cache while the file's
+    /// mtime is unchanged. Coarse eviction: a note rarely references more
+    /// than a few dozen distinct images, so drop everything instead of
+    /// maintaining an LRU.
+    fn read(&self, canonical: &Path) -> Result<Vec<u8>, String> {
+        let meta = fs::metadata(canonical).map_err(|e| e.to_string())?;
+        if !meta.is_file() {
+            return Err(NOT_FOUND.into());
+        }
+        if meta.len() > MAX_IMAGE_BYTES {
+            return Err(TOO_LARGE.into());
+        }
+        let mtime = meta.modified().map_err(|e| e.to_string())?;
+        {
+            let entries = self.entries.lock().unwrap();
+            if let Some((m, bytes)) = entries.get(canonical) {
+                if *m == mtime {
+                    return Ok(bytes.clone());
+                }
+            }
+        }
+        let bytes = fs::read(canonical).map_err(|e| e.to_string())?;
+        let mut entries = self.entries.lock().unwrap();
+        if entries.len() >= CACHE_MAX_ENTRIES {
+            entries.clear();
+        }
+        entries.insert(canonical.to_path_buf(), (mtime, bytes.clone()));
+        Ok(bytes)
+    }
+}
+
+/// App state for the `rmd` protocol: the open notes root (set by the
+/// frontend via `set_notes_root`) plus the byte cache.
+struct VaultState {
+    root: Mutex<Option<PathBuf>>,
+    cache: Arc<VaultFileCache>,
+}
+
+impl VaultState {
+    fn new() -> Self {
+        Self {
+            root: Mutex::new(None),
+            cache: Arc::new(VaultFileCache::new()),
+        }
+    }
+}
+
+/// Remember the notes root the frontend just opened, so the `rmd` image
+/// protocol (and `read_local_image`) know which vault to serve.
+#[tauri::command]
+fn set_notes_root(state: tauri::State<'_, VaultState>, dir: String) -> Result<(), String> {
+    let root = Path::new(&dir);
+    if !root.is_dir() {
+        return Err(format!("directory not found: {dir}"));
+    }
+    let canon = strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
+    *state.root.lock().unwrap() = Some(canon);
+    Ok(())
+}
+
+/// Read an image file from the open vault (same containment check as the
+/// `rmd` protocol). Used by PNG/PDF/HTML export: html2canvas cannot draw
+/// images from the rmd origin into its canvas (foreign origin), so the
+/// export inlines them as data: URLs built from these bytes — the same
+/// proven path used for remote images.
+#[tauri::command]
+fn read_local_image(
+    state: tauri::State<'_, VaultState>,
+    path: String,
+) -> Result<Vec<u8>, String> {
+    let root = state
+        .root
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "notes root not set".to_string())?;
+    let file = resolve_vault_file(&root, &path)?;
+    state.cache.read(&file)
+}
+
+/// The `rmd` protocol handler body (kept out of the closure so it can be
+/// unit-tested and the closure stays trivially Send).
+fn serve_rmd(
+    root: Option<PathBuf>,
+    cache: &VaultFileCache,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    let text = |status: StatusCode, body: &str| -> Response<Vec<u8>> {
+        Response::builder()
+            .status(status)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(body.as_bytes().to_vec())
+            .expect("static response")
+    };
+    if request.method() != tauri::http::Method::GET {
+        return text(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+    }
+    // `rmd://localhost/<percent-encoded absolute path>`
+    let raw = request.uri().path().trim_start_matches('/');
+    let path =
+        percent_encoding::percent_decode_str(raw).decode_utf8_lossy().to_string();
+    if path.trim().is_empty() {
+        return text(StatusCode::BAD_REQUEST, "empty path");
+    }
+    let Some(root) = root else {
+        return text(StatusCode::FORBIDDEN, "notes root not set");
+    };
+    match resolve_vault_file(&root, &path) {
+        Err(e) if e == NOT_FOUND => text(StatusCode::NOT_FOUND, &e),
+        Err(e) => text(StatusCode::FORBIDDEN, &e),
+        Ok(file) => match cache.read(&file) {
+            Err(e) if e == NOT_FOUND => text(StatusCode::NOT_FOUND, &e),
+            Err(e) if e == TOO_LARGE => text(StatusCode::PAYLOAD_TOO_LARGE, &e),
+            Err(e) => text(StatusCode::INTERNAL_SERVER_ERROR, &e),
+            Ok(bytes) => Response::builder()
+                .header("Content-Type", mime_for_path(&file))
+                .header("Access-Control-Allow-Origin", "*")
+                .body(bytes)
+                .expect("image response"),
+        },
+    }
+}
+
 fn main() {
+    use tauri::Manager;
     tauri::Builder::default()
+        .manage(VaultState::new())
         .plugin(tauri_plugin_dialog::init())
+        // Serve vault images to the webview (local image references). The
+        // async variant runs the (cached) file read off the main thread.
+        .register_asynchronous_uri_scheme_protocol("rmd", |ctx, request, responder| {
+            let state = ctx.app_handle().state::<VaultState>();
+            let root = state.root.lock().unwrap().clone();
+            let cache = state.cache.clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(serve_rmd(root, &cache, &request));
+            });
+        })
         .invoke_handler(tauri::generate_handler![
             list_notes,
             read_note,
@@ -617,7 +842,9 @@ fn main() {
             search_notes,
             write_text,
             write_bytes,
-            fetch_image_bytes
+            fetch_image_bytes,
+            set_notes_root,
+            read_local_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -822,6 +1049,68 @@ mod tests {
         // canonicalized root with the same stripping applied.
         let canon_dir = strip_extended_prefix(&fs::canonicalize(&dir).unwrap());
         assert!(ok_dot.starts_with(&canon_dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_vault_file_serves_files_in_root() {
+        let dir = std::env::temp_dir().join("rustmd_test_vault_xyz");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("img.png"), b"png").unwrap();
+        let fwd = dir.to_string_lossy().replace('\\', "/");
+        let file = resolve_vault_file(Path::new(&dir), &format!("{fwd}/img.png")).unwrap();
+        assert!(file.ends_with("img.png"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_vault_file_rejects_escapes_relative_and_missing() {
+        let dir = std::env::temp_dir().join("rustmd_test_vault_xyz");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let root = Path::new(&dir);
+        let fwd = dir.to_string_lossy().replace('\\', "/");
+        // A file OUTSIDE the root, addressed via a `..` component.
+        let outside_name = "rustmd_vault_outside_xyz.png";
+        let outside = dir.parent().unwrap().join(outside_name);
+        fs::write(&outside, b"x").unwrap();
+        assert!(resolve_vault_file(root, &format!("{fwd}/../{outside_name}")).is_err());
+        // …and addressed directly.
+        let out_fwd = outside.to_string_lossy().replace('\\', "/");
+        assert!(resolve_vault_file(root, &out_fwd).is_err());
+        // Relative paths are not a valid protocol input.
+        assert!(resolve_vault_file(root, "img.png").is_err());
+        // Missing file.
+        assert!(resolve_vault_file(root, &format!("{fwd}/missing.png")).is_err());
+        let _ = fs::remove_file(&outside);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn mime_for_path_by_extension() {
+        assert_eq!(mime_for_path(Path::new("a/b.PNG")), "image/png");
+        assert_eq!(mime_for_path(Path::new("x.Jpeg")), "image/jpeg");
+        assert_eq!(mime_for_path(Path::new("x.svg")), "image/svg+xml");
+        assert_eq!(mime_for_path(Path::new("x.unknown")), "application/octet-stream");
+    }
+
+    #[test]
+    fn vault_file_cache_validates_mtime() {
+        let dir = std::env::temp_dir().join("rustmd_test_cache_xyz");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.bin");
+        fs::write(&f, b"one").unwrap();
+        let cache = VaultFileCache::new();
+        let canonical = strip_extended_prefix(&fs::canonicalize(&f).unwrap());
+        assert_eq!(cache.read(&canonical).unwrap(), b"one");
+        // Wait past the filesystem mtime resolution, then rewrite the
+        // file: the cache must notice and re-read (a note image edited
+        // on disk outside the app must not keep serving stale bytes).
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        fs::write(&f, b"two-two").unwrap();
+        assert_eq!(cache.read(&canonical).unwrap(), b"two-two");
         fs::remove_dir_all(&dir).ok();
     }
 }

@@ -2765,6 +2765,7 @@ dependencies = [
 name = "rustmd"
 version = "1.0.0"
 dependencies = [
+ "percent-encoding",
  "reqwest 0.12.28",
  "serde",
  "tauri",

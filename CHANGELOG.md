@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+### 新增（Added）
+
+- **本地图片渲染**：笔记中以相对路径、`./` 相对路径、`file:///`、绝对路径或
+  `<img>` 标签引用的 vault 内图片现在可以在预览中显示（此前一律加载失败：
+  webview 的页面 origin 无法读取文件系统）。实现为 `rmd` 自定义 URI 协议：
+  预览把本地图片 `src` 改写为 `rmd` URL，Rust 端按当前打开的笔记根目录做
+  路径逃逸检查后供图（与笔记路径同一安全模型，根目录外的图片被拒绝），
+  并按 mtime 缓存字节。PNG/PDF 导出经 `read_local_image` 将本地图片内联为
+  data: URL，导出的 HTML 文件同样内联，保证自包含。
+- 自测新增本地图片回归校验：`examples/markdown_render_test.md` §4 增加
+  `assets/` 相对引用图，self-test 校验其在预览中真实解码、且确实出现在导出的
+  PNG 中（同一套 2D NCC 校验）。
+- Rust 单测：`resolve_vault_file` 路径逃逸/相对路径/缺失文件拒绝、
+  `mime_for_path`、`VaultFileCache` 的 mtime 失效重读。
+
 ### 移除（Removed）
 
 - 开发期遗留的 Rust 端诊断日志：`list_notes` / `read_note` / `save_note`

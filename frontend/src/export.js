@@ -6,8 +6,9 @@
 // and wrap it in a multi-page PDF with lossless PNG images (288 DPI without
 // JPEG artifacts — the old 2x/JPEG single page looked blurry and fuzzy).
 
-import { renderPreview } from './preview.js';
+import { renderPreview, isRmdUrl, rmdUrlPath } from './preview.js';
 import { api } from './api.js';
+import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 
 const CONTENT_WIDTH = 860; // matches .markdown-body max-width
 const PAD_TOP = 48; // .export-stage top padding (48px 44px 64px)
@@ -28,12 +29,15 @@ function buildStage(markdownSource) {
   return { stage, ready };
 }
 
-// ---------------- Remote images ----------------
+// ---------------- Non-same-origin images ----------------
 
 /// html2canvas cannot draw cross-origin images into its canvas (CORS taint),
-/// which is why external pictures came out blank in exports. Fetch them
-/// through the backend (no CORS restriction there) and swap the src for an
-/// inline data: URL before rasterizing.
+/// which is why such pictures came out blank in exports. Two kinds:
+///   - remote http(s) images (no CORS on most hosts) → fetch through the
+///     backend (no CORS restriction there);
+///   - vault images served by the `rmd` protocol (a foreign origin to the
+///     export stage) → read from the open notes root.
+/// Either way the src is swapped for an inline data: URL before rasterizing.
 ///
 /// Why data: and not blob: — the selftest pipeline probe proved that in
 /// this app's WebView2, `<img src="blob:...">` fires `error` and never
@@ -48,33 +52,23 @@ function buildStage(markdownSource) {
 async function inlineRemoteImages(stage) {
   const remotes = [...stage.querySelectorAll('img')].filter((img) => {
     const src = img.currentSrc || img.getAttribute('src') || '';
-    return /^https?:\/\//i.test(src);
+    return isRmdUrl(src) || /^https?:\/\//i.test(src);
   });
   await Promise.all(
     remotes.map(async (img) => {
       const src = img.currentSrc || img.getAttribute('src');
       try {
-        const bytes = await api.fetchImageBytes(src);
+        const bytes = isRmdUrl(src)
+          ? await api.readLocalImage(rmdUrlPath(src))
+          : await api.fetchImageBytes(src);
         img.removeAttribute('srcset');
         img.src = bytesToDataUrl(bytes, guessImageMime(bytes));
         await waitImageLoad(img);
       } catch (err) {
-        console.warn('外链图片拉取失败，导出中该位置将为空白：', src, err);
+        console.warn('图片拉取失败，导出中该位置将为空白：', src, err);
       }
     })
   );
-}
-
-/// Base64 data: URL from raw bytes (chunked: String.fromCharCode.apply
-/// on 25 MB of bytes would overflow the call stack). Exported for the dev
-/// selftest's image-presence verification.
-export function bytesToDataUrl(bytes, mime) {
-  let bin = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-  }
-  return `data:${mime};base64,${btoa(bin)}`;
 }
 
 /// Resolve once `img` has loaded its current src (or reject on error /
@@ -96,21 +90,6 @@ function waitImageLoad(img, timeoutMs = 20000) {
     img.addEventListener('load', onLoad, { once: true });
     img.addEventListener('error', onError, { once: true });
   });
-}
-
-function guessImageMime(bytes) {
-  if (bytes.length > 3 && bytes[0] === 0x89 && bytes[1] === 0x50) return 'image/png';
-  if (bytes.length > 2 && bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';
-  if (bytes.length > 5 && bytes[0] === 0x47 && bytes[1] === 0x49) return 'image/gif';
-  if (
-    bytes.length > 11 &&
-    bytes[0] === 0x52 && bytes[1] === 0x49 &&
-    bytes[2] === 0x46 && bytes[3] === 0x46 &&
-    bytes[8] === 0x57 && bytes[9] === 0x45
-  )
-    return 'image/webp';
-  if (bytes.length > 3 && bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp';
-  return 'application/octet-stream';
 }
 
 // ---------------- Rasterization ----------------

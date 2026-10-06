@@ -1,8 +1,9 @@
 import './style.css';
 import { api } from './api.js';
 import { createEditor } from './editor.js';
-import { renderPreview, buildExportHtml, setPreviewTheme } from './preview.js';
-import { exportPng, exportPdf, bytesToDataUrl } from './export.js';
+import { renderPreview, buildExportHtml, setPreviewTheme, setImageContext, isRmdUrl } from './preview.js';
+import { exportPng, exportPdf } from './export.js';
+import { bytesToDataUrl } from './imgutil.js';
 
 // ---------------- State ----------------
 
@@ -191,6 +192,8 @@ async function enterDir(dir) {
   onboardingError.classList.add('hidden');
   state.dir = dir;
   localStorage.setItem('rustmd-dir', dir);
+  // The `rmd` image protocol serves from this root (local images in notes).
+  await api.setNotesRoot(dir);
   onboardingEl.classList.add('hidden');
   mainEl.classList.remove('hidden');
   await loadNotes();
@@ -425,6 +428,8 @@ async function selectNote(path) {
   try {
     const content = await api.readNote(state.dir, path);
     state.current = path;
+    // Local images resolve relative to THIS note's folder.
+    setImageContext(state.dir, path);
     state.tagsOfCurrent = content.tags;
     // Loading must not mark the note dirty (a spurious save right after
     // opening would re-touch the file and, under `tauri dev`, retrigger the
@@ -490,6 +495,7 @@ async function commitRename() {
       };
     }
     state.current = newPath;
+    setImageContext(state.dir, newPath); // image resolution follows the note
     statusPath.textContent = newPath;
     noteTitle.value = stemOf(newPath);
     renderFolders();
@@ -622,6 +628,10 @@ function openMoveModal() {
           };
         }
         state.current = newPath;
+        setImageContext(state.dir, newPath);
+        // Relative image paths resolve against the note's NEW folder —
+        // re-render so the preview's rmd URLs point at the right files.
+        renderPreview(editor.state.doc.toString(), previewEl);
         statusPath.textContent = newPath;
         noteTitle.value = stemOf(newPath);
         await loadNotes();
@@ -823,6 +833,7 @@ if (state.dir) {
   try {
     const notes = await api.listNotes(state.dir);
     state.notes = notes;
+    await api.setNotesRoot(state.dir);
     renderFolders();
     renderTags();
     renderNoteList();
@@ -1153,12 +1164,23 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
       entries: [],
       errors: [],
     };
+    // Serve the examples vault through the `rmd` image protocol for this
+    // run (local-image regression); restore the user's root afterwards.
+    await api.setNotesRoot(SELFTEST_EXAMPLES_DIR);
     try {
       const notes = await api.listNotes(SELFTEST_EXAMPLES_DIR);
       for (const meta of notes) {
         const entry = { path: meta.path, remoteImagesInSource: null };
         const { body } = await api.readNote(SELFTEST_EXAMPLES_DIR, meta.path);
         entry.remoteImagesInSource = (body.match(/!\[[^\]]*\]\(\s*https?:/g) || []).length;
+        // Local (vault) image refs — anything that is not a remote/data/
+        // blob/file URL. These go through the `rmd` protocol; the preview
+        // resolves them relative to THIS note's folder.
+        const localSrcs = (body.match(/!\[[^\]]*\]\(([^)]*)\)/g) || [])
+          .map((m) => m.slice(m.indexOf('(') + 1, -1).trim().split(/\s+/)[0])
+          .filter((s) => s && !/^(https?:|data:|blob:|file:)/i.test(s));
+        entry.localImagesInSource = localSrcs.length;
+        setImageContext(SELFTEST_EXAMPLES_DIR, meta.path);
 
         // 1) render through the real preview pipeline
         const box = document.createElement('div');
@@ -1167,14 +1189,22 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
         document.body.appendChild(box);
         const t0 = performance.now();
         await renderPreview(body, box);
-        // Remote imgs: renderPreview only guarantees DOM + math + mermaid are
-        // done, NOT that <img> fetches settled — wait for load/error before
-        // snapshotting (the old immediate check raced and reported false).
-        const remoteImgs = [...box.querySelectorAll('img')].filter((i) =>
-          /^https?:/.test(i.getAttribute('src') || '')
+        // Remote + local imgs: renderPreview only guarantees DOM + math +
+        // mermaid are done, NOT that <img> fetches settled — wait for
+        // load/error before snapshotting (the old immediate check raced and
+        // reported false).
+        // On Windows the rmd (local) origin is `http://rmd.localhost/…`,
+        // which also matches ^https?: — exclude it here so the remote
+        // fetch probe doesn't try a real network fetch of a vault file.
+        const remoteImgs = [...box.querySelectorAll('img')].filter((i) => {
+          const src = i.getAttribute('src') || '';
+          return /^https?:/.test(src) && !isRmdUrl(src);
+        });
+        const localImgs = [...box.querySelectorAll('img')].filter((i) =>
+          isRmdUrl(i.getAttribute('src') || '')
         );
         await Promise.all(
-          remoteImgs.map(
+          [...remoteImgs, ...localImgs].map(
             (i) =>
               new Promise((resolve) => {
                 if (i.complete && i.naturalWidth > 0) return resolve();
@@ -1184,6 +1214,12 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
               })
           )
         );
+        // Local images must actually decode in the preview — a broken
+        // rmd URL (wrong origin form, path-escape rejection, …) would
+        // otherwise only surface in the export check.
+        if (localImgs.some((i) => !(i.complete && i.naturalWidth > 0))) {
+          report.errors.push(`${meta.path}: local image failed to load in preview`);
+        }
         // Independent probe of the backend fetch path (the same one export
         // uses per image): distinguishes export-stage blanks caused by the
         // Rust fetch vs. webview img loading vs. html2canvas rasterization.
@@ -1202,6 +1238,24 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
           bytes ? { url, ok, bytes: bytes.length } : { url, ok, error }
         );
         const remoteRefs = remoteFetchResults.filter((r) => r.ok);
+        // Local refs: bytes via the SAME Rust read path the export uses
+        // (read_local_image), so a "present" verdict proves the full
+        // chain: rmd rewrite → read_local_image → data-URL swap →
+        // html2canvas raster → PNG file.
+        const localRefs = [];
+        for (const src of [...new Set(localSrcs)]) {
+          const dir = meta.path.includes('/')
+            ? meta.path.slice(0, meta.path.lastIndexOf('/')) + '/'
+            : '';
+          const abs = `${SELFTEST_EXAMPLES_DIR}/${dir}${src.replace(/\\/g, '/')}`;
+          try {
+            localRefs.push({ url: `local:${src}`, bytes: await api.readLocalImage(abs) });
+          } catch (e) {
+            report.errors.push(
+              `${meta.path}: local image unreadable via backend: ${src} (${e})`
+            );
+          }
+        }
         entry.render = {
           ms: Math.round(performance.now() - t0),
           mermaidDiagrams: box.querySelectorAll('.mermaid-diagram').length,
@@ -1210,6 +1264,7 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
           mjxErrors: box.querySelectorAll('mjx-merror').length,
           residualRawMath: residualRawMath(box),
           remoteImgsLoaded: remoteImgs.map((i) => i.complete && i.naturalWidth > 0),
+          localImgsLoaded: localImgs.map((i) => i.complete && i.naturalWidth > 0),
           remoteFetch,
         };
         // Multi-line math guard (regression: DISPLAY_MATH_RE lost its global
@@ -1238,7 +1293,8 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
         }
         box.remove();
 
-        // 2) PNG export (remote images go through fetch_image_bytes in Rust)
+        // 2) PNG export (remote images → fetch_image_bytes, local vault
+        //    images → read_local_image in Rust)
         const t1 = performance.now();
         const png = await exportPng(body);
         entry.png = {
@@ -1246,8 +1302,11 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
           ms: Math.round(performance.now() - t1),
           pixels: await analyzePngPixels(png.data),
         };
-        if (remoteRefs.length) {
-          entry.png.remoteImagePresence = await verifyRemoteImagesInPng(png.data, remoteRefs);
+        if (remoteRefs.length || localRefs.length) {
+          entry.png.imagePresence = await verifyRemoteImagesInPng(
+            png.data,
+            [...remoteRefs, ...localRefs]
+          );
         }
         await api.writeBytes(`${SELFTEST_OUT_DIR}/${meta.path}.png`, png.data);
 
@@ -1271,12 +1330,13 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
         report.probe = await probeExportPipeline(probeUrl);
       }
       // The point of this selftest is that exports contain their remote
-      // images — a missing one is a failure, not just a data point.
+      // AND local (vault) images — a missing one is a failure, not just a
+      // data point.
       for (const e of report.entries) {
-        for (const p of e.png.remoteImagePresence || []) {
+        for (const p of e.png.imagePresence || []) {
           if (!p.present) {
             report.errors.push(
-              `${e.path}: remote image not found in exported PNG (ncc=${p.ncc}): ${p.url}`
+              `${e.path}: image not found in exported PNG (ncc=${p.ncc}): ${p.url}`
             );
           }
         }
@@ -1284,6 +1344,12 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest'))
       report.ok = report.errors.length === 0;
     } catch (e) {
       report.errors.push(String(e && e.stack || e));
+    } finally {
+      // Restore the user's notes root (and image context) if they had one.
+      if (state.dir) {
+        await api.setNotesRoot(state.dir).catch(() => {});
+      }
+      setImageContext(state.dir, state.current);
     }
     report.finishedAt = new Date().toISOString();
     try {

@@ -1,6 +1,8 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import mermaid from 'mermaid';
+import { api } from './api.js';
+import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -321,6 +323,97 @@ function restoreMath(container, store) {
   return spans;
 }
 
+// ---------------- Local image resolution ----------------
+//
+// The webview page origin (tauri://localhost in release, the Vite dev
+// server in dev) cannot read the filesystem: a relative <img> src like
+// `chart.png` resolves against the APP URL and 404s, and file:///… is
+// blocked for an http origin. Notes reference vault files by path, so
+// local sources are rewritten to the `rmd` custom URI scheme, which
+// Rust serves strictly from the CURRENTLY OPEN notes root (see
+// `serve_rmd` / `set_notes_root` in main.rs).
+//
+// On Windows Tauri/wry serve custom schemes under the WebView2
+// workaround origin `http://<scheme>.localhost` (same form as the asset
+// protocol); elsewhere it is `<scheme>://localhost`. Rust always
+// receives the reverted `rmd://localhost/…` URI.
+//
+// The context is set by main.js per open note (root = the vault dir the
+// user opened, notePath = the note's root-relative path). In browser
+// mock mode it stays null: local files are unreachable there, so srcs
+// are left untouched (broken as before, no regression).
+
+const RMD_ORIGIN = /windows/i.test(navigator.userAgent)
+  ? 'http://rmd.localhost/'
+  : 'rmd://localhost/';
+
+export const isRmdUrl = (src) => (src || '').startsWith(RMD_ORIGIN);
+export const rmdUrlPath = (src) => decodeURIComponent(src.slice(RMD_ORIGIN.length));
+
+let imageCtx = null; // { root, notePath }
+
+export function setImageContext(root, notePath) {
+  imageCtx = root
+    ? { root: String(root).replace(/\\/g, '/'), notePath: notePath || '' }
+    : null;
+}
+
+/// Absolute vault path for a local image src, or null when the src is not
+/// a vault file we can map (remote/data URLs, fragments, no context).
+function localImageAbsPath(src) {
+  if (!imageCtx || !src) return null;
+  if (isRmdUrl(src)) return null; // already resolved
+  if (/^(https?:|data:|blob:)/i.test(src)) return null;
+  if (/^file:\/\//i.test(src)) {
+    try {
+      return decodeURIComponent(src.slice('file://'.length)).replace(/\\/g, '/');
+    } catch {
+      return null;
+    }
+  }
+  if (/[?#]/.test(src)) return null; // fragment/query — leave untouched
+  if (/^[a-zA-Z]:[\\/]/.test(src)) return src.replace(/\\/g, '/'); // drive path
+  if (src.startsWith('/')) return imageCtx.root + src; // vault-root-relative
+  const dir = imageCtx.notePath.includes('/')
+    ? imageCtx.notePath.slice(0, imageCtx.notePath.lastIndexOf('/'))
+    : '';
+  return imageCtx.root + (dir ? `/${dir}` : '') + `/${src}`;
+}
+
+function rewriteLocalImages(container) {
+  if (!imageCtx) return;
+  for (const img of container.querySelectorAll('img')) {
+    const abs = localImageAbsPath(img.getAttribute('src') || '');
+    if (abs) {
+      // srcset (raw HTML) takes precedence over src — drop it so the
+      // rewritten src is the one that loads.
+      img.removeAttribute('srcset');
+      img.src = RMD_ORIGIN + encodeURIComponent(abs);
+    }
+  }
+}
+
+/// Swap rmd:-served local images for inline data: URLs so an exported
+/// HTML file is self-contained — the rmd scheme only exists in-app
+/// (remote images stay remote, as before).
+async function inlineLocalImagesForHtml(stage) {
+  const locals = [...stage.querySelectorAll('img')].filter((img) =>
+    isRmdUrl(img.getAttribute('src') || '')
+  );
+  await Promise.all(
+    locals.map(async (img) => {
+      const src = img.getAttribute('src');
+      try {
+        const bytes = await api.readLocalImage(rmdUrlPath(src));
+        img.removeAttribute('srcset');
+        img.src = bytesToDataUrl(bytes, guessImageMime(bytes));
+      } catch (err) {
+        console.warn('本地图片内联失败，导出 HTML 中该位置将为空白：', src, err);
+      }
+    })
+  );
+}
+
 // ---------------- Rendering ----------------
 
 let mmdCounter = 0;
@@ -341,6 +434,7 @@ async function renderMarkdownInto(container, markdownSource) {
   const mathStore = [];
   const guarded = protectMath(markdownSource, mathStore);
   container.innerHTML = marked.parse(preprocessDetails(guarded));
+  rewriteLocalImages(container); // local img srcs → rmd protocol
   const mathSpans = restoreMath(container, mathStore);
   for (const el of container.querySelectorAll('pre code')) {
     if (el.classList.contains('language-mermaid')) continue;
@@ -396,6 +490,9 @@ export async function buildExportHtml(title, markdownSource, theme) {
   let body;
   try {
     await renderMarkdownInto(stage, markdownSource);
+    // The exported HTML is a standalone file: the rmd scheme only exists
+    // in-app, so vault images must be inlined as data: URLs here.
+    await inlineLocalImagesForHtml(stage);
     body = stage.innerHTML;
   } finally {
     stage.remove();

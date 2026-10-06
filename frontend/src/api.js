@@ -59,11 +59,19 @@ export const api = {
   /// Normalize at the boundary so every consumer sees a real typed array.
   /// (The browser mock already returns a Uint8Array; the instanceof check
   /// makes the conversion a no-op there.)
-  fetchImageBytes: async (url) => {
-    const data = await invoke('fetch_image_bytes', { url });
-    return data instanceof Uint8Array ? data : Uint8Array.from(data);
-  },
+  fetchImageBytes: async (url) => toUint8(await invoke('fetch_image_bytes', { url })),
+  /// Told the backend which notes root the frontend just opened, so the
+  /// `rmd` image protocol (and `readLocalImage`) know which vault to
+  /// serve. Called on dir open and on startup auto-open.
+  setNotesRoot: (dir) => invoke('set_notes_root', { dir }),
+  /// Read an image file from the OPEN NOTES VAULT (root-scoped, same
+  /// guard as the `rmd` protocol). `path` is an absolute path.
+  readLocalImage: async (path) => toUint8(await invoke('read_local_image', { path })),
 };
+
+function toUint8(data) {
+  return data instanceof Uint8Array ? data : Uint8Array.from(data);
+}
 
 // ---------------- Browser mock ----------------
 
@@ -242,6 +250,10 @@ function mockInvoke(cmd, args) {
               .then((buf) => resolve(new Uint8Array(buf)))
               .catch((e) => Promise.reject(e.message || String(e)));
             return;
+          case 'set_notes_root':
+            return resolve(null);
+          case 'read_local_image':
+            throw new Error('read_local_image 在浏览器模拟模式下不可用');
           default:
             throw new Error(`unknown command ${cmd}`);
         }

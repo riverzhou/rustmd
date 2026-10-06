@@ -125,7 +125,15 @@ erDiagram
 
 ---
 
-## 4. HTML 混合内容
+## 4. 本地图片（rmd 协议回归）
+图片以相对路径引用本仓库 `assets/` 下的文件（self-test 会校验：预览中
+真实解码，且该图确实出现在导出的 PNG 中）：
+
+![本地图片：个人知识管理适配评分](assets/fig1-adaptation-score.png)
+
+---
+
+## 5. HTML 混合内容
 <div style="border:1px solid #ccc; padding:10px; margin:10px 0;">
     <p style="color:red;">这是HTML嵌入的红色段落</p>
     <table border="1">
@@ -144,16 +152,16 @@ erDiagram
 
 ---
 
-## 5. 特殊符号与Emoji
+## 6. 特殊符号与Emoji
 © ® ™ € £ ¥ ± × ÷ ≠ ≤ ≥ ∞ ∂ √ ∑ ∏ ∫ ∆ ∇
 
 😀 🎉 🚀 ❤️ ✅ ⚠️ 🔥 💡 📝
 
 ---
 
-## 6. 综合复杂示例
+## 7. 综合复杂示例
 
-### 6.1 嵌套结构
+### 7.1 嵌套结构
 
 > **注意：** 引用内部可以包含多种元素：
 >
@@ -169,7 +177,7 @@ erDiagram
 > |-----|-----|
 > | 数据 | 数据 |
 
-### 6.2 带公式的流程图（已修正为标准Mermaid语法）
+### 7.2 带公式的流程图（已修正为标准Mermaid语法）
 
 ```mermaid
 graph LR

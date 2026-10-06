@@ -16,8 +16,9 @@ single file, frontend is frameworkless vanilla JS bundled by Vite 6.
 
 E2E self-test (dev builds only, `import.meta.env.DEV`): the dev window renders
 every note in `examples\` through the real pipeline, exports PNG + PDF for each,
-and verifies residual raw math, remote images in the exported PNG (2D NCC), and
-multi-line math geometry. Artifacts + `report.json` land in
+and verifies residual raw math, remote AND local (vault) images in the exported
+PNG (2D NCC — the local-image regression guard is
+`examples\markdown_render_test.md` §4), and multi-line math geometry. Artifacts + `report.json` land in
 `%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`; `report.ok === false` means
 failures. `examples\` doubles as the regression vault (the math-formula guide
 guards the `$$` display-math protection — see `DISPLAY_MATH_RE` in
@@ -30,7 +31,13 @@ guards the `$$` display-math protection — see `DISPLAY_MATH_RE` in
 ## Architecture
 
 - `src/main.rs` — everything Rust: `#[tauri::command]` handlers, front matter
-  parsing, note scanning, path-escape guard, and the unit tests. No other Rust modules.
+  parsing, note scanning, path-escape guard, the `rmd` image protocol (serves
+  vault images to the webview, containment-checked against the open notes root
+  set via `set_notes_root`), and the unit tests. No other Rust modules.
+  Local image `src`s are rewritten to `rmd` URLs by `frontend/src/preview.js`
+  (`http://rmd.localhost/…` on Windows — the WebView2 custom-scheme workaround
+  form —, `rmd://localhost/…` elsewhere); PNG/PDF/HTML export inlines them as
+  data: URLs via `read_local_image`.
 - `frontend/src/api.js` — the **only** Tauri bridge. It detects Tauri via
   `__TAURI_INTERNALS__` and falls back to an in-memory mock for browser dev.
 - `frontend/src/main.js` — all UI state and DOM wiring (no framework, no state lib).
