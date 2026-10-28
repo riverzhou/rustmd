@@ -178,6 +178,14 @@ function mockInvoke(cmd, args) {
             return resolve({ tags: [...n.tags], body: n.body, mtime: n.mtime });
           }
           case 'save_note': {
+            // Mirror resolve_in_root's rejection (main.rs): empty / absolute /
+            // parent-dir paths are refused, so browser dev sees the same
+            // validation errors as the Tauri backend.
+            if (!args.path || args.path.trim() === '') throw new Error('empty path');
+            if (args.path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(args.path))
+              throw new Error('absolute path not allowed');
+            if (args.path.split('/').includes('..'))
+              throw new Error('path escapes notes root');
             mockNotes.set(args.path, {
               tags: [...args.args.tags],
               body: args.args.body,
@@ -205,9 +213,14 @@ function mockInvoke(cmd, args) {
             const name = args.name.toLowerCase().endsWith('.md')
               ? args.name
               : `${args.name}.md`;
+            const target = dir + name;
+            // Mirror the backend: fs::rename to an existing file fails
+            // (Windows), so a name collision must error, not overwrite.
+            if (target !== args.path && mockNotes.has(target))
+              throw new Error('file already exists (os error 18)');
             mockNotes.delete(args.path);
-            mockNotes.set(dir + name, n);
-            return resolve(dir + name);
+            mockNotes.set(target, n);
+            return resolve(target);
           }
           case 'delete_note': {
             if (!mockNotes.delete(args.path)) throw new Error('note not found');
@@ -218,9 +231,19 @@ function mockInvoke(cmd, args) {
             if (!n) throw new Error('note not found');
             const name = args.path.split('/').pop();
             const dest = args.destFolder ? args.destFolder + '/' : '';
+            let target = dest + name;
+            // Mirror the backend: same-folder move is a no-op; a collision
+            // gets an auto " (n)" suffix instead of an error.
+            if (target === args.path) return resolve(args.path);
+            if (mockNotes.has(target)) {
+              const stem = name.replace(/\.md$/i, '');
+              let i = 1;
+              while (mockNotes.has(`${dest}${stem} (${i}).md`)) i += 1;
+              target = `${dest}${stem} (${i}).md`;
+            }
             mockNotes.delete(args.path);
-            mockNotes.set(dest + name, n);
-            return resolve(dest + name);
+            mockNotes.set(target, n);
+            return resolve(target);
           }
           case 'search_notes': {
             const q = args.query.toLowerCase();
@@ -229,7 +252,9 @@ function mockInvoke(cmd, args) {
             for (const [path, n] of mockNotes) {
               const idx = n.body.toLowerCase().indexOf(q);
               if (idx === -1) continue;
-              const window = n.body.slice(Math.max(0, idx - 40), idx + 100).replace(/\n/g, ' ');
+              // Window matches the backend (main.rs search_notes): 40 chars
+              // before the match, query length + 60 after.
+              const window = n.body.slice(Math.max(0, idx - 40), idx + q.length + 60).replace(/\n/g, ' ');
               hits.push({ meta: mockMeta(path), snippet: (idx > 0 ? '…' : '') + window.trim() });
             }
             return resolve(hits);

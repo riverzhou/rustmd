@@ -99,7 +99,9 @@ async function renderToCanvas(markdownSource) {
   const { stage, ready } = buildStage(markdownSource);
   try {
     await ready;
-    // Drop the max-width so the article fills the stage at STAGE_WIDTH - 2*44.
+    // Pin the article width explicitly (defensive): the stage lives outside
+    // .content, so don't rely on the cascade — CONTENT_WIDTH matches
+    // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding.
     stage.firstElementChild.style.maxWidth = `${CONTENT_WIDTH}px`;
     // Remote images are swapped for inline data: URLs (nothing to revoke).
     await inlineRemoteImages(stage);

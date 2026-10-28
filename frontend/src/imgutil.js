@@ -1,8 +1,9 @@
 // Shared image helpers: raw bytes → data: URL and magic-byte MIME
-// detection. Moved out of export.js (and de-duplicated against the
-// selftest's private copy) so preview.js can inline vault images in HTML
-// export without importing export.js — which would create a cycle
-// (export.js already imports preview.js).
+// detection. Lives here (not in export.js) so preview.js can inline vault
+// images in HTML export without importing export.js — which would create a
+// cycle (export.js already imports preview.js). Used by export.js,
+// preview.js and selftest.js (the self-test's previous private copy was
+// removed in favor of guessImageMime).
 
 /// Base64 data: URL from raw bytes (chunked: String.fromCharCode.apply
 /// on 25 MB of bytes would overflow the call stack).

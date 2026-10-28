@@ -22,6 +22,25 @@
 - Rust 单测：`resolve_vault_file` 路径逃逸/相对路径/缺失文件拒绝、
   `mime_for_path`、`VaultFileCache` 的 mtime 失效重读。
 
+### 变更（Changed）
+
+- 自测代码从 `main.js` 拆出为独立模块 `frontend/src/selftest.js`
+  （由 main.js 在 dev 构建下动态导入，行为与原先完全一致；release 构建
+  依旧不含自测代码）。入口 `main.js` 由 1362 行减至约 860 行，只保留 UI
+  状态与接线。
+- 浏览器模拟模式（`npm run dev` 的 mock）与真实后端行为对齐：`save_note`
+  拒绝空/绝对/父目录逃逸路径（与 `resolve_in_root` 一致）；`rename_note`
+  重名时改为报错（此前静默覆盖另一篇笔记）；`move_note` 支持同文件夹
+  no-op 与冲突时自动 ` (n)` 后缀；搜索 snippet 窗口与后端一致（命中前
+  40 字符、命中后 +60 字符）。
+- 移除自测内私有的 `guessMime` 重复实现，统一使用 `imgutil.js` 的
+  `guessImageMime`；修正三处误导注释（`export.js` 的 maxWidth 说明、
+  `imgutil.js` 的去重说明、`scripts/launch-dev.mjs` 的自测文件位置）。
+- 文档：README「已知限制」补充 raw HTML 不消毒（打开不可信目录需谨慎）、
+  front matter 仅保留 `tags`、搜索不含文件名兜底标题与标签；AGENTS.md
+  记录 selftest.js 位置、自测命令的 bash 语法及已知安全缺口
+  （详见 AUDIT_REPORT.md）。
+
 ### 移除（Removed）
 
 - 开发期遗留的 Rust 端诊断日志：`list_notes` / `read_note` / `save_note`

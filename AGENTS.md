@@ -22,7 +22,11 @@ PNG (2D NCC — the local-image regression guard is
 `%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`; `report.ok === false` means
 failures. `examples\` doubles as the regression vault (the math-formula guide
 guards the `$$` display-math protection — see `DISPLAY_MATH_RE` in
-`frontend/src/preview.js`).
+`frontend/src/preview.js`). The self-test code lives in `frontend/src/selftest.js`
+(dynamic import from `main.js`; release builds never bundle it).
+The `RUSTMD_SELFTEST=1 scripts\run-dev.bat` syntax is bash — it works in this
+git-bash shell; in cmd/PowerShell use
+`set RUSTMD_SELFTEST=1 && scripts\run-dev.bat` / `$env:RUSTMD_SELFTEST=1`.
 
 - `cargo`/`rustup` are **not on this shell's PATH** — always use the `scripts\run-*.bat`
   wrappers or the absolute path `C:\Users\River\.cargo\bin\cargo.exe`.
@@ -43,6 +47,9 @@ guards the `$$` display-math protection — see `DISPLAY_MATH_RE` in
 - `frontend/src/main.js` — all UI state and DOM wiring (no framework, no state lib).
   `editor.js` (CodeMirror 6), `preview.js` (marked + highlight.js), `style.css`
   (theme variables via `body[data-theme]`).
+- `frontend/src/selftest.js` — the dev-only E2E self-test, dynamically imported
+  from `main.js` under `import.meta.env.DEV` (never bundled into release builds).
+  Keep it out of `main.js`: the entry module must stay UI-only.
 - Notes root = plain folder of `.md` files; tags live in front matter
   (`tags: a, b`), re-rendered on every save. Note paths are root-relative with
   forward slashes.
@@ -82,5 +89,10 @@ If a new Tauri *plugin* or capability is used, permissions must be added to
   changes if testing the built binary.
 - `resolve_in_root` in `main.rs` rejects any path escaping the notes root; it has
   tests. Don't relax it.
+- **Known security gap (tracked in `AUDIT_REPORT.md`)**: note HTML is rendered
+  by `marked` **without sanitization** into the privileged webview (`csp: null`),
+  and `write_text`/`write_bytes`/`fetch_image_bytes` are unscoped commands —
+  a malicious `.md` in the vault can execute arbitrary JS with full IPC.
+  Until a sanitizer is added, treat untrusted folders as unsafe.
 - Shell here is git-bash on Windows: quote paths with spaces; `ls`/`grep` work,
   but PowerShell-style syntax does not.

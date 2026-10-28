@@ -66,6 +66,7 @@ dev 窗口会渲染 `examples\` 下全部示例笔记，逐一导出 PNG/PDF 并
 残留未渲染公式、外链图片是否真的出现在导出的 PNG 中（2D NCC 匹配）、
 多行公式（矩阵 / align / cases）是否被压成单行。产物与 `report.json` 写入
 `%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`，`report.ok = false` 即表示有失败项。
+自测代码位于 `frontend/src/selftest.js`（dev 构建下由 main.js 动态注入，release 构建不包含该模块）。
 
 ## 目录结构
 
@@ -78,7 +79,8 @@ dev 窗口会渲染 `examples\` 下全部示例笔记，逐一导出 PNG/PDF 并
 ├── frontend/                 # Web 前端（Vite，无框架）
 │   ├── index.html
 │   ├── public/               # 图标、highlight.js 主题
-│   └── src/                  # main.js / api.js / editor.js / preview.js / style.css
+│   └── src/                  # main.js / api.js / editor.js / preview.js /
+                              #   export.js / imgutil.js / selftest.js / style.css
 ├── package.json              # 前端依赖 + tauri CLI
 └── scripts/                  # 图标生成、构建/运行脚本
 ```
@@ -86,6 +88,8 @@ dev 窗口会渲染 `examples\` 下全部示例笔记，逐一导出 PNG/PDF 并
 ## 已知限制（v1.0）
 
 - 删除笔记直接删文件，无回收站
-- 搜索为子串匹配，未做分词
+- 搜索为子串匹配，未做分词；仅覆盖正文——文件名兜底的标题与标签不在搜索范围
+- front matter 只保留 `tags`：`title:`、`date:` 等其它字段会在保存时丢弃
+- 笔记中的原始 HTML（`<script>`、`onerror=` 等事件属性）**不消毒**，在预览/导出中直接执行；打开包含不可信来源文件的目录时请谨慎（消毒方案见 [AUDIT_REPORT.md](AUDIT_REPORT.md)）
 - 无快捷键（Tab 续行等编辑器内快捷键除外）
 - 移动笔记通过菜单选择目标文件夹，不支持拖拽
