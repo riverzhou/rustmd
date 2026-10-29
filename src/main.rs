@@ -1038,8 +1038,13 @@ mod tests {
         let dir = std::env::temp_dir().join("rustmd_test_root_xyz");
         fs::create_dir_all(&dir).unwrap();
         assert!(resolve_in_root(&dir, "../outside.md").is_err());
-        assert!(resolve_in_root(&dir, "..\\..\\win.md").is_err());
-        assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
+        // On Unix a backslash is an ordinary filename character, not a path
+        // separator, so these are not escapes there.
+        #[cfg(windows)]
+        {
+            assert!(resolve_in_root(&dir, "..\\..\\win.md").is_err());
+            assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
+        }
         let ok = resolve_in_root(&dir, "sub/note.md").unwrap();
         assert!(ok.starts_with(&dir));
         // Existing paths come back canonicalized (junctions resolved), so
@@ -1054,7 +1059,9 @@ mod tests {
 
     #[test]
     fn resolve_vault_file_serves_files_in_root() {
-        let dir = std::env::temp_dir().join("rustmd_test_vault_xyz");
+        // Distinct temp dir from the rejects_* test below: tests run in
+        // parallel and that test removes its directory.
+        let dir = std::env::temp_dir().join("rustmd_test_vault_serve_xyz");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("img.png"), b"png").unwrap();

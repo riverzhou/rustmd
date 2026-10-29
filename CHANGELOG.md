@@ -56,6 +56,13 @@
   的 `eprintln!` 调用日志，以及 panic hook、窗口关闭/销毁、应用退出的
   stderr 打印（release 构建中为 no-op，行为无任何变化）。
 
+### 修复（Fixed）
+
+- Linux 上 `cargo test` 的两个路径测试失败：`resolve_in_root_rejects_escape`
+  中针对 `..\..\` 和 `C:\` 的断言是 Windows 语义，现用 `#[cfg(windows)]`
+  限定；`resolve_vault_file_serves_files_in_root` 与另一个并行测试共用
+  `rustmd_test_vault_xyz` 临时目录、可能被对方删除，改用独立目录。
+
 ## [1.0.0] - 2026-10-02
 
 首个正式发布版本。
