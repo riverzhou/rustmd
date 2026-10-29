@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Rust + [Tauri 2](https://tauri.app) local Markdown notes app (Windows). Backend is a
-single file, frontend is frameworkless vanilla JS bundled by Vite 6.
+Rust + [Tauri 2](https://tauri.app) local Markdown notes app (Windows and Linux).
+Backend is a single file, frontend is frameworkless vanilla JS bundled by Vite 6.
 
 ## Commands
 
@@ -10,6 +10,9 @@ single file, frontend is frameworkless vanilla JS bundled by Vite 6.
 | Dev (frontend hot reload) | `scripts\run-dev.bat` (= `npx tauri dev --no-watch`) |
 | Release exe (no installer) | `scripts\run-build.bat` (= `npx tauri build --no-bundle`) |
 | Rust unit tests | `C:\Users\River\.cargo\bin\cargo.exe test` |
+| Linux release binary (no installer) | `npx tauri build --no-bundle` → `target/release/rustmd` |
+| Linux dev | `npx tauri dev --no-watch` (`npm run dev` for browser mock only) |
+| Linux Rust unit tests | `source "$HOME/.cargo/env" && cargo test` |
 | Frontend only (browser + mock data) | `npm run dev` → http://localhost:5173 |
 | E2E self-test (render + export `examples\`) | `RUSTMD_SELFTEST=1 scripts\run-dev.bat` |
 | Regenerate app icons | `npm run icons` (uses `scripts/gen-icons.mjs`) |
@@ -32,6 +35,12 @@ git-bash shell; in cmd/PowerShell use
   wrappers or the absolute path `C:\Users\River\.cargo\bin\cargo.exe`.
 - Test note vault for manual runs: `C:\Users\River\AppData\Local\Temp\rustmd-test-notes`.
 
+On Linux the release build is a ~11 MB binary linked against system GTK 3 +
+WebKitGTK 4.1 (Tauri 2 has no GTK 4 backend); `/release/` is gitignored.
+`cargo` may not be on PATH — run `source "$HOME/.cargo/env"` or use
+`$HOME/.cargo/bin/cargo`. Full dependency, no-root sysroot and packaging notes:
+[LINUX_BUILD.md](LINUX_BUILD.md).
+
 ## Architecture
 
 - `src/main.rs` — everything Rust: `#[tauri::command]` handlers, front matter
@@ -47,6 +56,10 @@ git-bash shell; in cmd/PowerShell use
 - `frontend/src/main.js` — all UI state and DOM wiring (no framework, no state lib).
   `editor.js` (CodeMirror 6), `preview.js` (marked + highlight.js), `style.css`
   (theme variables via `body[data-theme]`).
+- `frontend/shims/katex.js` — 204 B stub aliased as `katex` in
+  `frontend/vite.config.js`. Mermaid 12 has an optional `await import("katex")`
+  for diagram math; note math itself is MathJax. Don't remove the alias without
+  handling that import, or `npm run dev` / `vite build` fail.
 - `frontend/src/selftest.js` — the dev-only E2E self-test, dynamically imported
   from `main.js` under `import.meta.env.DEV` (never bundled into release builds).
   Keep it out of `main.js`: the entry module must stay UI-only.
@@ -83,10 +96,16 @@ If a new Tauri *plugin* or capability is used, permissions must be added to
   restarted the app — users experienced it as a crash. Consequence: Rust
   code or `tauri.conf.json` edits are NOT picked up automatically — restart
   `scripts\run-dev.bat` after editing Rust. Frontend (vite) HMR is unaffected.
-- `gen/schemas` is Tauri codegen output — never edit by hand.
-- `frontend/dist` and `target/` are build artifacts (gitignored); the release
-  exe embeds `frontend/dist` at build time, so rebuild the exe after frontend
-  changes if testing the built binary.
+- `gen/schemas` is Tauri codegen output — never edit by hand. Linux builds generate
+  `gen/schemas/linux-schema.json`, which is gitignored; the desktop/windows
+  schemas are tracked.
+- `frontend/dist`, `target/` and `release/` are build artifacts (gitignored); the
+  release exe embeds `frontend/dist` at build time, so rebuild the exe after
+  frontend changes if testing the built binary.
+- **Linux runtime deps**: the release binary links `libgtk-3.so.0`,
+  `libwebkit2gtk-4.1.so.0`, `libsoup-3.0.so.0`. Tauri 2 has no GTK 4 backend;
+  `webkit2gtk-4.1` is WebKit API 4.1 built on GTK 3. See `LINUX_BUILD.md`
+  for the apt package list and the no-root sysroot fallback.
 - `resolve_in_root` in `main.rs` rejects any path escaping the notes root; it has
   tests. Don't relax it.
 - **Known security gap (tracked in `AUDIT_REPORT.md`)**: note HTML is rendered
@@ -94,5 +113,6 @@ If a new Tauri *plugin* or capability is used, permissions must be added to
   and `write_text`/`write_bytes`/`fetch_image_bytes` are unscoped commands —
   a malicious `.md` in the vault can execute arbitrary JS with full IPC.
   Until a sanitizer is added, treat untrusted folders as unsafe.
-- Shell here is git-bash on Windows: quote paths with spaces; `ls`/`grep` work,
-  but PowerShell-style syntax does not.
+- Shell may be git-bash on Windows or bash on Linux: quote paths with spaces;
+  `ls`/`grep` work, but PowerShell-style syntax does not. On Linux, run
+  `source "$HOME/.cargo/env"` before invoking `cargo`/`rustup`.

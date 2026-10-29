@@ -36,6 +36,18 @@ scripts\run-build.bat
 > `C:\Users\River\.cargo\bin`。如果你的 PATH 正常，直接 `npx tauri dev` /
 > `npx tauri build --no-bundle` 即可。
 
+Linux（x86_64，便携二进制）：
+
+```bash
+npm ci
+npx tauri build --no-bundle
+./target/release/rustmd
+```
+
+产物 `target/release/rustmd` 约 11 MB，动态链接系统 GTK 3 + WebKitGTK 4.1
+（Tauri 2 不支持 GTK 4）。完整的依赖安装、无 root 构建、绿色版打包与排错见
+[LINUX_BUILD.md](LINUX_BUILD.md)。
+
 首次启动选择笔记目录（或手动输入路径）。浏览器模式下（`npm run dev` 直接访问
 http://localhost:5173 ）使用内置内存 mock 数据，方便纯前端调试。
 
@@ -52,6 +64,8 @@ http://localhost:5173 ）使用内置内存 mock 数据，方便纯前端调试�
 ```bat
 C:\Users\River\.cargo\bin\cargo.exe test
 ```
+
+Linux 下直接用 `cargo test`（先 `source "$HOME/.cargo/env"`）。
 
 覆盖 front matter 解析、标题提取、片段生成、文件名清理、路径逃逸防护、
 `fetch_image_bytes` 网络拉取（离线时自动跳过）。

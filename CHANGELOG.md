@@ -21,6 +21,10 @@
   PNG 中（同一套 2D NCC 校验）。
 - Rust 单测：`resolve_vault_file` 路径逃逸/相对路径/缺失文件拒绝、
   `mime_for_path`、`VaultFileCache` 的 mtime 失效重读。
+- **Linux 构建**：新增 [LINUX_BUILD.md](LINUX_BUILD.md)，覆盖 Ubuntu 依赖安装、
+  Rust/Node 环境、`npx tauri build --no-bundle`、绿色版打包，以及无 root 时用
+  本地 sysroot 构建的兜底方案。产物 `target/release/rustmd` 约 11 MB，动态链接
+  系统 GTK 3 + WebKitGTK 4.1（Tauri 2 没有 GTK 4 后端）。
 
 ### 变更（Changed）
 
@@ -40,6 +44,11 @@
   front matter 仅保留 `tags`、搜索不含文件名兜底标题与标签；AGENTS.md
   记录 selftest.js 位置、自测命令的 bash 语法及已知安全缺口
   （详见 AUDIT_REPORT.md）。
+- mermaid 12 的可选 KaTeX 动态 import 改为 Vite alias，指向 204 B 的
+  `frontend/shims/katex.js`；笔记公式继续由 MathJax 渲染，KaTeX 不再作为
+  直接依赖打包。普通 mermaid 图不受影响，图表内部的 KaTeX 数学不支持。
+- `.gitignore` 忽略本地绿色版输出 `/release/` 和 Linux 构建生成的
+  `gen/schemas/linux-schema.json`。
 
 ### 移除（Removed）
 

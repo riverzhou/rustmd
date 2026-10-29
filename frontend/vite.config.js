@@ -16,6 +16,14 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'es2022',
   },
+  resolve: {
+    alias: {
+      // Mermaid 12 lazily imports KaTeX for math inside diagrams. Note math
+      // uses MathJax, so point KaTeX at a tiny stub instead of bundling the
+      // unused ~260 KB package.
+      katex: fileURLToPath(new URL('./shims/katex.js', import.meta.url)),
+    },
+  },
   optimizeDeps: {
     // MathJax is a browser IIFE bundle loaded lazily via dynamic import only
     // when a note contains math. Without an explicit entry the dev server
