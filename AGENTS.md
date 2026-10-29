@@ -13,6 +13,7 @@ Backend is a single file, frontend is frameworkless vanilla JS bundled by Vite 6
 | Linux release binary (no installer) | `npx tauri build --no-bundle` → `target/release/rustmd` |
 | Linux dev | `npx tauri dev --no-watch` (`npm run dev` for browser mock only) |
 | Linux Rust unit tests | `source "$HOME/.cargo/env" && cargo test` |
+| Linux headless smoke | `scripts/linux-headless-smoke.sh` (isolated Xvfb; artifacts in `target/headless-smoke`) |
 | Frontend only (browser + mock data) | `npm run dev` → http://localhost:5173 |
 | E2E self-test (render + export `examples\`) | `RUSTMD_SELFTEST=1 scripts\run-dev.bat` |
 | Regenerate app icons | `npm run icons` (uses `scripts/gen-icons.mjs`) |

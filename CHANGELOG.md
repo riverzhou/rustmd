@@ -25,6 +25,9 @@
   Rust/Node 环境、`npx tauri build --no-bundle`、绿色版打包，以及无 root 时用
   本地 sysroot 构建的兜底方案。产物 `target/release/rustmd` 约 11 MB，动态链接
   系统 GTK 3 + WebKitGTK 4.1（Tauri 2 没有 GTK 4 后端）。
+- **无头冒烟测试**：新增 `scripts/linux-headless-smoke.sh`。本地解压 Xvfb/xwd
+  （无需 root），在隔离 display 上启动 release 二进制，截图并校验窗口尺寸、
+  颜色数和边缘密度；产物写入 `target/headless-smoke/`，不弹到当前桌面。
 
 ### 变更（Changed）
 

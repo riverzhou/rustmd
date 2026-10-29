@@ -48,6 +48,12 @@ npx tauri build --no-bundle
 （Tauri 2 不支持 GTK 4）。完整的依赖安装、无 root 构建、绿色版打包与排错见
 [LINUX_BUILD.md](LINUX_BUILD.md)。
 
+无头冒烟测试（Xvfb，不弹窗）：
+
+```bash
+scripts/linux-headless-smoke.sh
+```
+
 首次启动选择笔记目录（或手动输入路径）。浏览器模式下（`npm run dev` 直接访问
 http://localhost:5173 ）使用内置内存 mock 数据，方便纯前端调试。
 

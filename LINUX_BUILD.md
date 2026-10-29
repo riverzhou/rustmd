@@ -190,6 +190,29 @@ Tauri 2 / wry 的 GTK4 + WebKitGTK 6.0 迁移仍在进行中（wry issue #1474�
 | `.AppImage` 运行报 FUSE 错误 | 本项目不产 AppImage；如确实需要，装 `libfuse2`（24.04+ 为 `libfuse2t64`）或加 `--appimage-extract-and-run` |
 | 旧系统报 `GLIBC_2.39 not found` | 在旧系统上重新构建（glibc 向下不兼容） |
 
+## 10. 无头冒烟测试
+
+`scripts/linux-headless-smoke.sh` 在隔离的 Xvfb display 上启动 release 二进制，
+不会弹到当前桌面，也不会调用桌面图片查看器：
+
+```bash
+scripts/linux-headless-smoke.sh
+```
+
+脚本行为：
+
+- 系统没有 `Xvfb` / `xwd` 时，用 `apt-get download` + `dpkg-deb -x` 解压到
+  `~/.cache/rustmd-headless/`，不需要 root。
+- 自动挑选 `:99`–`:109` 中空闲的 display，启动 `Xvfb`；程序使用临时
+  `HOME` / XDG 目录，不污染真实配置。
+- 轮询窗口，等待首帧后用 `xwd` 截图，校验窗口尺寸、颜色数和边缘密度；
+  空白窗口会以非 0 状态退出。
+- 产物写入 `target/headless-smoke/`：`window.ppm`、`window.png`（有 Pillow
+  时）、`window.xwd`、`xvfb.log`、`app.log`。
+
+依赖：`python3`、`xwininfo`（`x11-utils`）、`dbus-run-session`（可选，有则
+使用隔离的 D-Bus session）。运行前需要先构建 `target/release/rustmd`。
+
 ## 附录 A：没有 sudo / 缺 dev 包时
 
 如果目标机器是公司/受控环境，拿不到 root，但运行库已经安装，可以把 `-dev`
