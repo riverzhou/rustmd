@@ -72,6 +72,18 @@ RUSTMD_SELFTEST_OUT=/path/to/rustmd-selftest npm run selftest:check
 - 如果应用没有退出但 report 已写入：CI 用 `timeout 600` 兜底，并以 report 校验为准。
 - release 构建不包含 `selftest.js`，`selftest_*` 命令返回错误。
 
+## Linux headless release smoke
+
+Linux 上构建 release 二进制后，可用：
+
+```bash
+scripts/linux-headless-smoke.sh
+```
+
+它在隔离的 Xvfb display 中启动 `target/release/rustmd`，用 `xwd` 截图并校验窗口
+尺寸、颜色数与边缘密度；不需要 root，不会弹到当前桌面。产物写入
+`target/headless-smoke/`。依赖与打包细节见 [../LINUX_BUILD.md](../LINUX_BUILD.md)。
+
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)：

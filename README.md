@@ -165,6 +165,8 @@ npm run dev          # http://127.0.0.1:5173，使用内存 mock 数据
 
 前置：Node.js ≥ 20.19、Rust stable（含 `rustfmt`、`clippy`）以及对应平台的 Tauri 系统依赖（Linux 见 [docs/TESTING.md](docs/TESTING.md)）。
 
+Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底见 [LINUX_BUILD.md](LINUX_BUILD.md)；构建后可运行 `scripts/linux-headless-smoke.sh` 在隔离 Xvfb 中冒烟测试 release 二进制。
+
 | 任务 | 命令 |
 | --- | --- |
 | 全部检查 | `npm run check` |

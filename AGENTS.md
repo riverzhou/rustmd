@@ -13,6 +13,9 @@ Vite. User-facing docs are Chinese; this file is the developer/agent contract.
 | Dev window shortcut (Windows) | `scripts\run-dev.bat` |
 | Browser dev (in-memory mock) | `npm run dev` → http://127.0.0.1:5173 |
 | Release exe, no installer | `npx tauri build --no-bundle` |
+| Linux release binary | `npx tauri build --no-bundle` → `target/release/rustmd` |
+| Linux Rust tests | `source "$HOME/.cargo/env" && cargo test` |
+| Linux headless release smoke | `scripts/linux-headless-smoke.sh` (isolated Xvfb) |
 | Windows release shortcut | `scripts\run-build.bat` |
 | Frontend pure unit tests | `npm run test:unit` |
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
@@ -30,6 +33,10 @@ Vite. User-facing docs are Chinese; this file is the developer/agent contract.
 - CI: `.github/workflows/ci.yml` (quality gate + three-platform compile +
   Linux Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
   zip, Linux deb/AppImage, macOS universal DMG). Details: `docs/RELEASING.md`.
+- Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4
+  backend); install/packaging/no-root sysroot notes live in `LINUX_BUILD.md`.
+  `scripts/linux-headless-smoke.sh` can smoke-test the release binary on an
+  isolated Xvfb display (artifacts in `target/headless-smoke/`).
 
 ## Architecture
 
@@ -63,6 +70,9 @@ Vite. User-facing docs are Chinese; this file is the developer/agent contract.
   multi-page jsPDF.
 - `frontend/src/editor.js` — CodeMirror 6 setup.
 - `frontend/src/imgutil.js` — bytes→data URL and magic-byte MIME sniffing.
+- `frontend/shims/katex.js` — tiny stub aliased as `katex` in
+  `frontend/vite.config.js`; mermaid 12 has an optional KaTeX import, while
+  note math uses MathJax. Keep the alias or Vite will bundle the unused package.
 - `frontend/src/selftest.js` — dev-only E2E; dynamically imported from
   `main.js` under `import.meta.env.DEV`, never bundled into release builds.
 - `frontend/src/style.css` — theme variables via `body[data-theme]`; sidebar,
@@ -163,7 +173,8 @@ If a new Tauri *plugin* is used:
   and mermaid are lazy chunks; CodeMirror language-data is large).
 - **`frontend/dist` and `target/` are build artifacts** (gitignored). The
   release exe embeds `frontend/dist`; rebuild after frontend changes.
-- **`gen/schemas` is Tauri codegen** — never edit by hand.
+- **`gen/schemas` is Tauri codegen** — never edit by hand. Linux builds also
+  generate `gen/schemas/linux-schema.json`, which is gitignored.
 - **The `rmd` protocol is Windows-specific in origin form**:
   `http://rmd.localhost/…` on Windows (WebView2 custom-scheme workaround),
   `rmd://localhost/…` elsewhere. `preview.js` picks the form from the UA.
@@ -176,6 +187,9 @@ If a new Tauri *plugin* is used:
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.
+- **Linux runtime deps**: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0`,
+  `libsoup-3.0.so.0`; the app is dynamically linked, so build on the oldest
+  distro you intend to support. See `LINUX_BUILD.md`.
 - Shell here is git-bash on Windows: quote paths with spaces; `ls`/`grep`
   work, PowerShell-style syntax does not.
 
@@ -188,3 +202,4 @@ If a new Tauri *plugin* is used:
 - `docs/SECURITY.md` — threat model and residual risks.
 - `CHANGELOG.md` — history; `AUDIT_REPORT.md` — current audit status.
 - `docs/GITHUB_PROJECT_COPY.md` — About description, topics and discoverability copy.
+- `LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.

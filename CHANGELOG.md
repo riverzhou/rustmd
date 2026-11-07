@@ -39,6 +39,10 @@
 - **开源协议**：项目改为 **GPL-3.0-or-later**，新增根目录 `LICENSE`；
   `package.json` / `Cargo.toml` / `tauri.conf.json` 同步声明，Windows 绿色包、
   Linux deb/AppImage 与 macOS DMG 随附许可证。
+- **Linux 构建与冒烟**：新增 [LINUX_BUILD.md](LINUX_BUILD.md)（Ubuntu 依赖、
+  release 二进制、绿色打包、无 root sysroot 兜底）与
+  `scripts/linux-headless-smoke.sh`（隔离 Xvfb 启动 release 二进制，校验窗口
+  尺寸/颜色/边缘密度，产物写入 `target/headless-smoke/`）。
 - **文档**：新增 `docs/ARCHITECTURE.md`、`docs/TESTING.md`、
   `docs/RELEASING.md`、`docs/SECURITY.md`、`docs/GITHUB_PROJECT_COPY.md`；
   重写 README / AGENTS / CHANGELOG / AUDIT_REPORT；新增英文 README.en.md；
@@ -86,7 +90,10 @@
   绝对路径、`<img>` 均可显示；`rmd` 自定义协议按当前笔记根做路径封闭，
   按 mtime 缓存；导出时内联为 data URL。
 - **浏览器 mock** 与后端对齐：save 冲突、rename/move 自动后缀、搜索
-  标题/标签、文件夹列表、图片 MIME。
+  标题/文件名/标签、文件夹列表、图片 MIME。
+- **Mermaid KaTeX 裁剪**：mermaid 12 的可选 `import("katex")` 通过 Vite alias
+  指向 204 B 的 `frontend/shims/katex.js`；笔记公式继续由 MathJax 渲染，
+  不再打包未使用的 KaTeX。
 
 ### 修复（Fixed）
 
@@ -103,6 +110,8 @@
 - 修复图片 `rmd` 响应被浏览器缓存导致编辑后不更新的问题（`no-store`）。
 - 修复导出的宽表格/长代码被 html2canvas 裁切（导出舞台改为换行/固定布局）。
 - 修复自测在离线/输出目录不存在时静默通过的问题。
+- 修复 Linux 下两个路径单测失败：Windows 语义断言用 `#[cfg(windows)]`
+  限定；serving 测试改用独立临时目录，避免并行测试互相删除。
 
 ### 移除（Removed）
 

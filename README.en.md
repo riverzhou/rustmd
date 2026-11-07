@@ -144,7 +144,7 @@ npm run dev          # http://127.0.0.1:5173, in-memory mock data
 
 ## Development
 
-Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)).
+Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)). Linux source builds, packaging and the no-root sysroot fallback are documented in [LINUX_BUILD.md](LINUX_BUILD.md); after building, `scripts/linux-headless-smoke.sh` smoke-tests the release binary on an isolated Xvfb display.
 
 | Task | Command |
 | --- | --- |
