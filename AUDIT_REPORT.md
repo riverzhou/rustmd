@@ -125,9 +125,9 @@
 | `npx tauri build --no-bundle` | 通过（Windows 实际编译） |
 | `npm run selftest` | 通过：5 篇示例，PNG/PDF、远程图片 1 张 + 本地图片 4 张均 present，`report.ok = true` |
 | `npm audit` | 0 critical / 0 high；4 个 moderate 均在开发工具链（ESLint/minimatch，见 §5） |
-| `git status` | 工作区包含本轮改动，未提交 |
+| GitHub Actions | quality / Windows / Ubuntu / macOS / Linux E2E 全绿；v1.1.0 Release 已发布三端资产 |
 
-> 另外用 release 二进制 + WebView2 远程调试做了运行时冒烟：CSP 阻止内联脚本、`<script>`/`onerror`/`javascript:` 被剥离、MathJax/高亮/本地 `rmd` 图片正常、外部修改返回 `conflict:`、保存后 `title:` 字段仍在。CI 三端编译需在 GitHub runner 上做最终确认。
+> 另外用 release 二进制 + WebView2 远程调试做了运行时冒烟：CSP 阻止内联脚本、`<script>`/`onerror`/`javascript:` 被剥离、MathJax/高亮/本地 `rmd` 图片正常、外部修改返回 `conflict:`、保存后 `title:` 字段仍在。GitHub Actions 三端编译与 Linux Xvfb E2E 已通过（2026-11-07，run 42336773391）。
 
 ---
 
