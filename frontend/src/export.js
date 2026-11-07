@@ -29,6 +29,21 @@ function buildStage(markdownSource) {
   return { stage, ready };
 }
 
+/// html2canvas on WebKitGTK tries to parse the computed style of native
+/// `<input type="checkbox">` nodes (task lists) and can throw on Linux-only
+/// computed values such as `color(srgb ...)`. Replace them with plain spans
+/// in the off-screen export stage; the preview keeps real checkboxes.
+function normalizeTaskCheckboxes(root) {
+  for (const input of root.querySelectorAll('input[type="checkbox"]')) {
+    const checked = input.checked || input.hasAttribute('checked');
+    const box = document.createElement('span');
+    box.className = `task-checkbox${checked ? ' checked' : ''}`;
+    box.textContent = checked ? '✓' : '';
+    box.setAttribute('aria-hidden', 'true');
+    input.replaceWith(box);
+  }
+}
+
 // ---------------- Non-same-origin images ----------------
 
 /// html2canvas cannot draw cross-origin images into its canvas (CORS taint),
@@ -121,6 +136,7 @@ async function renderToCanvas(markdownSource) {
   const { stage, ready } = buildStage(markdownSource);
   try {
     await ready;
+    normalizeTaskCheckboxes(stage);
     // Pin the article width explicitly (defensive): the stage lives outside
     // .content, so don't rely on the cascade — CONTENT_WIDTH matches
     // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding.

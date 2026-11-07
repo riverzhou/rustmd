@@ -112,6 +112,9 @@
 - 修复自测在离线/输出目录不存在时静默通过的问题。
 - 修复 Linux 下两个路径单测失败：Windows 语义断言用 `#[cfg(windows)]`
   限定；serving 测试改用独立临时目录，避免并行测试互相删除。
+- 修复 Linux（WebKitGTK）PNG/PDF 导出在任务列表笔记上崩溃：导出舞台把原生
+  `<input type="checkbox">` 换成等宽 span，避开 html2canvas 对原生控件计算
+  样式（如 `color(srgb …)`）的解析。
 
 ### 移除（Removed）
 

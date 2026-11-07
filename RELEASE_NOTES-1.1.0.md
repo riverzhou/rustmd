@@ -24,6 +24,12 @@
 完整检查（ESLint、14 个前端单测、40 个 Rust 测试、构建）与真实 WebView
 端到端自测均通过。
 
+## 修复
+
+- Linux（WebKitGTK）上含任务列表的笔记导出 PNG/PDF 时，html2canvas 解析原生
+  checkbox 的计算样式会抛错；导出舞台已改为普通 span，预览仍保留原生 checkbox。
+- Linux `cargo test` 的 Windows 路径断言已用 `#[cfg(windows)]` 限定。
+
 ## 许可证
 
 本项目以 **GPL-3.0-or-later** 开源，`LICENSE` 随仓库与发布包分发。
