@@ -1,7 +1,7 @@
 # rustmd 代码审计报告
 
 **审计日期**：2026-11-07
-**审计对象**：`rustmd` v1.1.0（Rust + Tauri 2 本地 Markdown 笔记应用）
+**审计对象**：`rustmd` v1.2.0（Rust + Tauri 2 本地 Markdown 笔记应用）
 **审计方式**：通读全部源码、脚本、配置与文档；运行 `npm run check`（ESLint、前端单测、仓库检查、版本检查、rustfmt、clippy `-D warnings`、cargo test、Vite build）；运行 `npx tauri build --no-bundle` 做真实 Tauri 编译；检查依赖审计；对路径、front matter、SSRF、数学公式、图片 MIME 等边界做针对性测试。
 
 ---
@@ -14,12 +14,12 @@
 | 中危缺陷 | **0 个未修复**（本轮修复 M-1 ~ M-10） |
 | 低危/取舍 | 少量已记录的接受项（见 §5） |
 | Rust 测试 | 41 个，40 通过 + 1 个网络测试默认 `#[ignore]` |
-| 前端单测 | 14 个，全部通过 |
+| 前端单测 | 17 个，全部通过 |
 | 静态检查 | ESLint 0 error；`cargo fmt --check` 通过；clippy `-D warnings` 通过 |
 | 三端编译 | CI 在 Windows / Ubuntu / macOS 分别执行 `tauri build --no-bundle` |
 | 许可证 | GPL-3.0-or-later（`LICENSE` + `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.1.0 修掉了 v1.0.0 审计中的全部高/中危问题，主路径（打开/编辑/保存/搜索/文件夹/导出/自测）行为正确且有回归保护。剩余风险集中在“免费分发的签名能力”（Windows 自签名、macOS ad-hoc）、sanitizer 库本身的新绕过研究、以及少数产品边界（无回收站、只编辑 tags、无 UI 自动化）。这些均已写入文档，不再属于“未知缺陷”。
+**结论**：v1.2.0 修掉了 v1.0.0 审计中的全部高/中危问题，主路径（打开/编辑/保存/搜索/文件夹/导出/自测）行为正确且有回归保护。剩余风险集中在“免费分发的签名能力”（Windows 自签名、macOS ad-hoc）、sanitizer 库本身的新绕过研究、以及少数产品边界（无回收站、只编辑 tags、无 UI 自动化）。这些均已写入文档，不再属于“未知缺陷”。
 
 ---
 
@@ -121,11 +121,11 @@
 
 | 命令 | 结果 |
 |---|---|
-| `npm run check` | 通过（ESLint / 14 前端单测 / repo / version / rustfmt / clippy / 40 Rust 单测 / build） |
+| `npm run check` | 通过（ESLint / 17 前端单测 / repo / version / rustfmt / clippy / 40 Rust 单测 / build） |
 | `npx tauri build --no-bundle` | 通过（Windows 实际编译） |
 | `npm run selftest` | 通过：5 篇示例，PNG/PDF、远程图片 1 张 + 本地图片 4 张均 present，`report.ok = true` |
 | `npm audit` | 0 critical / 0 high；4 个 moderate 均在开发工具链（ESLint/minimatch，见 §5） |
-| GitHub Actions | quality / Windows / Ubuntu / macOS / Linux E2E 全绿；v1.1.0 Release 已发布三端资产 |
+| GitHub Actions | quality / Windows / Ubuntu / macOS / Linux E2E 全绿；v1.1.0 三端 Release 已验证 |
 
 > 另外用 release 二进制 + WebView2 远程调试做了运行时冒烟：CSP 阻止内联脚本、`<script>`/`onerror`/`javascript:` 被剥离、MathJax/高亮/本地 `rmd` 图片正常、外部修改返回 `conflict:`、保存后 `title:` 字段仍在。GitHub Actions 三端编译与 Linux Xvfb E2E 已通过（2026-11-07，run 42336773391）。
 
@@ -133,7 +133,7 @@
 
 ## 7. 优先级建议（非阻塞）
 
-1. **P2**：维护 `RELEASE_NOTES` 模板与后续版本说明（1.1.0 已有）。
+1. **P2**：维护 `RELEASE_NOTES` 模板与后续版本说明（1.2.0 已有）。
 2. **P2**：为 Windows 购买真实 Authenticode / macOS Developer ID 时，按 `docs/RELEASING.md` 接入 secrets 与公证步骤。
 3. **P2**：给 `npm audit` 剩余开发依赖加 Dependabot 自动升级；不要在 CI 中让 npm audit 阻塞。
 4. **P3**：为排序/文件夹树/保存冲突补浏览器级 UI 测试（Playwright/WebDriver），但 E2E 已覆盖真实 WebView 的渲染/导出主链路。

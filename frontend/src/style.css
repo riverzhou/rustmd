@@ -121,6 +121,7 @@ button {
 }
 
 .onboarding-card {
+  position: relative;
   width: 420px;
   max-width: calc(100vw - 48px);
   background: var(--card);
@@ -129,6 +130,38 @@ button {
   padding: 40px 36px 32px;
   box-shadow: var(--shadow);
   text-align: center;
+}
+
+.language-select {
+  appearance: auto;
+  max-width: 86px;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.language-select:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.language-select:focus-visible {
+  outline: 2px solid var(--accent-soft-2);
+  outline-offset: 1px;
+}
+
+.onboarding-language {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border-color: var(--border);
+  background: var(--card);
 }
 
 .onboarding-logo {
@@ -262,6 +295,7 @@ body[data-theme='dark'] .btn.primary:hover {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
 }
 

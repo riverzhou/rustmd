@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import { api } from './api.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
+import { getLanguage, t } from './i18n.js';
 import {
   splitCodeSegments,
   splitInlineCode,
@@ -541,7 +542,8 @@ async function renderMarkdownInto(container, markdownSource) {
         host.appendChild(codeEl);
         const note = document.createElement('div');
         note.className = 'mermaid-error';
-        note.textContent = 'Mermaid 渲染失败：' + (err && err.message ? err.message : err);
+        note.textContent =
+          t('preview.mermaidFailed') + (err && err.message ? err.message : err);
         host.appendChild(note);
       }
   });
@@ -655,9 +657,12 @@ export async function buildExportHtml(title, markdownSource, theme) {
  summary:hover { color: ${isDark ? '#6ea8ff' : '#2f6fdb'}; }
  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid ${isDark ? '#262a33' : '#e2e5ec'}; font-size: 12px; color: ${isDark ? '#6b7280' : '#9aa1b0'}; }
  `;
-  const date = new Date().toLocaleString('zh-CN', { hour12: false });
+  const lang = getLanguage();
+  const date = new Date().toLocaleString(lang === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    hour12: false,
+  });
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -666,7 +671,7 @@ export async function buildExportHtml(title, markdownSource, theme) {
 </head>
 <body>
 ${body}
-<footer>由 rustmd 导出 · ${date}</footer>
+<footer>${escapeHtml(t('export.footer', { date }))}</footer>
 </body>
 </html>
 `;

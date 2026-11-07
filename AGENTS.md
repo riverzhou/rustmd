@@ -59,6 +59,8 @@ Vite. User-facing docs are Chinese; this file is the developer/agent contract.
 - `frontend/src/main.js` — UI state and DOM wiring (no framework/state lib).
   Save queue, conflict retry, unsaved guard, folder tree, sorting, search race
   guard, export menu.
+- `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
+  `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers
   (covered by `node --test`).
 - `frontend/src/markdown.js` — pure math protection + code-segment helpers
@@ -146,6 +148,9 @@ If a new Tauri *plugin* is used:
 - **Preview/export**: `renderMarkdownInto` is shared by preview and export.
   Anything added there must be safe in both. `export.js` assumes the stage is
   948 px wide (860 content + 2×44 padding).
+- **UI strings**: add the key to both `en` and `zh-CN` dictionaries in `i18n.js`,
+  use `t()` in JS and `data-i18n*` attributes in HTML. Never hardcode a
+  user-visible string in `main.js`.
 - **Sidebar**: `notelist.js` owns sorting/tree/filtering; `main.js` only
   renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync.
   Expanded paths are stored in `rustmd-expanded-folders`; an empty set is the

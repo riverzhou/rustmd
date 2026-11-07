@@ -9,6 +9,14 @@ import {
 } from './preview.js';
 import { exportPng, exportPdf } from './export.js';
 import {
+  applyStaticTranslations,
+  getLanguage,
+  initI18n,
+  onLanguageChange,
+  setLanguage,
+  t,
+} from './i18n.js';
+import {
   SORT_ASC,
   SORT_DESC,
   SORT_MTIME,
@@ -23,6 +31,8 @@ import {
 } from './notelist.js';
 
 // ---------------- State ----------------
+
+initI18n();
 
 function loadExpandedFolders() {
   try {
@@ -65,6 +75,7 @@ const state = {
   previewTimer: null,
   pendingSave: false,
   saveFailed: false,
+  saveStatus: 'saved',
   docRevision: 0,
 };
 
@@ -104,6 +115,20 @@ const toastEl = $('toast');
 
 // ---------------- Utils ----------------
 
+const SAVE_STATUS_KEYS = {
+  saved: 'status.saved',
+  unsaved: 'status.unsaved',
+  failed: 'status.saveFailed',
+  conflict: 'status.conflict',
+};
+
+function setSaveStatus(kind) {
+  state.saveStatus = kind;
+  statusSave.textContent = t(SAVE_STATUS_KEYS[kind] || SAVE_STATUS_KEYS.saved);
+  statusSave.className =
+    kind === 'saved' ? '' : kind === 'unsaved' ? 'saving' : 'error';
+}
+
 let toastTimer = null;
 function toast(msg, isError = false) {
   toastEl.textContent = msg;
@@ -130,13 +155,17 @@ function highlightText(text, query) {
   return safe.replace(re, (m) => `<mark>${m}</mark>`);
 }
 
+function uiLocale() {
+  return getLanguage() === 'zh-CN' ? 'zh-CN' : 'en-US';
+}
+
 function fmtTime(mtime) {
   if (!mtime || mtime <= 0) return '—';
   const d = new Date(mtime * 1000);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
   if (sameDay) {
-    return d.toLocaleTimeString('zh-CN', {
+    return d.toLocaleTimeString(uiLocale(), {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -149,8 +178,8 @@ function fmtTime(mtime) {
 }
 
 function fmtFullTime(mtime) {
-  if (!mtime || mtime <= 0) return '修改时间未知';
-  return new Date(mtime * 1000).toLocaleString('zh-CN', { hour12: false });
+  if (!mtime || mtime <= 0) return t('time.unknown');
+  return new Date(mtime * 1000).toLocaleString(uiLocale(), { hour12: false });
 }
 
 function countWords(text) {
@@ -221,8 +250,8 @@ function applySidebar(collapsed) {
   // while a note is open, so this also covers the empty state.
   $('btn-show-sidebar').classList.toggle('hidden', !collapsed);
   emptyState.querySelector('p').textContent = collapsed
-    ? '点击左上角按钮显示笔记列表，或按 Ctrl+B'
-    : '从左侧选择一篇笔记，或新建一篇开始写作';
+    ? t('empty.collapsed')
+    : t('empty.normal');
 }
 
 function toggleSidebar() {
@@ -265,7 +294,9 @@ async function enterDir(dir) {
     // The `rmd` image protocol serves from this root (local images in notes).
     await api.setNotesRoot(dir);
   } catch (err) {
-    onboardingError.textContent = `无法打开目录：${err.message || err}`;
+    onboardingError.textContent = t('onboarding.openError', {
+      msg: err.message || err,
+    });
     onboardingError.classList.remove('hidden');
     return false;
   }
@@ -295,8 +326,7 @@ async function enterDir(dir) {
   renderPreview('', previewEl);
   renderTagEditor();
   updateCounts();
-  statusSave.textContent = '已保存';
-  statusSave.className = '';
+  setSaveStatus('saved');
   editorPane.classList.remove('visible');
   emptyState.classList.remove('hidden');
   onboardingEl.classList.add('hidden');
@@ -308,17 +338,17 @@ async function enterDir(dir) {
 
 $('pick-dir-btn').addEventListener('click', async () => {
   try {
-    const dir = await api.pickDirectory();
+    const dir = await api.pickDirectory(t('onboarding.dirDialogTitle'));
     if (dir) dirInput.value = dir;
   } catch (err) {
-    toast(`选择目录失败：${err.message || err}`, true);
+    toast(t('onboarding.browseFailed', { msg: err.message || err }), true);
   }
 });
 
 $('open-dir-btn').addEventListener('click', () => {
   const dir = dirInput.value.trim();
   if (!dir) {
-    onboardingError.textContent = '请选择或输入笔记目录';
+    onboardingError.textContent = t('onboarding.chooseError');
     onboardingError.classList.remove('hidden');
     return;
   }
@@ -331,7 +361,7 @@ dirInput.addEventListener('keydown', (e) => {
 
 $('btn-change-dir').addEventListener('click', async () => {
   const ok = await flushSave();
-  if (!ok && !confirm('当前笔记保存失败，仍要切换目录吗？未保存的修改会丢失。')) {
+  if (!ok && !confirm(t('dialog.changeDir'))) {
     return;
   }
   mainEl.classList.add('hidden');
@@ -367,7 +397,7 @@ async function refreshSearch() {
     state.searchHits = hits;
   } catch (err) {
     if (seq !== searchSeq || query !== state.filter.query) return;
-    toast(`搜索失败：${err.message || err}`, true);
+    toast(t('toast.searchFailed', { msg: err.message || err }), true);
     state.searchHits = [];
   }
 }
@@ -381,7 +411,7 @@ async function loadNotes() {
     state.notes = notes;
     state.folderPaths = folders || deriveFolderPaths(notes);
   } catch (err) {
-    toast(`读取笔记失败：${err.message || err}`, true);
+    toast(t('toast.readFailed', { msg: err.message || err }), true);
     return;
   }
   state.folderTree = buildFolderTree(state.folderPaths, state.notes);
@@ -437,8 +467,13 @@ function renderFolderBranch(nodes, parentEl, depth) {
     toggle.classList.toggle('collapsed', !expanded);
     toggle.classList.toggle('invisible', !hasChildren);
     toggle.disabled = !hasChildren;
-    toggle.title = expanded ? '折叠文件夹' : '展开文件夹';
-    toggle.setAttribute('aria-label', `${expanded ? '折叠' : '展开'} ${node.path}`);
+    toggle.title = t(expanded ? 'folder.collapse' : 'folder.expand');
+    toggle.setAttribute(
+      'aria-label',
+      t(expanded ? 'folder.collapseAria' : 'folder.expandAria', {
+        path: node.path,
+      })
+    );
     toggle.innerHTML = CHEVRON_SVG;
     toggle.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -468,7 +503,9 @@ function renderFolders() {
   folderList.innerHTML = '';
   const allItem = document.createElement('li');
   allItem.className = 'nav-item' + (state.filter.folder === null ? ' active' : '');
-  allItem.innerHTML = `${FOLDER_SVG}<span class="nav-label">全部</span><span class="count">${state.notes.length}</span>`;
+  allItem.innerHTML = `${FOLDER_SVG}<span class="nav-label">${esc(
+    t('sidebar.all')
+  )}</span><span class="count">${state.notes.length}</span>`;
   allItem.addEventListener('click', () => {
     state.filter.folder = null;
     renderFolders();
@@ -482,8 +519,9 @@ function renderFolders() {
 function renderTags() {
   tagCloud.innerHTML = '';
   if (state.tags.length === 0) {
-    tagCloud.innerHTML =
-      '<span style="font-size:12px;color:var(--text-faint)">暂无标签</span>';
+    tagCloud.innerHTML = `<span style="font-size:12px;color:var(--text-faint)">${esc(
+      t('sidebar.noTags')
+    )}</span>`;
     return;
   }
   for (const t of state.tags) {
@@ -510,12 +548,12 @@ function visibleNotes() {
 function renderNoteList() {
   const list = visibleNotes();
   const scrollTop = noteList.scrollTop;
-  noteCount.textContent = `${list.length} 篇`;
+  noteCount.textContent = t('notes.count', { n: list.length });
   noteList.innerHTML = '';
   if (list.length === 0) {
     noteList.innerHTML =
       '<div class="note-empty">' +
-      (state.filter.query ? '没有匹配的笔记' : '暂无笔记<br>点击左上角 ＋ 新建') +
+      (state.filter.query ? t('notes.noMatches') : t('notes.empty')) +
       '</div>';
     noteList.scrollTop = 0;
     return;
@@ -551,13 +589,17 @@ function renderSortControls() {
   }
   if (!sortDirBtn) return;
   sortDirBtn.textContent = state.sortDir === SORT_ASC ? '↑' : '↓';
-  const field = state.sortKey === SORT_MTIME ? '修改时间' : '文件名';
-  const direction = state.sortDir === SORT_ASC ? '升序' : '降序';
-  sortDirBtn.title = `${field}${direction}（点击切换升序/降序）`;
-  sortDirBtn.setAttribute(
-    'aria-label',
-    `当前${field}${direction}，点击切换升序或降序`
+  const field = t(
+    state.sortKey === SORT_MTIME ? 'sort.timeField' : 'sort.nameField'
   );
+  const direction = t(state.sortDir === SORT_ASC ? 'sort.asc' : 'sort.desc');
+  sortDirBtn.title = t('sort.dirTitle', { field, direction });
+  sortDirBtn.setAttribute('aria-label', t('sort.dirAria', { field, direction }));
+  for (const btn of sortSwitch.querySelectorAll('button[data-sort]')) {
+    btn.title = t(
+      btn.dataset.sort === SORT_MTIME ? 'sort.timeTitle' : 'sort.nameTitle'
+    );
+  }
 }
 
 function commitSort() {
@@ -608,8 +650,7 @@ function initEditor() {
 function scheduleSave() {
   state.pendingSave = true;
   state.saveFailed = false;
-  statusSave.textContent = '未保存…';
-  statusSave.className = 'saving';
+  setSaveStatus('unsaved');
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(() => {
     void saveCurrent();
@@ -682,11 +723,7 @@ function saveCurrent(force = false) {
     } catch (err) {
       const msg = String(err && err.message ? err.message : err);
       if (!force && msg.includes('conflict')) {
-        const overwrite = confirm(
-          '这篇笔记已在外部被修改。\n\n' +
-            '点击“确定”用当前编辑器内容覆盖磁盘版本；' +
-            '点击“取消”保留磁盘版本（当前编辑内容仍在编辑器中，可复制后手动处理）。'
-        );
+        const overwrite = confirm(t('dialog.conflict'));
         if (overwrite) {
           try {
             meta = await api.saveNote(
@@ -705,8 +742,7 @@ function saveCurrent(force = false) {
           state.pendingSave = true;
           state.saveFailed = true;
           if (state.current === path) {
-            statusSave.textContent = '冲突未保存';
-            statusSave.className = 'error';
+            setSaveStatus('conflict');
           }
           return false;
         }
@@ -723,8 +759,7 @@ function saveCurrent(force = false) {
       if (state.docRevision === revision) {
         state.pendingSave = false;
         state.saveFailed = false;
-        statusSave.textContent = '已保存';
-        statusSave.className = '';
+        setSaveStatus('saved');
       } else {
         // More typing happened while the save was in flight.
         scheduleSave();
@@ -752,10 +787,9 @@ function reportSaveFailure(err, path) {
   state.pendingSave = true;
   state.saveFailed = true;
   if (state.current === path) {
-    statusSave.textContent = '保存失败';
-    statusSave.className = 'error';
+    setSaveStatus('failed');
   }
-  toast(`保存失败：${msg}`, true);
+  toast(t('toast.saveFailed', { msg }), true);
   return false;
 }
 
@@ -781,7 +815,7 @@ async function flushSave() {
 async function selectNote(path) {
   if (path === state.current) return;
   const ok = await flushSave();
-  if (!ok && !confirm('当前笔记保存失败，仍要切换吗？未保存的修改会丢失。')) {
+  if (!ok && !confirm(t('dialog.switchNote'))) {
     return;
   }
   if (!ok) {
@@ -811,14 +845,13 @@ async function selectNote(path) {
     renderTagEditor();
     updateCounts();
     statusPath.textContent = path;
-    statusSave.textContent = '已保存';
-    statusSave.className = '';
+    setSaveStatus('saved');
     editorPane.classList.add('visible');
     emptyState.classList.add('hidden');
     renderNoteList();
     editor.focus();
   } catch (err) {
-    toast(`打开笔记失败：${err.message || err}`, true);
+    toast(t('toast.openFailed', { msg: err.message || err }), true);
   }
 }
 
@@ -826,7 +859,7 @@ function updateCounts() {
   const text = editor ? editor.state.doc.toString() : '';
   const words = countWords(text);
   const chars = text.replace(/\s/g, '').length;
-  statusCounts.textContent = `${words} 字 · ${chars} 字符`;
+  statusCounts.textContent = t('note.counts', { words, chars });
 }
 
 // ---------------- Title (rename) ----------------
@@ -869,10 +902,10 @@ async function commitRename() {
       state.currentMtime = meta.mtime || 0;
     }
     renderNoteList();
-    toast(`已重命名为 ${stemOf(newPath)}`);
+    toast(t('toast.renamed', { name: stemOf(newPath) }));
   } catch (err) {
     noteTitle.value = stem;
-    toast(`重命名失败：${err.message || err}`, true);
+    toast(t('toast.renameFailed', { msg: err.message || err }), true);
   }
 }
 
@@ -892,19 +925,21 @@ $('btn-rename').addEventListener('click', () => {
 
 function renderTagEditor() {
   tagEditor.innerHTML = '';
-  for (const t of state.tagsOfCurrent) {
+  for (const tag of state.tagsOfCurrent) {
     const chip = document.createElement('span');
     chip.className = 'tag-chip';
-    chip.innerHTML = `${esc(t)}<span class="remove" title="移除">×</span>`;
+    chip.innerHTML = `${esc(tag)}<span class="remove" title="${esc(
+      t('tag.remove')
+    )}">×</span>`;
     chip.querySelector('.remove').addEventListener('click', () => {
-      state.tagsOfCurrent = state.tagsOfCurrent.filter((x) => x !== t);
+      state.tagsOfCurrent = state.tagsOfCurrent.filter((x) => x !== tag);
       renderTagEditor();
       onMetaChanged();
     });
     tagEditor.appendChild(chip);
   }
   const input = document.createElement('input');
-  input.placeholder = '+ 标签';
+  input.placeholder = t('tag.addPlaceholder');
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
@@ -931,7 +966,7 @@ function onMetaChanged() {
 $('btn-new-note').addEventListener('click', async () => {
   if (!state.dir) return;
   const ok = await flushSave();
-  if (!ok && !confirm('当前笔记保存失败，仍要新建吗？未保存的修改会丢失。')) return;
+  if (!ok && !confirm(t('dialog.newNote'))) return;
   if (!ok) {
     state.pendingSave = false;
     state.saveFailed = false;
@@ -945,13 +980,13 @@ $('btn-new-note').addEventListener('click', async () => {
     await loadNotes();
     await selectNote(path);
   } catch (err) {
-    toast(`新建笔记失败：${err.message || err}`, true);
+    toast(t('toast.newFailed', { msg: err.message || err }), true);
   }
 });
 
 $('btn-delete').addEventListener('click', async () => {
   if (!state.current) return;
-  if (!confirm(`确定删除「${noteTitle.value}」吗？此操作不可恢复。`)) return;
+  if (!confirm(t('dialog.delete', { title: noteTitle.value }))) return;
   clearTimeout(state.saveTimer);
   state.pendingSave = false;
   state.saveFailed = false;
@@ -972,15 +1007,14 @@ $('btn-delete').addEventListener('click', async () => {
     noteTitle.value = '';
     renderTagEditor();
     updateCounts();
-    statusSave.textContent = '已保存';
-    statusSave.className = '';
+    setSaveStatus('saved');
     statusPath.textContent = '';
     editorPane.classList.remove('visible');
     emptyState.classList.remove('hidden');
     await loadNotes();
-    toast('已删除');
+    toast(t('toast.deleted'));
   } catch (err) {
-    toast(`删除失败：${err.message || err}`, true);
+    toast(t('toast.deleteFailed', { msg: err.message || err }), true);
   }
 });
 
@@ -992,11 +1026,11 @@ $('btn-move').addEventListener('click', () => {
 async function openMoveModal() {
   const ok = await flushSave();
   if (!ok) {
-    toast('保存失败，已取消移动', true);
+    toast(t('toast.moveCancelled'), true);
     return;
   }
   const options = [
-    { path: '', label: '根目录', depth: 0 },
+    { path: '', label: t('move.root'), depth: 0 },
     ...flattenFolderTree(state.folderTree, () => true).map((node) => ({
       path: node.path,
       label: node.path,
@@ -1008,7 +1042,7 @@ async function openMoveModal() {
   backdrop.className = 'modal-backdrop';
   const modal = document.createElement('div');
   modal.className = 'modal';
-  modal.innerHTML = '<h3>移动到文件夹</h3><div class="modal-list"></div>';
+  modal.innerHTML = `<h3>${esc(t('move.title'))}</h3><div class="modal-list"></div>`;
   const list = modal.querySelector('.modal-list');
   for (const opt of options) {
     const item = document.createElement('div');
@@ -1017,7 +1051,7 @@ async function openMoveModal() {
     item.innerHTML = `${FOLDER_SVG}<span>${esc(opt.label)}</span>`;
     if (currentFolder === opt.path) {
       item.classList.add('current');
-      item.title = '当前所在';
+      item.title = t('move.current');
     }
     item.addEventListener('click', async () => {
       backdrop.remove();
@@ -1038,9 +1072,9 @@ async function openMoveModal() {
           state.currentMtime = meta.mtime || 0;
         }
         renderNoteList();
-        toast(`已移动到 ${opt.label}`);
+        toast(t('toast.moved', { path: opt.label }));
       } catch (err) {
-        toast(`移动失败：${err.message || err}`, true);
+        toast(t('toast.moveFailed', { msg: err.message || err }), true);
       }
     });
     list.appendChild(item);
@@ -1077,7 +1111,7 @@ async function runSearch() {
     state.searchHits = hits;
   } catch (err) {
     if (seq !== searchSeq) return;
-    toast(`搜索失败：${err.message || err}`, true);
+    toast(t('toast.searchFailed', { msg: err.message || err }), true);
     state.searchHits = [];
   }
   renderNoteList();
@@ -1112,9 +1146,9 @@ function openExportMenu() {
   const menu = document.createElement('div');
   menu.className = 'export-menu';
   const items = [
-    { kind: 'html', label: '导出 HTML 文件' },
-    { kind: 'png', label: '导出 PNG（高清图）' },
-    { kind: 'pdf', label: '导出 PDF' },
+    { kind: 'html', label: t('export.html') },
+    { kind: 'png', label: t('export.png') },
+    { kind: 'pdf', label: t('export.pdf') },
   ];
   for (const it of items) {
     const b = document.createElement('button');
@@ -1146,10 +1180,10 @@ async function runExport(kind) {
   if (!state.current) return;
   const ok = await flushSave();
   if (!ok) {
-    toast('保存失败，已取消导出', true);
+    toast(t('toast.exportCancelled'), true);
     return;
   }
-  const title = noteTitle.value.trim() || '无标题';
+  const title = noteTitle.value.trim() || t('note.untitled');
   const body = editor.state.doc.toString();
 
   let payload;
@@ -1160,20 +1194,22 @@ async function runExport(kind) {
         data: new TextEncoder().encode(html),
         ext: 'html',
         mime: 'text/html',
-        filterName: 'HTML 文件',
+        filterName: t('export.filterHtml'),
         extensions: ['html', 'htm'],
       };
     } else {
-      toast(kind === 'png' ? '正在生成 PNG…' : '正在生成 PDF…');
+      toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
       const exported = kind === 'png' ? await exportPng(body) : await exportPdf(body);
       payload = {
         ...exported,
-        filterName: kind === 'png' ? 'PNG 图片' : 'PDF 文档',
+        filterName: t(
+          kind === 'png' ? 'export.filterPng' : 'export.filterPdf'
+        ),
         extensions: [exported.ext],
       };
     }
   } catch (err) {
-    toast(`导出失败：${err.message || err}`, true);
+    toast(t('toast.exportFailed', { msg: err.message || err }), true);
     return;
   }
 
@@ -1187,12 +1223,12 @@ async function runExport(kind) {
     );
     if (!api.isTauri) {
       triggerDownload(new Blob([payload.data], { type: payload.mime }), defaultName);
-      toast('已开始下载');
+      toast(t('toast.downloadStarted'));
       return;
     }
-    if (target) toast(`已导出到 ${target}`);
+    if (target) toast(t('toast.exportedTo', { path: target }));
   } catch (err) {
-    toast(`导出失败：${err.message || err}`, true);
+    toast(t('toast.exportFailed', { msg: err.message || err }), true);
   }
 }
 
@@ -1240,19 +1276,51 @@ window.addEventListener('beforeunload', (e) => {
 
 window.addEventListener('unhandledrejection', (e) => {
   const msg = e.reason && (e.reason.message || e.reason.toString());
-  toast(`错误：${msg}`, true);
+  toast(t('toast.error', { msg }), true);
 });
 
 window.addEventListener('error', (e) => {
   if (e.error) {
     console.error('[rustmd] window error', e.error);
-    toast(`JS 错误：${e.error.message || e.error}`, true);
+    toast(t('toast.jsError', { msg: e.error.message || e.error }), true);
   }
+});
+
+// ---------------- Language ----------------
+
+function syncLanguageSelects() {
+  for (const select of document.querySelectorAll('[data-lang-select]')) {
+    select.value = getLanguage();
+  }
+}
+
+function bindLanguageSelects() {
+  for (const select of document.querySelectorAll('[data-lang-select]')) {
+    select.value = getLanguage();
+    select.addEventListener('change', () => setLanguage(select.value));
+  }
+}
+
+onLanguageChange(() => {
+  applyStaticTranslations();
+  syncLanguageSelects();
+  renderSortControls();
+  renderFolders();
+  renderTags();
+  renderNoteList();
+  renderTagEditor();
+  updateCounts();
+  setSaveStatus(state.saveStatus);
+  applySidebar(isSidebarCollapsed());
+  closeExportMenu();
+  for (const el of document.querySelectorAll('.modal-backdrop')) el.remove();
 });
 
 // ---------------- Init ----------------
 
 async function boot() {
+  applyStaticTranslations();
+  bindLanguageSelects();
   applyTheme(state.theme);
   initEditor();
   applyView(state.view);

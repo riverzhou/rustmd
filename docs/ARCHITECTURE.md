@@ -41,6 +41,7 @@ rustmd 是单窗口桌面应用：Tauri 2 负责 webview 与原生能力，Rust 
 | --- | --- |
 | `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、导出菜单 |
 | `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致 |
+| `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
 | `notelist.js` | `fileNameOf`、`sortNotes`、`filterNotes`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
 | `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
 | `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片改写、外链拦截、HTML 导出 |

@@ -11,14 +11,18 @@
     <!-- Onboarding -->
     <div id="onboarding" class="onboarding hidden">
       <div class="onboarding-card">
+        <select class="language-select onboarding-language" data-lang-select aria-label="Language" title="Language">
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
         <img src="/icon.png" class="onboarding-logo" alt="" />
         <h1>rustmd</h1>
-        <p class="onboarding-sub">本地 Markdown 笔记 · 纯文件存储</p>
+        <p class="onboarding-sub" data-i18n="onboarding.tagline">本地 Markdown 笔记 · 纯文件存储</p>
         <div class="onboarding-row">
-          <input id="dir-input" type="text" placeholder="笔记目录，例如 D:\Notes" spellcheck="false" />
-          <button id="pick-dir-btn" class="btn secondary">浏览…</button>
+          <input id="dir-input" type="text" placeholder="笔记目录，例如 D:\Notes" data-i18n-placeholder="onboarding.dirPlaceholder" spellcheck="false" />
+          <button id="pick-dir-btn" class="btn secondary" data-i18n="onboarding.browse">浏览…</button>
         </div>
-        <button id="open-dir-btn" class="btn primary">打开笔记库</button>
+        <button id="open-dir-btn" class="btn primary" data-i18n="onboarding.open">打开笔记库</button>
         <p id="onboarding-error" class="error-text hidden"></p>
       </div>
     </div>
@@ -29,37 +33,41 @@
         <div class="sidebar-header">
           <span class="brand"><img src="/icon.png" alt="" class="brand-logo" /> rustmd</span>
           <div class="header-actions">
-            <button id="btn-new-note" class="icon-btn" title="新建笔记">
+            <button id="btn-new-note" class="icon-btn" title="新建笔记" data-i18n-title="sidebar.newNote">
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9" /></svg>
             </button>
-            <button id="btn-change-dir" class="icon-btn" title="切换笔记目录">
+            <button id="btn-change-dir" class="icon-btn" title="切换笔记目录" data-i18n-title="sidebar.changeDir">
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5h8M9 3.5l2 2-2 2M13 10.5H5M7 8.5l-2 2 2 2" /></svg>
             </button>
+            <select id="language-select" class="language-select" data-lang-select aria-label="Language" title="Language">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
           </div>
         </div>
         <div class="search-section">
-          <input id="search-input" type="text" placeholder="搜索标题、文件名、标签或内容…" spellcheck="false" />
+          <input id="search-input" type="text" placeholder="搜索标题、文件名、标签或内容…" data-i18n-placeholder="sidebar.searchPlaceholder" spellcheck="false" />
         </div>
         <nav class="sidebar-nav">
           <div class="nav-group">
-            <div class="nav-group-label">文件夹</div>
+            <div class="nav-group-label" data-i18n="sidebar.folders">文件夹</div>
             <ul id="folder-list" class="nav-list"></ul>
           </div>
           <div class="nav-group" id="tag-group">
-            <div class="nav-group-label">标签</div>
+            <div class="nav-group-label" data-i18n="sidebar.tags">标签</div>
             <div id="tag-cloud" class="tag-cloud"></div>
           </div>
         </nav>
         <div class="note-list-header">
           <span id="note-count">0 篇</span>
-          <div class="sort-switch" id="sort-switch" role="group" aria-label="笔记排序">
-            <button type="button" data-sort="mtime" title="按最后修改时间排序（新 → 旧）">
+          <div class="sort-switch" id="sort-switch" role="group" aria-label="笔记排序" data-i18n-aria="sort.switchAria">
+            <button type="button" data-sort="mtime" title="按最后修改时间排序（新 → 旧）" data-i18n-title="sort.timeTitle">
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.6"/><path d="M8 4.6V8l2.2 1.3"/></svg>
-              <span>时间</span>
+              <span data-i18n="sort.time">时间</span>
             </button>
-            <button type="button" data-sort="name" title="按文件名排序（A → Z）">
+            <button type="button" data-sort="name" title="按文件名排序（A → Z）" data-i18n-title="sort.nameTitle">
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2.8-8 2.8 8M4 9.4h3.6M11 6.5v5.5M11 6.5l2 2M11 6.5l-2 2"/></svg>
-              <span>名称</span>
+              <span data-i18n="sort.name">名称</span>
             </button>
             <button type="button" id="sort-dir" class="sort-dir" title="切换升序 / 降序" aria-label="切换排序方向">↓</button>
           </div>
@@ -70,30 +78,30 @@
       <section class="content">
         <div id="editor-pane" class="editor-pane">
           <div class="topbar">
-            <input id="note-title" class="note-title" placeholder="无标题" spellcheck="false" />
+            <input id="note-title" class="note-title" placeholder="无标题" data-i18n-placeholder="topbar.titlePlaceholder" spellcheck="false" />
             <div class="tag-editor" id="tag-editor"></div>
             <div class="topbar-actions">
-              <button id="btn-toggle-sidebar" class="icon-btn" title="隐藏/显示笔记列表 (Ctrl+B)">
+              <button id="btn-toggle-sidebar" class="icon-btn" title="隐藏/显示笔记列表 (Ctrl+B)" data-i18n-title="topbar.toggleSidebar">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.8" /><path d="M6.3 2.5v11" /></svg>
               </button>
               <div class="view-switch" id="view-switch">
-                <button data-mode="edit" title="仅编辑">编辑</button>
-                <button data-mode="split" class="active" title="分栏">分栏</button>
-                <button data-mode="preview" title="仅预览">预览</button>
+                <button data-mode="edit" title="仅编辑" data-i18n-title="view.editTitle" data-i18n="view.edit">编辑</button>
+                <button data-mode="split" class="active" title="分栏" data-i18n-title="view.splitTitle" data-i18n="view.split">分栏</button>
+                <button data-mode="preview" title="仅预览" data-i18n-title="view.previewTitle" data-i18n="view.preview">预览</button>
               </div>
-              <button id="btn-move" class="icon-btn" title="移动到文件夹">
+              <button id="btn-move" class="icon-btn" title="移动到文件夹" data-i18n-title="topbar.move">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.2c0-.67.53-1.2 1.2-1.2h2.6l1.4 1.8h4.6c.67 0 1.2.53 1.2 1.2v6c0 .67-.53 1.2-1.2 1.2H3.7c-.67 0-1.2-.53-1.2-1.2z" /></svg>
               </button>
-              <button id="btn-rename" class="icon-btn" title="重命名">
+              <button id="btn-rename" class="icon-btn" title="重命名" data-i18n-title="topbar.rename">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.9 2.6l2.5 2.5L5.6 12.9 2.5 13.5l.6-3.1z" /></svg>
               </button>
-              <button id="btn-delete" class="icon-btn danger" title="删除">
+              <button id="btn-delete" class="icon-btn danger" title="删除" data-i18n-title="topbar.delete">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.2h10.4M6.3 4.2V3c0-.4.3-.7.7-.7h2c.4 0 .7.3.7.7v1.2M4.3 4.2l.5 8.6c0 .4.4.8.8.8h4.8c.4 0 .8-.4.8-.8l.5-8.6M6.6 6.8v4M9.4 6.8v4" /></svg>
               </button>
-              <button id="btn-export" class="icon-btn" title="导出…（HTML / PNG / PDF）">
+              <button id="btn-export" class="icon-btn" title="导出…（HTML / PNG / PDF）" data-i18n-title="topbar.export">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 13.5h10" /></svg>
               </button>
-              <button id="btn-theme" class="icon-btn" title="切换主题">
+              <button id="btn-theme" class="icon-btn" title="切换主题" data-i18n-title="topbar.theme">
                 <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5" /><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none" /></svg>
               </button>
             </div>
@@ -106,7 +114,7 @@
             </div>
           </div>
           <div class="statusbar">
-            <span id="status-save">已保存</span>
+            <span id="status-save" data-i18n="status.saved">已保存</span>
             <span class="status-spacer"></span>
             <span id="status-path"></span>
             <span id="status-counts"></span>
@@ -115,13 +123,13 @@
         <div id="empty-state" class="empty-state">
           <div class="empty-inner">
             <img src="/icon.png" alt="" class="empty-logo" />
-            <p>从左侧选择一篇笔记，或新建一篇开始写作</p>
+            <p data-i18n="empty.normal">从左侧选择一篇笔记，或新建一篇开始写作</p>
           </div>
         </div>
       </section>
     </div>
 
-    <button id="btn-show-sidebar" class="icon-btn show-sidebar-btn hidden" title="显示笔记列表 (Ctrl+B)">
+    <button id="btn-show-sidebar" class="icon-btn show-sidebar-btn hidden" title="显示笔记列表 (Ctrl+B)" data-i18n-title="topbar.showSidebar">
       <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.8" /><path d="M6.3 2.5v11" /></svg>
     </button>
 

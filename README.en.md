@@ -13,19 +13,27 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.1.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.2.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
 Folder tree, filename cards, sort direction, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.png" alt="rustmd main window with folder tree, filename cards, editor and live preview" width="880">
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with folder tree, filename cards, editor and live preview" width="880">
 
 Dark theme and sidebar details:
 
-<img src="docs/screenshots/dark.png" alt="rustmd dark theme with MathJax and Mermaid preview" width="880">
+<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MathJax and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.png" alt="rustmd sidebar with folders, sort buttons, filenames and tags" width="300">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with folders, sort buttons, filenames and tags" width="300">
+
+## Multilingual UI
+
+The first launch **follows the system language**: Chinese systems start in Simplified Chinese, everything else starts in English. A language selector is available at the top of the sidebar and on the first-run folder picker; switch between **English / 简体中文** at any time. The choice is stored locally and restored on the next launch. Switching updates the folder tree, note list, sorting, status bar, dialogs, export menu and errors immediately, without reloading notes or losing edits.
+
+Chinese interface example:
+
+<img src="docs/screenshots/overview.png" alt="rustmd Simplified Chinese interface" width="880">
 
 ## Why rustmd
 
@@ -41,6 +49,12 @@ If you want a Markdown tool that keeps your notes as **plain files** instead of 
 Good for personal knowledge bases, engineering notes, writing drafts, course notes and local Markdown documentation.
 
 ## Features
+
+### Languages
+
+- English and Simplified Chinese interfaces; the first launch follows the system language.
+- The language selector lives at the top of the sidebar (and on the first-run folder picker); the choice is persisted locally.
+- Switching does not reload notes or lose edits; sorting, status, dialogs and export labels update immediately.
 
 ### Navigation
 
@@ -164,7 +178,7 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests for sorting, folder tree, math protection and code segments
+2. Node tests for sorting, folder tree, math protection, code segments and i18n
 3. Repository checks (version sync, doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
 4. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 5. Vite production build
@@ -232,4 +246,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, Markdown editor, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, Markdown editor, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

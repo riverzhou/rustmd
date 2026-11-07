@@ -8,7 +8,7 @@
 
 GitHub 的 About 描述会出现在搜索、仓库列表和社交预览中，是“被别人搜到”的第一入口。
 
-> Local-first Markdown notes for Windows, macOS & Linux. Rust + Tauri 2, GPL-3.0, offline, plain `.md` files, folder tree, search, Mermaid, LaTeX, HTML/PNG/PDF export.
+> Local-first Markdown notes for Windows, macOS & Linux. Rust + Tauri 2, GPL-3.0, English/中文 UI, offline, plain `.md` files, folder tree, search, Mermaid, LaTeX, HTML/PNG/PDF export.
 
 长度约 160 字符，包含 `Markdown notes`、`Windows`、`macOS`、`Linux`、`Rust`、`Tauri`、`offline`、`Mermaid`、`LaTeX`、`export` 等搜索词。
 
@@ -40,15 +40,15 @@ linux
 obsidian-alternative
 typora-alternative
 knowledge-base
-pkm
+i18n
 ```
 
 一键设置（需要已登录的 `gh`）：
 
 ```bash
 gh repo edit riverzhou/rustmd \
-  --description "Local-first Markdown notes for Windows, macOS & Linux. Rust + Tauri 2, GPL-3.0, offline, plain .md files, folder tree, search, Mermaid, LaTeX, HTML/PNG/PDF export." \
-  --add-topic markdown,markdown-editor,notes,note-taking,tauri,rust,desktop-app,offline,local-first,mermaid,mathjax,latex,pdf-export,windows,macos,linux,obsidian-alternative,typora-alternative,knowledge-base,pkm
+  --description "Local-first Markdown notes for Windows, macOS & Linux. Rust + Tauri 2, GPL-3.0, English/中文 UI, offline, plain .md files, folder tree, search, Mermaid, LaTeX, HTML/PNG/PDF export." \
+  --add-topic markdown,markdown-editor,notes,note-taking,tauri,rust,desktop-app,offline,local-first,mermaid,mathjax,latex,pdf-export,windows,macos,linux,obsidian-alternative,typora-alternative,knowledge-base,i18n
 ```
 
 如果 `--add-topic` 不接受逗号列表，重复传参：
@@ -81,7 +81,7 @@ GitHub 仓库 Settings → Social preview 建议上传 1280×640 的图片。可
 Release 标题：
 
 ```
-rustmd v1.1.0 — local-first Markdown notes
+rustmd v1.2.0 — local-first Markdown notes
 ```
 
 第一段：

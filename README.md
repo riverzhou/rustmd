@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.1.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.2.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -28,6 +28,14 @@
 <img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MathJax 公式、Mermaid 图表和实时预览" width="880">
 
 <img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、文件名、标签和搜索" width="300">
+
+## 多语言界面
+
+首次启动**跟随系统语言**：中文系统显示简体中文，其他系统默认英文。主界面侧栏顶部和首次启动的选择目录页都有语言选择器，可随时切换 **English / 简体中文**；选择会保存在本地，下次启动继续使用。切换后文件树、笔记列表、排序、状态栏、对话框、导出菜单和错误提示会立即更新。
+
+英文界面示例：
+
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with language selector and markdown preview" width="880">
 
 ## 为什么是 rustmd
 
@@ -42,7 +50,15 @@
 
 适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
 
+关键词：local-first、Markdown 笔记、Markdown 编辑器、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
+
 ## 功能
+
+### 多语言
+
+- 中文 / English 两套界面；首次启动根据系统语言自动选择。
+- 语言选择器位于主界面侧栏顶部（首次启动时也显示在目录选择页），选择持久化到本地。
+- 切换后不重载笔记、不丢失编辑内容；排序、状态、对话框和导出文案同步更新。
 
 ### 文件导航
 
@@ -185,7 +201,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 `npm run check` 依次执行：
 
 1. ESLint 10
-2. Node 前端单测（排序、文件夹树、数学保护、代码段）
+2. Node 前端单测（排序、文件夹树、数学保护、代码段、多语言）
 3. 仓库检查（版本一致、文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
 4. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
 5. Vite 生产构建

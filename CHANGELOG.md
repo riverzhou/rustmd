@@ -5,6 +5,33 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-11-07
+
+### 新增（Added）
+
+- **中英双语界面**：新增 `frontend/src/i18n.js` 与完整词典；主界面、首次启动页、
+  文件夹树、笔记列表、排序、状态栏、对话框、导出菜单与错误提示均支持
+  English / 简体中文 即时切换，不重载笔记、不丢编辑内容。
+- **跟随系统 + 本地持久化**：首次启动根据 `navigator.language` 选择语言
+  （中文系统 → 简体中文，其他 → English）；用户选择写入
+  `localStorage.rustmd-lang`，下次启动优先使用。
+- **语言选择器**：主界面侧栏顶部与首次启动的选择目录页都显示语言选择器；
+  选项固定为 `English` / `简体中文`，按钮的 title / aria-label 为英文
+  `Language`，方便任何语言的用户找到。
+- **英文 README 与英文截图**：`README.en.md` 使用英文界面截图；中文 README
+  增加英文界面示例；新增 `docs/screenshots/*.en.png`。
+- **i18n 单测**：词典 key 对齐、变量插值、英文复数、系统语言检测，前端单测
+  从 14 个增至 **17 个**。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.2.0**；`package.json`、`Cargo.toml`、`tauri.conf.json`、
+  `Cargo.lock`、`package-lock.json` 同步。
+- 时间与字数统计按当前语言格式化（`zh-CN` / `en-US`）；英文使用
+  `1 note` / `2 notes` 与 `1 word` / `2 words` 等复数形式。
+- 导出 HTML 的 `<html lang>` 和页脚跟随当前界面语言；目录选择对话框标题
+  由前端传入当前语言。
+
 ## [1.1.0] - 2026-11-07
 
 ### 新增（Added）

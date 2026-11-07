@@ -11,7 +11,7 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、过滤、数学保护、代码段切分 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、过滤、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件、文档相对链接、版本字段、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
