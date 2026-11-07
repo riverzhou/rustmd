@@ -37,8 +37,7 @@ if (values.size > 1) {
   );
 }
 
-const expectedTag =
-  process.argv[2] || process.env.RUSTMD_EXPECT_TAG || process.env.GITHUB_REF_NAME;
+const expectedTag = process.argv[2] || process.env.RUSTMD_EXPECT_TAG;
 if (expectedTag) {
   const tag = expectedTag.startsWith('v') ? expectedTag.slice(1) : expectedTag;
   if (tag !== pkg.version) {
