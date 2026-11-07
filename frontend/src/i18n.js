@@ -21,6 +21,7 @@ export const MESSAGES = {
     'onboarding.dirDialogTitle': 'Select notes folder',
 
     'sidebar.newNote': 'New note',
+    'sidebar.refresh': 'Refresh notes from disk',
     'sidebar.changeDir': 'Change notes folder',
     'sidebar.searchPlaceholder': 'Search title, filename, tag or content…',
     'sidebar.folders': 'Folders',
@@ -109,6 +110,18 @@ export const MESSAGES = {
     'toast.moveCancelled': 'Save failed — move cancelled',
     'toast.moveFailed': 'Move failed: {msg}',
     'toast.moved': 'Moved to {path}',
+    'toast.vaultRefreshed': (v) =>
+      `Refreshed · ${v.n} ${v.n === 1 ? 'note' : 'notes'}`,
+    'toast.vaultRefreshedUnsaved': 'Refreshed · unsaved changes are still pending.',
+    'toast.vaultRefreshFailed': 'Refresh failed: {msg}',
+    'toast.vaultRefreshDeleted':
+      'The open note “{name}” no longer exists on disk. It was closed.',
+    'toast.vaultRefreshDeletedDirty':
+      'The open note “{name}” was deleted on disk. Unsaved changes are kept in the editor.',
+    'toast.vaultRefreshReloaded': '“{name}” changed on disk and was reloaded.',
+    'toast.vaultRefreshReloadFailed': 'Could not reload “{name}”: {msg}',
+    'toast.vaultRefreshConflict':
+      '“{name}” changed on disk. Unsaved changes are kept; saving will ask before overwriting.',
 
     'move.title': 'Move to folder',
     'move.root': 'Root',
@@ -144,6 +157,7 @@ export const MESSAGES = {
     'onboarding.dirDialogTitle': '选择笔记目录',
 
     'sidebar.newNote': '新建笔记',
+    'sidebar.refresh': '从磁盘刷新笔记列表',
     'sidebar.changeDir': '切换笔记目录',
     'sidebar.searchPlaceholder': '搜索标题、文件名、标签或内容…',
     'sidebar.folders': '文件夹',
@@ -228,6 +242,16 @@ export const MESSAGES = {
     'toast.moveCancelled': '保存失败，已取消移动',
     'toast.moveFailed': '移动失败：{msg}',
     'toast.moved': '已移动到 {path}',
+    'toast.vaultRefreshed': (v) => `已刷新 · ${v.n} 篇笔记`,
+    'toast.vaultRefreshedUnsaved': '已刷新，但仍有未保存的修改。',
+    'toast.vaultRefreshFailed': '刷新失败：{msg}',
+    'toast.vaultRefreshDeleted': '当前笔记“{name}”已不在磁盘上，已关闭。',
+    'toast.vaultRefreshDeletedDirty':
+      '当前笔记“{name}”已在磁盘上被删除，未保存的修改仍保留在编辑器中。',
+    'toast.vaultRefreshReloaded': '“{name}”在磁盘上已修改，已重新载入。',
+    'toast.vaultRefreshReloadFailed': '无法重新载入“{name}”：{msg}',
+    'toast.vaultRefreshConflict':
+      '“{name}”在磁盘上已修改，未保存的修改仍保留在编辑器中，保存时会先询问。',
 
     'move.title': '移动到文件夹',
     'move.root': '根目录',

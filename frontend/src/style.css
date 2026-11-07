@@ -789,6 +789,26 @@ mark {
   color: var(--danger);
 }
 
+.icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-btn.spinning svg {
+  animation: refresh-spin 0.9s linear infinite;
+}
+
 /* ============ Workspace ============ */
 .workspace {
   flex: 1;

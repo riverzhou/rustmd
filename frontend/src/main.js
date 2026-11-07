@@ -94,6 +94,7 @@ const mainEl = $('main');
 const dirInput = $('dir-input');
 const onboardingError = $('onboarding-error');
 const searchInput = $('search-input');
+const refreshBtn = $('btn-refresh');
 const folderList = $('folder-list');
 const tagCloud = $('tag-cloud');
 const noteList = $('note-list');
@@ -402,7 +403,7 @@ async function refreshSearch() {
   }
 }
 
-async function loadNotes() {
+async function loadNotes({ quiet = false } = {}) {
   try {
     const [notes, folders] = await Promise.all([
       api.listNotes(state.dir),
@@ -411,8 +412,8 @@ async function loadNotes() {
     state.notes = notes;
     state.folderPaths = folders || deriveFolderPaths(notes);
   } catch (err) {
-    toast(t('toast.readFailed', { msg: err.message || err }), true);
-    return;
+    if (!quiet) toast(t('toast.readFailed', { msg: err.message || err }), true);
+    return { ok: false, error: err };
   }
   state.folderTree = buildFolderTree(state.folderPaths, state.notes);
   // tags
@@ -427,7 +428,139 @@ async function loadNotes() {
   renderFolders();
   renderTags();
   renderNoteList();
+  return { ok: true };
 }
+
+// ---------------- Manual vault refresh ----------------
+
+let refreshing = false;
+
+function setRefreshBusy(busy) {
+  refreshBtn.disabled = busy;
+  refreshBtn.classList.toggle('spinning', busy);
+  refreshBtn.setAttribute('aria-busy', busy ? 'true' : 'false');
+}
+
+/**
+ * Rescan the whole vault from disk. The app does not watch the file system,
+ * so notes added/removed/edited by other tools while the window is open would
+ * otherwise stay invisible until the next folder switch.
+ *
+ * Pending edits are flushed first. If the open note disappeared it is closed
+ * (or kept, when its save failed), and when it changed on disk with no local
+ * edits it is reloaded. Unsaved edits are never replaced: the normal hash
+ * conflict flow still guards the next save.
+ */
+async function refreshVault() {
+  if (!state.dir || refreshing) return false;
+  const dir = state.dir;
+  refreshing = true;
+  setRefreshBusy(true);
+  try {
+    const saved = await flushSave();
+    const keptUnsaved = !saved || state.pendingSave || state.saveFailed;
+    // The user may have switched folders while the save was in flight.
+    if (state.dir !== dir) return false;
+    const path = state.current;
+    const oldHash = path ? state.currentHash : '';
+    const result = await loadNotes({ quiet: true });
+    if (!result.ok) {
+      toast(
+        t('toast.vaultRefreshFailed', {
+          msg: (result.error && result.error.message) || result.error,
+        }),
+        true
+      );
+      return false;
+    }
+    // A selected folder/tag may have been deleted outside the app. Drop the
+    // stale filter instead of rendering an inexplicably empty note list.
+    let filtersChanged = false;
+    if (
+      state.filter.folder !== null &&
+      !state.folderPaths.includes(state.filter.folder)
+    ) {
+      state.filter.folder = null;
+      filtersChanged = true;
+    }
+    if (
+      state.filter.tag !== null &&
+      !state.tags.some((tag) => tag.name === state.filter.tag)
+    ) {
+      state.filter.tag = null;
+      filtersChanged = true;
+    }
+    if (filtersChanged) {
+      renderFolders();
+      renderTags();
+      renderNoteList();
+    }
+
+    let notice = null;
+    if (path && state.current === path) {
+      const meta = state.notes.find((n) => n.path === path);
+      if (!meta) {
+        if (keptUnsaved) {
+          notice = {
+            key: 'toast.vaultRefreshDeletedDirty',
+            vars: { name: fileNameOf(path) },
+            error: true,
+          };
+        } else {
+          clearCurrentNote();
+          renderNoteList();
+          notice = {
+            key: 'toast.vaultRefreshDeleted',
+            vars: { name: fileNameOf(path) },
+            error: true,
+          };
+        }
+      } else if (!keptUnsaved && meta.hash && oldHash && meta.hash !== oldHash) {
+        // Changed on disk while the editor was clean: show the new content.
+        // With unsaved edits we leave the editor alone and let save_note's
+        // baseHash conflict prompt protect them.
+        try {
+          const content = await api.readNote(dir, path);
+          if (state.dir === dir && state.current === path) {
+            applyNoteContent(path, content, { preserveView: true });
+            renderNoteList();
+            notice = {
+              key: 'toast.vaultRefreshReloaded',
+              vars: { name: fileNameOf(path) },
+            };
+          }
+        } catch (err) {
+          notice = {
+            key: 'toast.vaultRefreshReloadFailed',
+            vars: { name: fileNameOf(path), msg: err.message || err },
+            error: true,
+          };
+        }
+      } else if (keptUnsaved && meta.hash && oldHash && meta.hash !== oldHash) {
+        notice = {
+          key: 'toast.vaultRefreshConflict',
+          vars: { name: fileNameOf(path) },
+          error: true,
+        };
+      }
+    }
+
+    if (notice) toast(t(notice.key, notice.vars), notice.error);
+    else if (keptUnsaved) toast(t('toast.vaultRefreshedUnsaved'), true);
+    else toast(t('toast.vaultRefreshed', { n: state.notes.length }));
+    return true;
+  } catch (err) {
+    toast(t('toast.vaultRefreshFailed', { msg: err.message || err }), true);
+    return false;
+  } finally {
+    refreshing = false;
+    setRefreshBusy(false);
+  }
+}
+
+refreshBtn.addEventListener('click', () => {
+  void refreshVault();
+});
 
 function persistExpandedFolders() {
   localStorage.setItem(
@@ -812,6 +945,75 @@ async function flushSave() {
   }
 }
 
+/**
+ * Replace the editor with a note's content and sync every dependent view.
+ * `preserveView` keeps the cursor/scroll position, used by the manual refresh
+ * when the open note was modified on disk.
+ */
+function applyNoteContent(path, content, { preserveView = false, focus = false } = {}) {
+  const scrollTop = editor.scrollDOM.scrollTop;
+  const head = editor.state.selection.main.head;
+  state.currentHash = content.hash || '';
+  state.currentMtime = content.mtime || 0;
+  // Local images resolve relative to THIS note's folder.
+  setImageContext(state.dir, path);
+  state.tagsOfCurrent = content.tags;
+  // Loading must not mark the note dirty (a spurious save right after opening
+  // would re-touch the file and, under `tauri dev`, retrigger the file watcher
+  // → app restart loop → "window closed" + "files gone").
+  suppressChange = true;
+  const changes = {
+    from: 0,
+    to: editor.state.doc.length,
+    insert: content.body,
+  };
+  editor.dispatch(
+    preserveView
+      ? {
+          changes,
+          selection: { anchor: Math.min(head, content.body.length) },
+        }
+      : { changes }
+  );
+  suppressChange = false;
+  clearTimeout(state.previewTimer); // drop the previous note's pending update
+  renderPreview(content.body, previewEl);
+  noteTitle.value = stemOf(path);
+  renderTagEditor();
+  updateCounts();
+  statusPath.textContent = path;
+  setSaveStatus('saved');
+  editorPane.classList.add('visible');
+  emptyState.classList.add('hidden');
+  editor.scrollDOM.scrollTop = preserveView ? scrollTop : 0;
+  if (focus) editor.focus();
+}
+
+/** Close the open note and return to the empty state (delete / external delete). */
+function clearCurrentNote() {
+  clearTimeout(state.saveTimer);
+  clearTimeout(state.previewTimer);
+  state.pendingSave = false;
+  state.saveFailed = false;
+  state.current = null;
+  state.currentHash = '';
+  state.currentMtime = 0;
+  state.tagsOfCurrent = [];
+  suppressChange = true;
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: '' },
+  });
+  suppressChange = false;
+  renderPreview('', previewEl);
+  noteTitle.value = '';
+  renderTagEditor();
+  updateCounts();
+  setSaveStatus('saved');
+  statusPath.textContent = '';
+  editorPane.classList.remove('visible');
+  emptyState.classList.remove('hidden');
+}
+
 async function selectNote(path) {
   if (path === state.current) return;
   const ok = await flushSave();
@@ -825,31 +1027,8 @@ async function selectNote(path) {
   try {
     const content = await api.readNote(state.dir, path);
     state.current = path;
-    state.currentHash = content.hash || '';
-    state.currentMtime = content.mtime || 0;
-    // Local images resolve relative to THIS note's folder.
-    setImageContext(state.dir, path);
-    state.tagsOfCurrent = content.tags;
-    // Loading must not mark the note dirty (a spurious save right after
-    // opening would re-touch the file and, under `tauri dev`, retrigger the
-    // file watcher → app restart loop → "window closed" + "files gone").
-    suppressChange = true;
-    editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: content.body },
-    });
-    suppressChange = false;
-    editor.scrollDOM.scrollTop = 0;
-    clearTimeout(state.previewTimer); // drop the previous note's pending update
-    renderPreview(content.body, previewEl);
-    noteTitle.value = stemOf(path);
-    renderTagEditor();
-    updateCounts();
-    statusPath.textContent = path;
-    setSaveStatus('saved');
-    editorPane.classList.add('visible');
-    emptyState.classList.add('hidden');
+    applyNoteContent(path, content, { focus: true });
     renderNoteList();
-    editor.focus();
   } catch (err) {
     toast(t('toast.openFailed', { msg: err.message || err }), true);
   }
@@ -994,23 +1173,7 @@ $('btn-delete').addEventListener('click', async () => {
   try {
     const deleted = state.current;
     await api.deleteNote(state.dir, deleted);
-    state.current = null;
-    state.currentHash = '';
-    state.currentMtime = 0;
-    state.tagsOfCurrent = [];
-    suppressChange = true;
-    editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: '' },
-    });
-    suppressChange = false;
-    renderPreview('', previewEl);
-    noteTitle.value = '';
-    renderTagEditor();
-    updateCounts();
-    setSaveStatus('saved');
-    statusPath.textContent = '';
-    editorPane.classList.remove('visible');
-    emptyState.classList.remove('hidden');
+    clearCurrentNote();
     await loadNotes();
     toast(t('toast.deleted'));
   } catch (err) {

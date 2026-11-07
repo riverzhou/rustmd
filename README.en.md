@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.2.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.3.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -58,6 +58,10 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 
 ### Navigation
 
+- **Manual refresh** — the sidebar refresh button rescans the vault from disk
+  (notes, folders, tags, search and counts) without a restart; an open note
+  changed on disk is reloaded when clean, and a deleted note is closed safely
+  (unsaved edits are kept).
 - **Folder tree** with nested folders, empty folders, collapse/expand; selecting a parent includes all descendants.
 - **Subfolders collapsed by default**; the expanded state is remembered.
 - **Sort by modified time or file name**, with an `↑` / `↓` button to switch ascending/descending; the choice is remembered.

@@ -155,7 +155,11 @@ If a new Tauri *plugin* is used:
   renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync.
   Expanded paths are stored in `rustmd-expanded-folders`; an empty set is the
   default, so every folder starts collapsed. Sort state is `rustmd-sort-key` +
-  `rustmd-sort-dir` (`mtime` defaults to desc, `name` to asc).
+  `rustmd-sort-dir` (`mtime` defaults to desc, `name` to asc). `#btn-refresh`
+  rescans the vault through `loadNotes` (there is no file watcher): it flushes
+  pending saves first, reloads a clean note whose hash changed, closes a clean
+  note deleted on disk, keeps unsaved edits, and clears stale folder/tag
+  filters.
 - **Release**: bump `package.json`, `Cargo.toml`, `tauri.conf.json`, add a
   `CHANGELOG` section (and optionally `RELEASE_NOTES-<version>.md`), tag
   `v<version>`. The release workflow verifies the tag and builds all three

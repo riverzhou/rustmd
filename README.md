@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.2.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.3.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -62,6 +62,9 @@
 
 ### 文件导航
 
+- **手动刷新**：侧栏顶部的刷新按钮从磁盘重新扫描整个笔记库（笔记、文件夹、标签、
+  搜索与计数），无需重启；打开中的笔记被外部修改且没有未保存内容时会自动重新
+  载入，被删除时安全关闭或保留未保存内容。
 - **文件夹树**：支持嵌套文件夹、空文件夹、折叠/展开；选择父文件夹会包含整个子树。
 - **子文件夹默认折叠**：只显示顶层文件夹，点击箭头逐层展开；展开状态会记住。
 - **两种排序 + 方向**：可按最后修改时间或文件名排序，通过 `↑` / `↓` 按钮切换升序/降序；选择持久化。

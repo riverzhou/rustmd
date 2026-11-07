@@ -81,7 +81,7 @@ GitHub 仓库 Settings → Social preview 建议上传 1280×640 的图片。可
 Release 标题：
 
 ```
-rustmd v1.2.0 — local-first Markdown notes
+rustmd v<version> — local-first Markdown notes
 ```
 
 第一段：
