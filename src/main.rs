@@ -2091,8 +2091,13 @@ Real text here
     fn resolve_in_root_rejects_escape() {
         let dir = test_dir("root_escape");
         assert!(resolve_in_root(&dir, "../outside.md").is_err());
-        assert!(resolve_in_root(&dir, "..\\..\\win.md").is_err());
-        assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
+        // On Unix a backslash is an ordinary filename character, not a path
+        // separator, so these are not escapes there.
+        #[cfg(windows)]
+        {
+            assert!(resolve_in_root(&dir, "..\\..\\win.md").is_err());
+            assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
+        }
         let ok = resolve_in_root(&dir, "sub/note.md").unwrap();
         assert!(ok.starts_with(&dir));
         // Existing paths come back canonicalized (junctions resolved), so
