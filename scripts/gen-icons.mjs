@@ -91,7 +91,7 @@ const cov = (sdPx) => clamp(0.5 - sdPx, 0, 1);
 // Rounded gradient square + white document card with folded corner,
 // an "M" stroke and three text lines.
 function makePixelFn(S) {
-  const docX0 = 0.24, docY0 = 0.19, docX1 = 0.76, docY1 = 0.81;
+  const docY0 = 0.19, docX1 = 0.76;
   const fold = 0.16;
   const mTop = 0.28, mBot = 0.54, mL = 0.35, mR = 0.65, mCx = 0.5, mCy = 0.48;
   const mSegs = [
@@ -190,5 +190,40 @@ writeFileSync(join(outDir, 'icon.png'), png256);
 const icoSizes = [16, 24, 32, 48, 64, 256];
 const icoPngs = icoSizes.map((s) => encodePNG(s, makePixelFn(s)));
 writeFileSync(join(outDir, 'icon.ico'), encodeICO(icoSizes, icoPngs));
+
+// ---------- ICNS encoding (macOS .app icons) ----------
+// ICNS is a big-endian container of typed PNG entries; the 256/512/1024
+// types give the macOS bundler a proper .icns without any extra tooling.
+function encodeICNS(entries) {
+  const chunks = entries.map(([type, size]) => {
+    const png = encodePNG(size, makePixelFn(size));
+    const header = Buffer.alloc(8);
+    header.write(type, 0, 'ascii');
+    header.writeUInt32BE(png.length + 8, 4);
+    return Buffer.concat([header, png]);
+  });
+  const body = Buffer.concat(chunks);
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 'ascii');
+  header.writeUInt32BE(body.length + 8, 4);
+  return Buffer.concat([header, body]);
+}
+
+writeFileSync(
+  join(outDir, 'icon.icns'),
+  encodeICNS([
+    ['icp4', 16],
+    ['icp5', 32],
+    ['icp6', 64],
+    ['ic07', 128],
+    ['ic08', 256],
+    ['ic09', 512],
+    ['ic10', 1024],
+    ['ic11', 32],
+    ['ic12', 64],
+    ['ic13', 256],
+    ['ic14', 512],
+  ])
+);
 
 console.log('icons written to', outDir);

@@ -3,22 +3,29 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
+use std::hash::{Hash, Hasher};
+use std::io::{ErrorKind, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // ---------------- Types ----------------
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 struct NoteMeta {
-    path: String, // relative to notes root, forward slashes, e.g. "work/idea.md"
+    path: String,   // relative to notes root, forward slashes, e.g. "work/idea.md"
     folder: String, // "" for root
     title: String,
     tags: Vec<String>,
     snippet: String,
     mtime: i64, // unix seconds
+    /// Content hash of the raw file. The frontend sends it back on save so a
+    /// file changed by another program is detected even when the mtime
+    /// resolution (seconds) would miss it.
+    hash: String,
 }
 
 #[derive(Serialize)]
@@ -34,12 +41,46 @@ struct NoteContent {
     tags: Vec<String>,
     body: String,
     mtime: i64,
+    hash: String,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SaveNoteArgs {
     tags: Vec<String>,
     body: String,
+    /// Hash the editor loaded. `None` keeps the old last-writer-wins
+    /// behaviour for callers that do not track it.
+    #[serde(default)]
+    base_hash: Option<String>,
+    /// Legacy conflict token (kept for compatibility); `base_hash` is
+    /// preferred because filesystem mtimes have one-second resolution.
+    #[serde(default)]
+    base_mtime: Option<i64>,
+    /// User confirmed overwriting an externally modified file.
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchedImage {
+    bytes: Vec<u8>,
+    mime: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalImage {
+    bytes: Vec<u8>,
+    mime: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SelftestConfig {
+    examples_dir: String,
+    out_dir: String,
 }
 
 // ---------------- Path safety ----------------
@@ -47,16 +88,51 @@ struct SaveNoteArgs {
 /// `fs::canonicalize` on Windows returns `\\?\`-prefixed (extended-length)
 /// paths. Strip that prefix so the path stays comparable with normal
 /// (root-relative) paths and `Path::strip_prefix` keeps working.
+///
+/// Network shares canonicalize to `\\?\UNC\server\share\…`; stripping only
+/// `\\?\` would produce the invalid `UNC\server\…`, so the UNC form is
+/// restored to a real `\\server\share\…` path.
 fn strip_extended_prefix(p: &Path) -> PathBuf {
     let s = p.to_string_lossy();
-    if let Some(stripped) = s.strip_prefix(r"\\?\") {
-        Path::new(stripped).to_path_buf()
-    } else {
-        p.to_path_buf()
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        if let Some(unc) = rest
+            .strip_prefix("UNC\\")
+            .or_else(|| rest.strip_prefix("unc\\"))
+        {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        return PathBuf::from(rest);
+    }
+    p.to_path_buf()
+}
+
+fn canonical_root(root: &Path) -> Result<PathBuf, String> {
+    if !root.is_dir() {
+        return Err(format!("not a directory: {}", root.display()));
+    }
+    Ok(strip_extended_prefix(
+        &fs::canonicalize(root).map_err(|e| e.to_string())?,
+    ))
+}
+
+/// Deepest ancestor of `path` that currently exists (including `path`).
+fn deepest_existing_ancestor(path: &Path) -> Option<PathBuf> {
+    let mut p = path.to_path_buf();
+    loop {
+        if p.exists() {
+            return Some(p);
+        }
+        if !p.pop() {
+            return None;
+        }
     }
 }
 
-/// Join a relative path to the notes root and verify the result stays inside it.
+/// Join a relative path to the notes root and verify the result stays inside
+/// it. Existing paths are fully canonicalized (so `..`, junctions and case
+/// are resolved); for a path that does not exist yet, the deepest existing
+/// ancestor is canonicalized and checked instead. That closes the
+/// "junction in the vault + new file" write escape.
 fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.trim().is_empty() {
         return Err("empty path".into());
@@ -65,7 +141,7 @@ fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel_path.is_absolute() {
         return Err("absolute path not allowed".into());
     }
-    let mut inside = root.to_path_buf();
+    let mut inside = PathBuf::new();
     for comp in rel_path.components() {
         match comp {
             Component::Normal(c) => inside.push(c),
@@ -76,64 +152,276 @@ fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
             _ => return Err("invalid path".into()),
         }
     }
-    if inside.exists() {
-        let canon = fs::canonicalize(&inside).map_err(|e| e.to_string())?;
-        let canon_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let canon_root = canonical_root(root)?;
+    if inside.as_os_str().is_empty() {
+        // "." is the vault root itself; note paths never use it, but folder
+        // arguments (create/move) and the path tests do.
+        if rel.trim() == "." || rel.trim() == "./" {
+            return Ok(canon_root);
+        }
+        return Err("empty path".into());
+    }
+    let full = canon_root.join(&inside);
+    let Some(ancestor) = deepest_existing_ancestor(&full) else {
+        return Err("path has no existing ancestor".into());
+    };
+    let canon_ancestor =
+        strip_extended_prefix(&fs::canonicalize(&ancestor).map_err(|e| e.to_string())?);
+    if !canon_ancestor.starts_with(&canon_root) {
+        return Err("path escapes notes root".into());
+    }
+    if full.exists() {
+        let canon = strip_extended_prefix(&fs::canonicalize(&full).map_err(|e| e.to_string())?);
         if !canon.starts_with(&canon_root) {
             return Err("path escapes notes root".into());
         }
-        // Drop the `\\?\` prefix so results compare cleanly with the raw
-        // root elsewhere (e.g. in read_meta's strip_prefix).
-        return Ok(strip_extended_prefix(&canon));
+        return Ok(canon);
     }
-    Ok(inside)
+    Ok(full)
+}
+
+fn rel_from_root(root: &Path, full: &Path) -> Result<String, String> {
+    let canon_root = canonical_root(root)?;
+    full.strip_prefix(&canon_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
+
+/// Windows junctions/reparse points and Unix symlinks must be treated as
+/// opaque: following a directory junction can escape the vault (or loop on
+/// an ancestor link), and a symlinked note can point outside the root.
+fn is_link_or_reparse(path: &Path) -> bool {
+    let Ok(md) = fs::symlink_metadata(path) else {
+        return true;
+    };
+    if md.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        if md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------- Front matter ----------------
 
-/// Parse an optional front matter block: first line `---`, closed by `---`/`...`.
-/// Supports `tags: a, b` and YAML-style `- item` lists. Returns (tags, body).
-fn parse_frontmatter(text: &str) -> (Vec<String>, String) {
-    let mut lines = text.lines();
-    let Some(first) = lines.next() else {
-        return (Vec::new(), text.to_string());
-    };
-    if first.trim_end() != "---" {
-        return (Vec::new(), text.to_string());
-    }
-    let rest: Vec<&str> = lines.collect();
-    let Some(end_idx) = rest
-        .iter()
-        .position(|l| l.trim_end() == "---" || l.trim_end() == "...")
-    else {
-        return (Vec::new(), text.to_string());
-    };
-    let block = &rest[..end_idx];
+#[derive(Debug)]
+struct FrontMatterDoc {
+    bom: bool,
+    line_ending: &'static str,
+    frontmatter: Option<Vec<String>>,
+    body: String,
+}
 
-    let mut tags: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < block.len() {
-        let trimmed = block[i].trim();
-        if let Some(rest_part) = trimmed.strip_prefix("tags:") {
-            let inline = rest_part.trim().trim_matches(|c| c == '[' || c == ']').trim();
-            if !inline.is_empty() {
-                for part in inline.split(',') {
-                    let t = part.trim().trim_matches(|c| c == '"' || c == '\'');
-                    if !t.is_empty() {
-                        tags.push(t.to_string());
+fn line_ending_of(text: &str) -> &'static str {
+    match text.find('\n') {
+        Some(i) if i > 0 && text.as_bytes()[i - 1] == b'\r' => "\r\n",
+        _ => "\n",
+    }
+}
+
+fn normalize_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// Split a note into (optional) front matter lines and body. The body is
+/// normalized to LF and trailing blank lines are preserved; line endings are
+/// detected so `compose_note` can restore them on save.
+fn split_document(text: &str) -> FrontMatterDoc {
+    let (bom, rest) = match text.strip_prefix('\u{feff}') {
+        Some(r) => (true, r),
+        None => (false, text),
+    };
+    let line_ending = line_ending_of(rest);
+    let normalized = normalize_newlines(rest);
+    let mut lines = normalized.split('\n');
+    let first = lines.next().unwrap_or("");
+    if first.trim_end() != "---" {
+        return FrontMatterDoc {
+            bom,
+            line_ending,
+            frontmatter: None,
+            body: normalized,
+        };
+    }
+    let rest_lines: Vec<&str> = lines.collect();
+    let Some(end_idx) = rest_lines
+        .iter()
+        .position(|l| matches!(l.trim_end(), "---" | "..."))
+    else {
+        return FrontMatterDoc {
+            bom,
+            line_ending,
+            frontmatter: None,
+            body: normalized,
+        };
+    };
+    let frontmatter = rest_lines[..end_idx]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let mut body_start = end_idx + 1;
+    while body_start < rest_lines.len() && rest_lines[body_start].is_empty() {
+        body_start += 1;
+    }
+    FrontMatterDoc {
+        bom,
+        line_ending,
+        frontmatter: Some(frontmatter),
+        body: rest_lines[body_start..].join("\n"),
+    }
+}
+
+fn starts_with_whitespace(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_whitespace())
+}
+
+/// Strip a YAML comment (` #…`) that is outside a quoted scalar.
+fn strip_yaml_comment(s: &str) -> &str {
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (idx, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some(q) => {
+                if q == '"' && ch == '\\' {
+                    escaped = true;
+                } else if ch == q {
+                    quote = None;
+                }
+            }
+            None => {
+                if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                } else if ch == '#' {
+                    let before = s[..idx].chars().next_back();
+                    if before.is_none_or(|c| c.is_whitespace()) {
+                        return s[..idx].trim();
                     }
                 }
-            } else {
+            }
+        }
+    }
+    s
+}
+
+/// Split a flow list / comma list on top-level commas (quotes respected).
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (i, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some(q) => {
+                if q == '"' && ch == '\\' {
+                    escaped = true;
+                } else if ch == q {
+                    quote = None;
+                }
+            }
+            None => {
+                if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                } else if ch == ',' {
+                    parts.push(&s[start..i]);
+                    start = i + 1;
+                }
+            }
+        }
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
+fn unescape_double_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some(other) => out.push(other),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn parse_yaml_scalar(s: &str) -> String {
+    let s = s.trim();
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        return unescape_double_quoted(&s[1..s.len() - 1]);
+    }
+    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
+        return s[1..s.len() - 1].replace("''", "'");
+    }
+    s.to_string()
+}
+
+fn parse_tag_list(raw: &str) -> Vec<String> {
+    let s = raw.trim();
+    let s = if s.len() >= 2 && s.starts_with('[') && s.ends_with(']') {
+        s[1..s.len() - 1].trim()
+    } else {
+        s
+    };
+    let mut tags = Vec::new();
+    for part in split_top_level_commas(s) {
+        let tag = parse_yaml_scalar(part);
+        if !tag.is_empty() {
+            tags.push(tag);
+        }
+    }
+    tags
+}
+
+fn push_unique(tags: &mut Vec<String>, tag: String) {
+    if !tag.is_empty() && !tags.contains(&tag) {
+        tags.push(tag);
+    }
+}
+
+fn parse_tags(lines: &[String]) -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = &lines[i];
+        // Only a top-level `tags:` key belongs to the note. A nested
+        // `meta:\n  tags:` must not be harvested.
+        if !starts_with_whitespace(line)
+            && let Some(rest) = line.strip_prefix("tags:")
+        {
+            let value = strip_yaml_comment(rest);
+            if value.trim().is_empty() {
                 let mut j = i + 1;
-                while j < block.len() {
-                    let l = block[j].trim();
-                    if let Some(item) = l.strip_prefix("- ") {
-                        let t = item.trim().trim_matches(|c| c == '"' || c == '\'');
-                        if !t.is_empty() {
-                            tags.push(t.to_string());
-                        }
+                while j < lines.len() {
+                    let l = lines[j].trim();
+                    if l.is_empty() {
                         j += 1;
-                    } else if l.is_empty() {
+                        continue;
+                    }
+                    if let Some(item) = l.strip_prefix("- ") {
+                        let tag = parse_yaml_scalar(strip_yaml_comment(item));
+                        push_unique(&mut tags, tag);
+                        j += 1;
+                    } else if l == "-" {
                         j += 1;
                     } else {
                         break;
@@ -142,31 +430,116 @@ fn parse_frontmatter(text: &str) -> (Vec<String>, String) {
                 i = j;
                 continue;
             }
+            for tag in parse_tag_list(value) {
+                push_unique(&mut tags, tag);
+            }
         }
         i += 1;
     }
-    tags.retain(|t| !t.is_empty());
-
-    let body: String = rest[end_idx + 1..].join("\n");
-    (
-        tags,
-        body.trim_start_matches('\n')
-            .trim_start_matches('\r')
-            .to_string(),
-    )
+    tags
 }
 
-fn render_frontmatter(tags: &[String], body: &str) -> String {
+fn yaml_quote_tag(tag: &str) -> String {
+    let cleaned: String = tag
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect();
+    format!("\"{}\"", cleaned.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn render_tags_line(tags: &[String]) -> String {
     if tags.is_empty() {
-        return body.to_string();
+        return "tags: []".to_string();
     }
-    let mut out = String::from("---\ntags: ");
-    out.push_str(&tags.join(", "));
-    out.push_str("\n---\n\n");
-    out.push_str(body);
-    if !out.ends_with('\n') {
-        out.push('\n');
+    let quoted: Vec<String> = tags.iter().map(|t| yaml_quote_tag(t)).collect();
+    format!("tags: [{}]", quoted.join(", "))
+}
+
+/// Replace (or insert/remove) only the `tags:` entry in a front matter block,
+/// preserving every other key and its comment.
+fn set_tags_in_lines(lines: &mut Vec<String>, tags: &[String]) {
+    let Some(tags_idx) = lines
+        .iter()
+        .position(|l| !starts_with_whitespace(l) && l.trim_start().starts_with("tags:"))
+    else {
+        if !tags.is_empty() {
+            lines.push(render_tags_line(tags));
+        }
+        return;
+    };
+    // Consume an inline value plus an optional block list that follows it.
+    let mut end = tags_idx + 1;
+    while end < lines.len() {
+        let t = lines[end].trim();
+        if t.is_empty() || t == "-" || t.starts_with("- ") {
+            end += 1;
+        } else {
+            break;
+        }
     }
+    if tags.is_empty() {
+        lines.drain(tags_idx..end);
+    } else {
+        lines.splice(tags_idx..end, [render_tags_line(tags)]);
+    }
+}
+
+/// Parse (tags, body). Kept as the single entry point used by the read paths.
+fn parse_frontmatter(text: &str) -> (Vec<String>, String) {
+    let doc = split_document(text);
+    let tags = doc
+        .frontmatter
+        .as_deref()
+        .map(parse_tags)
+        .unwrap_or_default();
+    (tags, doc.body)
+}
+
+/// Build the on-disk file from the editor body. When the file already exists,
+/// its front matter block (minus `tags:`) and its line-ending style are
+/// preserved — saving a note no longer deletes `title:`, `date:` or any other
+/// custom field.
+fn compose_note(existing: Option<&str>, tags: &[String], body: &str) -> String {
+    let normalized_body = normalize_newlines(body);
+    let (bom, line_ending, frontmatter) = match existing {
+        Some(text) => {
+            let doc = split_document(text);
+            (doc.bom, doc.line_ending, doc.frontmatter)
+        }
+        None => (false, "\n", None),
+    };
+
+    let mut lines = frontmatter.unwrap_or_default();
+    set_tags_in_lines(&mut lines, tags);
+    let wrote_frontmatter = !lines.is_empty();
+
+    let mut body_out = if line_ending == "\r\n" {
+        normalized_body.replace('\n', "\r\n")
+    } else {
+        normalized_body
+    };
+    if wrote_frontmatter && !body_out.is_empty() && !body_out.ends_with('\n') {
+        body_out.push_str(line_ending);
+    }
+
+    let mut out = String::new();
+    if bom {
+        out.push('\u{feff}');
+    }
+    if wrote_frontmatter {
+        out.push_str("---");
+        out.push_str(line_ending);
+        for line in &lines {
+            out.push_str(line);
+            out.push_str(line_ending);
+        }
+        out.push_str("---");
+        out.push_str(line_ending);
+        if !body_out.is_empty() {
+            out.push_str(line_ending);
+        }
+    }
+    out.push_str(&body_out);
     out
 }
 
@@ -178,7 +551,13 @@ fn heading_text(line: &str) -> Option<String> {
     if !(1..=6).contains(&hashes) {
         return None;
     }
-    let rest = t[hashes..].trim();
+    let rest = &t[hashes..];
+    // CommonMark requires a space (or end of line) after the hashes:
+    // `#Title` is plain text, not a heading.
+    if !rest.is_empty() && !rest.chars().next().is_some_and(|c| c.is_whitespace()) {
+        return None;
+    }
+    let rest = rest.trim();
     if rest.is_empty() {
         return None;
     }
@@ -191,9 +570,18 @@ fn heading_text(line: &str) -> Option<String> {
 }
 
 fn extract_title(body: &str, fallback: &str) -> String {
+    let mut in_fence = false;
     for line in body.lines() {
-        if let Some(t) = heading_text(line) {
-            return t;
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some(title) = heading_text(line) {
+            return title;
         }
     }
     fallback.to_string()
@@ -205,11 +593,15 @@ fn strip_inline(s: &str) -> String {
     let mut chars = s.chars().peekable();
     let mut in_code = false;
     let mut link_text: Option<String> = None;
+    let mut is_image = false;
     while let Some(c) = chars.next() {
         if let Some(t) = link_text.as_mut() {
             if c == ']' {
-                out.push_str(t);
+                if !is_image {
+                    out.push_str(t);
+                }
                 link_text = None;
+                is_image = false;
                 if chars.peek() == Some(&'(') {
                     chars.next();
                     let mut depth = 1u32;
@@ -231,17 +623,28 @@ fn strip_inline(s: &str) -> String {
         }
         match c {
             '`' => in_code = !in_code,
-            '!' => {
-                // image: swallow the alt text too
+            '!' if !in_code => {
                 if chars.peek() == Some(&'[') {
                     chars.next();
                     link_text = Some(String::new());
+                    is_image = true;
+                } else {
+                    out.push('!');
                 }
             }
-            '[' => link_text = Some(String::new()),
+            '[' if !in_code => {
+                link_text = Some(String::new());
+                is_image = false;
+            }
             c if !in_code && matches!(c, '*' | '_' | '~' | '>' | '#' | '|') => {}
             c => out.push(c),
         }
+    }
+    // An unclosed `[` must not swallow the text after it.
+    if let Some(t) = link_text
+        && !is_image
+    {
+        out.push_str(&t);
     }
     out
 }
@@ -250,13 +653,22 @@ fn strip_inline(s: &str) -> String {
 fn plain_snippet(body: &str, max_chars: usize) -> String {
     let mut out = String::new();
     let mut in_fence = false;
+    let mut in_math = false;
     for line in body.lines() {
         let t = line.trim();
         if t.starts_with("```") || t.starts_with("~~~") {
             in_fence = !in_fence;
             continue;
         }
-        if in_fence || t.is_empty() {
+        if let Some(rest) = t.strip_prefix("$$") {
+            // Skip display math instead of showing TeX source in the card.
+            if rest.contains("$$") {
+                continue; // one-line $$…$$
+            }
+            in_math = !in_math;
+            continue;
+        }
+        if in_fence || in_math || t.is_empty() {
             continue;
         }
         if heading_text(t).is_some() {
@@ -304,6 +716,12 @@ fn mtime_of(path: &Path) -> i64 {
         .unwrap_or(0)
 }
 
+fn content_hash(bytes: &[u8]) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 /// Read a note's metadata. `rel` is the note's root-relative path (as
 /// listed), `full` is the absolute path of the file. Keeping them separate
 /// avoids fragile `strip_prefix` comparisons between a user-typed root and
@@ -327,6 +745,7 @@ fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
         tags,
         snippet,
         mtime: mtime_of(full),
+        hash: content_hash(text.as_bytes()),
     })
 }
 
@@ -337,6 +756,7 @@ fn collect_notes(root: &Path) -> Result<Vec<NoteMeta>, String> {
         b.mtime
             .cmp(&a.mtime)
             .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            .then_with(|| a.path.cmp(&b.path))
     });
     Ok(metas)
 }
@@ -350,14 +770,56 @@ fn walk(dir: &Path, root: &Path, out: &mut Vec<NoteMeta>) -> Result<(), String> 
         if name.starts_with('.') {
             continue;
         }
-        if path.is_dir() {
+        // Never follow symlinks/junctions: a directory junction can loop
+        // forever or expose notes outside the vault, and a symlinked file is
+        // not a note that `resolve_in_root` would let the user open.
+        if is_link_or_reparse(&path) {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
             walk(&path, root, out)?;
-        } else if name.to_lowercase().ends_with(".md") {
+        } else if file_type.is_file()
+            && name.to_lowercase().ends_with(".md")
+            && let Ok(rel) = path.strip_prefix(root)
+            && let Some(meta) = read_meta(rel, &path)
+        {
+            out.push(meta);
+        }
+    }
+    Ok(())
+}
+
+fn collect_folders(root: &Path) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    walk_folders(root, root, &mut out)?;
+    out.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    Ok(out)
+}
+
+fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || is_link_or_reparse(&path) {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
             if let Ok(rel) = path.strip_prefix(root) {
-                if let Some(meta) = read_meta(rel, &path) {
-                    out.push(meta);
-                }
+                out.push(rel.to_string_lossy().replace('\\', "/"));
             }
+            walk_folders(&path, root, out)?;
         }
     }
     Ok(())
@@ -374,11 +836,74 @@ fn sanitize_filename(s: &str) -> String {
     }
 }
 
+// ---------------- Atomic writes ----------------
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Write via a sibling temp file + rename so a crash mid-write cannot leave a
+/// half-truncated note. Windows `fs::rename` replaces an existing file
+/// (MoveFileEx semantics), so this works for both new and existing notes.
+fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let mut last_err: Option<String> = None;
+    for attempt in 0..5u32 {
+        let tmp = parent.join(format!(
+            ".{file_name}.rustmd-tmp-{}-{}-{attempt}",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(f) => f,
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                last_err = Some(e.to_string());
+                continue;
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        let write_result = file.write_all(data).and_then(|_| file.sync_all());
+        drop(file);
+        if let Err(e) = write_result {
+            let _ = fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+        match fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                last_err = Some(e.to_string());
+                // Antivirus/indexers can briefly hold a freshly-created file
+                // on Windows; retry with a short backoff before giving up.
+                std::thread::sleep(Duration::from_millis(20 * u64::from(attempt + 1)));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "failed to write file".to_string()))
+}
+
 // ---------------- Commands ----------------
 
 #[tauri::command]
 fn list_notes(dir: String) -> Result<Vec<NoteMeta>, String> {
     collect_notes(Path::new(&dir))
+}
+
+/// All folders under the vault (including empty ones), so the sidebar tree and
+/// the "move to folder" dialog can offer folders that do not contain a note
+/// yet.
+#[tauri::command]
+fn list_folders(dir: String) -> Result<Vec<String>, String> {
+    collect_folders(Path::new(&dir))
 }
 
 #[tauri::command]
@@ -390,23 +915,49 @@ fn read_note(dir: String, path: String) -> Result<NoteContent, String> {
         tags,
         body,
         mtime: mtime_of(&full),
+        hash: content_hash(text.as_bytes()),
     })
 }
 
-fn save_note_impl(root: &Path, rel: &str, tags: &[String], body: &str) -> Result<NoteMeta, String> {
+const CONFLICT_ERR: &str = "conflict: note changed on disk";
+
+fn save_note_impl(
+    root: &Path,
+    rel: &str,
+    tags: &[String],
+    body: &str,
+    base_hash: Option<&str>,
+    base_mtime: Option<i64>,
+    force: bool,
+) -> Result<NoteMeta, String> {
     let full = resolve_in_root(root, rel)?;
-    if let Some(parent) = full.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let existing_text = fs::read_to_string(&full).ok();
+    if !force {
+        if let Some(expected) = base_hash {
+            let actual = if full.exists() {
+                let bytes = fs::read(&full).map_err(|e| e.to_string())?;
+                content_hash(&bytes)
+            } else {
+                String::new()
+            };
+            if actual != expected {
+                return Err(CONFLICT_ERR.into());
+            }
+        } else if let Some(expected) = base_mtime
+            && full.exists()
+            && mtime_of(&full) != expected
+        {
+            return Err(CONFLICT_ERR.into());
+        }
     }
-    let content = render_frontmatter(tags, body);
+    let content = compose_note(existing_text.as_deref(), tags, body);
     // Skip the write when the on-disk content is already identical. A
     // no-op write still updates the file mtime, which (a) re-sorts the
     // note list and (b) under `tauri dev` trips the file watcher,
     // restarting the app right after every open ("window closes, list
     // disappears" loop).
-    let existing = fs::read_to_string(&full).ok();
-    if existing.as_deref() != Some(content.as_str()) {
-        fs::write(&full, content).map_err(|e| e.to_string())?;
+    if existing_text.as_deref() != Some(content.as_str()) {
+        atomic_write(&full, content.as_bytes())?;
     }
     // Re-read via the root-relative path (not strip_prefix on the
     // canonicalized path, which fails on Windows `\\?\` paths).
@@ -415,14 +966,27 @@ fn save_note_impl(root: &Path, rel: &str, tags: &[String], body: &str) -> Result
 
 #[tauri::command]
 fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, String> {
-    save_note_impl(Path::new(&dir), &path, &args.tags, &args.body)
+    save_note_impl(
+        Path::new(&dir),
+        &path,
+        &args.tags,
+        &args.body,
+        args.base_hash.as_deref(),
+        args.base_mtime,
+        args.force,
+    )
 }
 
 #[tauri::command]
 fn create_note(dir: String, folder: String) -> Result<String, String> {
     let root = Path::new(&dir);
-    let folder = folder.replace('\\', "/");
-    let target_dir = resolve_in_root(root, if folder.is_empty() { "." } else { &folder })?;
+    let canon_root = canonical_root(root)?;
+    let folder = folder.replace('\\', "/").trim_matches('/').to_string();
+    let target_dir = if folder.is_empty() {
+        canon_root.clone()
+    } else {
+        resolve_in_root(root, &folder)?
+    };
     fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     let mut candidate = "untitled.md".to_string();
     let mut i = 1u32;
@@ -430,12 +994,9 @@ fn create_note(dir: String, folder: String) -> Result<String, String> {
         candidate = format!("untitled {i}.md");
         i += 1;
     }
-    fs::write(target_dir.join(&candidate), "").map_err(|e| e.to_string())?;
-    Ok(if folder.is_empty() {
-        candidate
-    } else {
-        format!("{folder}/{candidate}")
-    })
+    let full = target_dir.join(&candidate);
+    atomic_write(&full, b"")?;
+    rel_from_root(root, &full)
 }
 
 #[tauri::command]
@@ -448,15 +1009,21 @@ fn rename_note(dir: String, path: String, name: String) -> Result<String, String
     } else {
         format!("{clean}.md")
     };
-    let new_full = full
+    let parent = full
         .parent()
         .ok_or_else(|| "no parent dir".to_string())?
-        .join(&new_name);
+        .to_path_buf();
+    let mut new_full = parent.join(&new_name);
+    if new_full != full
+        && let Ok(existing) = fs::canonicalize(&new_full)
+    {
+        let existing = strip_extended_prefix(&existing);
+        if existing != full {
+            new_full = unique_sibling(&parent, &new_name, &full)?;
+        }
+    }
     fs::rename(&full, &new_full).map_err(|e| e.to_string())?;
-    new_full
-        .strip_prefix(root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .map_err(|e| e.to_string())
+    rel_from_root(root, &new_full)
 }
 
 #[tauri::command]
@@ -468,52 +1035,78 @@ fn delete_note(dir: String, path: String) -> Result<(), String> {
     fs::remove_file(&full).map_err(|e| e.to_string())
 }
 
+/// `name` is a file name with an extension (e.g. `note.md`). Returns
+/// `note (1).md`, `note (2).md`, … in `parent`, skipping `exclude`.
+fn unique_sibling(parent: &Path, name: &str, exclude: &Path) -> Result<PathBuf, String> {
+    let stem = Path::new(name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "untitled".to_string());
+    for i in 1..10_000u32 {
+        let candidate = parent.join(format!("{stem} ({i}).md"));
+        if candidate == exclude || !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("too many files with the same name".into())
+}
+
 #[tauri::command]
 fn move_note(dir: String, path: String, dest_folder: String) -> Result<String, String> {
     let root = Path::new(&dir);
     let full = resolve_in_root(root, &path)?;
-    let normalized = dest_folder.replace('\\', "/");
-    let dest = resolve_in_root(
-        root,
-        if normalized.is_empty() { "." } else { &normalized },
-    )?;
+    let normalized = dest_folder.replace('\\', "/").trim_matches('/').to_string();
+    let dest = if normalized.is_empty() {
+        canonical_root(root)?
+    } else {
+        resolve_in_root(root, &normalized)?
+    };
     fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
     let file_name = full.file_name().ok_or_else(|| "no file name".to_string())?;
+    let name = file_name.to_string_lossy().to_string();
     let mut target = dest.join(file_name);
     if target == full {
-        return full
-            .strip_prefix(root)
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .map_err(|e| e.to_string());
+        return rel_from_root(root, &full);
     }
     if target.exists() {
-        let stem = full
-            .file_stem()
-            .ok_or_else(|| "no file stem".to_string())?
-            .to_string_lossy()
-            .to_string();
-        let mut i = 1u32;
-        loop {
-            let candidate = format!("{stem} ({i}).md");
-            if !dest.join(&candidate).exists() {
-                target = dest.join(candidate);
-                break;
-            }
-            i += 1;
-        }
+        target = unique_sibling(&dest, &name, &full)?;
     }
     fs::rename(&full, &target).map_err(|e| e.to_string())?;
-    target
-        .strip_prefix(root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .map_err(|e| e.to_string())
+    rel_from_root(root, &target)
+}
+
+/// First match window for search snippets. `lower` is the lowercased string
+/// used for offsets; `original` supplies the original casing when the two
+/// strings still line up (case folding can change lengths).
+fn snippet_window(lower: &str, original: &str, pos: usize, q_len: usize) -> String {
+    let mut start = pos.saturating_sub(40);
+    while start > 0 && !lower.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = pos
+        .saturating_add(q_len)
+        .saturating_add(60)
+        .min(lower.len());
+    while end < lower.len() && !lower.is_char_boundary(end) {
+        end -= 1;
+    }
+    let window = match original.get(start..end) {
+        Some(w) if w.to_lowercase() == lower[start..end] => w.to_string(),
+        _ => lower[start..end].to_string(),
+    };
+    if start > 0 {
+        format!("…{}", window.trim_start())
+    } else {
+        window.trim_start().to_string()
+    }
 }
 
 #[tauri::command]
 fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
     let root = Path::new(&dir);
-    let q = query.to_lowercase();
-    if q.trim().is_empty() {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
         return Ok(Vec::new());
     }
     let metas = collect_notes(root)?;
@@ -526,30 +1119,28 @@ fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
             continue;
         };
         let (_, body) = parse_frontmatter(&text);
-        let lower = body.to_lowercase();
-        let Some(pos) = lower.find(&q) else {
-            continue;
-        };
-        let mut start = pos.saturating_sub(40);
-        while start > 0 && !lower.is_char_boundary(start) {
-            start -= 1;
-        }
-        let mut end = (pos + q.len()).saturating_add(60).min(lower.len());
-        while end < lower.len() && !lower.is_char_boundary(end) {
-            end -= 1;
-        }
-        // Prefer the original casing; fall back to the lowercased window if
-        // case folding changed the string length before `start`.
-        let window = match body.get(start..end) {
-            Some(w) if w.to_lowercase() == lower[start..end] => w.to_string(),
-            _ => lower[start..end].to_string(),
-        };
-        let snippet = if start > 0 {
-            format!("…{}", window.trim_start())
+        let body_lower = body.to_lowercase();
+        let title_lower = meta.title.to_lowercase();
+        let file_name = Path::new(&meta.path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let name_lower = file_name.to_lowercase();
+        let tags_lower = meta.tags.join(" ").to_lowercase();
+        let snippet = if let Some(pos) = body_lower.find(&q) {
+            Some(snippet_window(&body_lower, &body, pos, q.len()))
+        } else if title_lower.contains(&q) {
+            Some(format!("标题：{}", meta.title))
+        } else if name_lower.contains(&q) {
+            Some(format!("文件名：{file_name}"))
+        } else if tags_lower.contains(&q) {
+            Some(format!("标签：{}", meta.tags.join(", ")))
         } else {
-            window.trim_start().to_string()
+            None
         };
-        hits.push(SearchHit { meta, snippet });
+        if let Some(snippet) = snippet {
+            hits.push(SearchHit { meta, snippet });
+        }
         if hits.len() >= 500 {
             break;
         }
@@ -557,52 +1148,186 @@ fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
     Ok(hits)
 }
 
-/// Write a UTF-8 file at an absolute path (used for HTML export;
-/// the path comes from the user's save dialog).
+/// Open the native save dialog and write the selected bytes. The frontend
+/// never supplies a destination path: the only file the backend writes is the
+/// one the user picked in the OS dialog, so a compromised webview cannot use
+/// export as an arbitrary-file-write primitive.
 #[tauri::command]
-fn write_text(path: String, content: String) -> Result<(), String> {
-    fs::write(Path::new(&path), content).map_err(|e| e.to_string())
-}
-
-/// Write raw bytes at an absolute path (used for PNG/PDF export;
-/// the path comes from the user's save dialog).
-#[tauri::command]
-fn write_bytes(path: String, data: Vec<u8>) -> Result<(), String> {
-    fs::write(Path::new(&path), data).map_err(|e| e.to_string())
-}
-
-/// Fetch a remote image (http/https only). Used by PNG/PDF export:
-/// html2canvas cannot draw cross-origin images into its canvas (CORS
-/// taint), which is why external pictures came out blank. The backend
-/// fetch is unrestricted, so the frontend swaps remote `<img>` sources
-/// for blob URLs built from these bytes before rasterizing.
-#[tauri::command]
-fn fetch_image_bytes(url: String) -> Result<Vec<u8>, String> {
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("only http/https URLs are allowed".into());
+fn save_export(
+    app: tauri::AppHandle,
+    default_name: String,
+    filter_name: String,
+    extensions: Vec<String>,
+    data: Vec<u8>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let default_name = sanitize_filename(default_name.trim());
+    let mut builder = app.dialog().file().set_file_name(&default_name);
+    if !extensions.is_empty() {
+        let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        let name = if filter_name.trim().is_empty() {
+            "文件"
+        } else {
+            filter_name.as_str()
+        };
+        builder = builder.add_filter(name, &exts);
     }
-    const LIMIT: u64 = 25 * 1024 * 1024; // 25 MB
-    let response = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+    let Some(file_path) = builder.blocking_save_file() else {
+        return Ok(None);
+    };
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+    atomic_write(&path, &data)?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+// ---------------- Remote image fetching ----------------
+
+const IMAGE_LIMIT: u64 = 25 * 1024 * 1024; // 25 MB
+
+/// True for addresses that are not safe to fetch from an untrusted note:
+/// loopback, private/link-local/CGNAT, documentation, multicast and reserved
+/// ranges. Redirects are checked with the same function.
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_public_ipv4(v4),
+        IpAddr::V6(v6) => is_public_ipv6(v6),
+    }
+}
+
+fn is_public_ipv4(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    !(ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || ip.is_unspecified()
+        || ip.is_multicast()
+        || o[0] == 0
+        || (o[0] == 100 && (64..=127).contains(&o[1]))
+        // 192.0.0.0/24 IETF protocol assignments
+        || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+        || (o[0] == 192 && o[1] == 88 && o[2] == 99)
+        || (o[0] == 198 && (o[1] == 18 || o[1] == 19))
+        || o[0] >= 240)
+}
+
+fn is_public_ipv6(ip: Ipv6Addr) -> bool {
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return is_public_ipv4(v4);
+    }
+    let seg = ip.segments();
+    !(ip.is_loopback()
+        || ip.is_unspecified()
+        || ip.is_multicast()
+        // fc00::/7 unique-local
+        || (seg[0] & 0xfe00) == 0xfc00
+        // fe80::/10 link-local
+        || (seg[0] & 0xffc0) == 0xfe80
+        // 2001:db8::/32 documentation
+        || (seg[0] == 0x2001 && seg[1] == 0x0db8)
+        // 2002::/16 6to4 can encapsulate private IPv4
+        || seg[0] == 0x2002
+        // 64:ff9b::/96 NAT64 can map private IPv4
+        || (seg[0] == 0x0064 && seg[1] == 0xff9b))
+}
+
+fn is_local_hostname(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host.ends_with(".home.arpa")
+}
+
+fn validate_fetch_url(url: &reqwest::Url) -> Result<(), String> {
+    match url.scheme() {
+        "http" | "https" => {}
+        _ => return Err("only http/https URLs are allowed".into()),
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("URLs with embedded credentials are not allowed".into());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+    if is_local_hostname(host) {
+        return Err("refusing to fetch a local hostname".into());
+    }
+    let port = url.port_or_known_default().unwrap_or(80);
+    let addrs: Vec<SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("cannot resolve host: {e}"))?
+        .collect();
+    if addrs.is_empty() {
+        return Err("cannot resolve host".into());
+    }
+    if addrs.iter().any(|a| !is_public_ip(a.ip())) {
+        return Err("refusing to fetch a private/loopback address".into());
+    }
+    Ok(())
+}
+
+fn fetch_image_bytes_impl(url_str: &str) -> Result<FetchedImage, String> {
+    let url = reqwest::Url::parse(url_str).map_err(|e| format!("invalid URL: {e}"))?;
+    validate_fetch_url(&url)?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error(std::io::Error::other("too many redirects"));
+            }
+            match validate_fetch_url(attempt.url()) {
+                Ok(()) => attempt.follow(),
+                Err(e) => attempt.error(std::io::Error::other(e)),
+            }
+        }))
+        .user_agent(concat!("rustmd/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| e.to_string())?
-        .get(&url)
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(url.clone())
+        .header(reqwest::header::ACCEPT, "image/*,*/*;q=0.8")
         .send()
         .map_err(|e| e.to_string())?;
     let status = response.status();
     if !status.is_success() {
         return Err(format!("HTTP {}", status.as_str()));
     }
-    let mut bytes = Vec::new();
-    // Read at most LIMIT+1 so an oversized response is detected, not buffered.
-    response
-        .take(LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > LIMIT {
+    validate_fetch_url(response.url())?;
+    if response
+        .content_length()
+        .is_some_and(|len| len > IMAGE_LIMIT)
+    {
         return Err("image too large (> 25 MB)".into());
     }
-    Ok(bytes)
+    let mime = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let mut bytes = Vec::new();
+    response
+        .take(IMAGE_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > IMAGE_LIMIT {
+        return Err("image too large (> 25 MB)".into());
+    }
+    Ok(FetchedImage { bytes, mime })
+}
+
+/// Fetch a remote image (http/https only). Used by PNG/PDF export:
+/// html2canvas cannot draw cross-origin images into its canvas (CORS
+/// taint), which is why external pictures came out blank. The backend
+/// fetch refuses loopback/private targets and validates every redirect.
+#[tauri::command]
+fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
+    fetch_image_bytes_impl(&url)
 }
 
 // ---------------- Vault image serving (`rmd` protocol) ----------------
@@ -629,6 +1354,7 @@ fn fetch_image_bytes(url: String) -> Result<Vec<u8>, String> {
 
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
 const CACHE_MAX_ENTRIES: usize = 64;
+const CACHE_MAX_BYTES: usize = 64 * 1024 * 1024; // 64 MB
 const NOT_FOUND: &str = "file not found";
 const TOO_LARGE: &str = "image too large (> 25 MB)";
 
@@ -645,8 +1371,7 @@ fn resolve_vault_file(root: &Path, path_str: &str) -> Result<PathBuf, String> {
         return Err(NOT_FOUND.into());
     }
     let file = strip_extended_prefix(&fs::canonicalize(p).map_err(|e| e.to_string())?);
-    let canon_root =
-        strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
+    let canon_root = strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
     if !file.starts_with(&canon_root) {
         return Err("path escapes notes root".into());
     }
@@ -676,25 +1401,43 @@ fn mime_for_path(p: &Path) -> &'static str {
     }
 }
 
-/// mtime-validated byte cache for vault files. The preview re-renders
-/// (debounced) on every keystroke and each render re-requests every
-/// `<img>` through the protocol — without this, every render would
-/// re-read multi-MB images from disk.
+struct CacheEntry {
+    mtime: SystemTime,
+    bytes: Vec<u8>,
+}
+
+struct CacheInner {
+    entries: HashMap<PathBuf, CacheEntry>,
+    total_bytes: usize,
+}
+
+/// mtime-validated, byte-budgeted cache for vault files. The preview
+/// re-renders (debounced) on every keystroke and each render re-requests
+/// every `<img>` through the protocol — without this, every render would
+/// re-read multi-MB images from disk. The budget prevents the old
+/// 64 × 25 MB worst case from pinning gigabytes of memory.
 struct VaultFileCache {
-    entries: Mutex<HashMap<PathBuf, (SystemTime, Vec<u8>)>>,
+    inner: Mutex<CacheInner>,
 }
 
 impl VaultFileCache {
     fn new() -> Self {
         Self {
-            entries: Mutex::new(HashMap::new()),
+            inner: Mutex::new(CacheInner {
+                entries: HashMap::new(),
+                total_bytes: 0,
+            }),
         }
     }
 
+    fn clear(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.entries.clear();
+        inner.total_bytes = 0;
+    }
+
     /// Returns the file bytes, serving from the cache while the file's
-    /// mtime is unchanged. Coarse eviction: a note rarely references more
-    /// than a few dozen distinct images, so drop everything instead of
-    /// maintaining an LRU.
+    /// mtime is unchanged.
     fn read(&self, canonical: &Path) -> Result<Vec<u8>, String> {
         let meta = fs::metadata(canonical).map_err(|e| e.to_string())?;
         if !meta.is_file() {
@@ -705,19 +1448,42 @@ impl VaultFileCache {
         }
         let mtime = meta.modified().map_err(|e| e.to_string())?;
         {
-            let entries = self.entries.lock().unwrap();
-            if let Some((m, bytes)) = entries.get(canonical) {
-                if *m == mtime {
-                    return Ok(bytes.clone());
-                }
+            let inner = self.inner.lock().unwrap();
+            if let Some(entry) = inner.entries.get(canonical)
+                && entry.mtime == mtime
+            {
+                return Ok(entry.bytes.clone());
             }
         }
         let bytes = fs::read(canonical).map_err(|e| e.to_string())?;
-        let mut entries = self.entries.lock().unwrap();
-        if entries.len() >= CACHE_MAX_ENTRIES {
-            entries.clear();
+        let mut inner = self.inner.lock().unwrap();
+        if inner.entries.len() >= CACHE_MAX_ENTRIES {
+            inner.entries.clear();
+            inner.total_bytes = 0;
         }
-        entries.insert(canonical.to_path_buf(), (mtime, bytes.clone()));
+        while inner.total_bytes.saturating_add(bytes.len()) > CACHE_MAX_BYTES
+            && !inner.entries.is_empty()
+        {
+            let Some(key) = inner.entries.keys().next().cloned() else {
+                break;
+            };
+            if let Some(old) = inner.entries.remove(&key) {
+                inner.total_bytes = inner.total_bytes.saturating_sub(old.bytes.len());
+            }
+        }
+        if let Some(old) = inner.entries.remove(canonical) {
+            inner.total_bytes = inner.total_bytes.saturating_sub(old.bytes.len());
+        }
+        if bytes.len() <= CACHE_MAX_BYTES {
+            inner.total_bytes = inner.total_bytes.saturating_add(bytes.len());
+            inner.entries.insert(
+                canonical.to_path_buf(),
+                CacheEntry {
+                    mtime,
+                    bytes: bytes.clone(),
+                },
+            );
+        }
         Ok(bytes)
     }
 }
@@ -747,6 +1513,7 @@ fn set_notes_root(state: tauri::State<'_, VaultState>, dir: String) -> Result<()
         return Err(format!("directory not found: {dir}"));
     }
     let canon = strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
+    state.cache.clear();
     *state.root.lock().unwrap() = Some(canon);
     Ok(())
 }
@@ -760,7 +1527,7 @@ fn set_notes_root(state: tauri::State<'_, VaultState>, dir: String) -> Result<()
 fn read_local_image(
     state: tauri::State<'_, VaultState>,
     path: String,
-) -> Result<Vec<u8>, String> {
+) -> Result<LocalImage, String> {
     let root = state
         .root
         .lock()
@@ -768,7 +1535,9 @@ fn read_local_image(
         .clone()
         .ok_or_else(|| "notes root not set".to_string())?;
     let file = resolve_vault_file(&root, &path)?;
-    state.cache.read(&file)
+    let mime = mime_for_path(&file).to_string();
+    let bytes = state.cache.read(&file)?;
+    Ok(LocalImage { bytes, mime })
 }
 
 /// The `rmd` protocol handler body (kept out of the closure so it can be
@@ -784,6 +1553,7 @@ fn serve_rmd(
             .status(status)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Access-Control-Allow-Origin", "*")
+            .header("Cache-Control", "no-store")
             .body(body.as_bytes().to_vec())
             .expect("static response")
     };
@@ -792,8 +1562,9 @@ fn serve_rmd(
     }
     // `rmd://localhost/<percent-encoded absolute path>`
     let raw = request.uri().path().trim_start_matches('/');
-    let path =
-        percent_encoding::percent_decode_str(raw).decode_utf8_lossy().to_string();
+    let path = percent_encoding::percent_decode_str(raw)
+        .decode_utf8_lossy()
+        .to_string();
     if path.trim().is_empty() {
         return text(StatusCode::BAD_REQUEST, "empty path");
     }
@@ -810,10 +1581,81 @@ fn serve_rmd(
             Ok(bytes) => Response::builder()
                 .header("Content-Type", mime_for_path(&file))
                 .header("Access-Control-Allow-Origin", "*")
+                .header("Cache-Control", "no-store")
                 .body(bytes)
                 .expect("image response"),
         },
     }
+}
+
+// ---------------- Dev-only self-test helpers ----------------
+
+#[cfg(debug_assertions)]
+fn selftest_config_impl() -> SelftestConfig {
+    let examples = std::env::var_os("RUSTMD_SELFTEST_EXAMPLES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples"));
+    let out = std::env::var_os("RUSTMD_SELFTEST_OUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("rustmd-selftest"));
+    SelftestConfig {
+        examples_dir: path_for_ui(&examples),
+        out_dir: path_for_ui(&out),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn path_for_ui(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn selftest_config() -> Result<SelftestConfig, String> {
+    Ok(selftest_config_impl())
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+fn selftest_config() -> Result<SelftestConfig, String> {
+    Err("selftest is only available in dev builds".into())
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn selftest_write(name: String, data: Vec<u8>) -> Result<(), String> {
+    let root = std::env::var_os("RUSTMD_SELFTEST_OUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("rustmd-selftest"));
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let full = resolve_in_root(&root, &name)?;
+    atomic_write(&full, &data)
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+fn selftest_write(_name: String, _data: Vec<u8>) -> Result<(), String> {
+    Err("selftest is only available in dev builds".into())
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn selftest_finish(_app: tauri::AppHandle, ok: bool) -> Result<(), String> {
+    // Let the command response reach the webview, then terminate hard: a
+    // lingering debug process would keep CI jobs alive after the report is
+    // written. This command only exists in debug builds.
+    let code = if ok { 0 } else { 1 };
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(250));
+        std::process::exit(code);
+    });
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+fn selftest_finish(_app: tauri::AppHandle, _ok: bool) -> Result<(), String> {
+    Err("selftest is only available in dev builds".into())
 }
 
 fn main() {
@@ -821,6 +1663,7 @@ fn main() {
     tauri::Builder::default()
         .manage(VaultState::new())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         // Serve vault images to the webview (local image references). The
         // async variant runs the (cached) file read off the main thread.
         .register_asynchronous_uri_scheme_protocol("rmd", |ctx, request, responder| {
@@ -833,6 +1676,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             list_notes,
+            list_folders,
             read_note,
             save_note,
             create_note,
@@ -840,11 +1684,13 @@ fn main() {
             delete_note,
             move_note,
             search_notes,
-            write_text,
-            write_bytes,
+            save_export,
             fetch_image_bytes,
             set_notes_root,
-            read_local_image
+            read_local_image,
+            selftest_config,
+            selftest_write,
+            selftest_finish
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -853,6 +1699,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rustmd_test_{}_{}_{}",
+            name,
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn cleanup(dir: &Path) {
+        fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn parse_frontmatter_inline_tags() {
@@ -863,10 +1726,13 @@ mod tests {
 
     #[test]
     fn parse_frontmatter_list_tags() {
-        let (tags, body) =
-            parse_frontmatter("---\ntags:\n  - 工作\n  - 计划\n---\nbody\n");
+        let (tags, body) = parse_frontmatter("---\ntags:\n  - 工作\n  - 计划\n---\nbody\n");
         assert_eq!(tags, vec!["工作", "计划"]);
-        assert_eq!(body, "body");
+        assert_eq!(
+            body,
+            "body
+"
+        );
     }
 
     #[test]
@@ -884,19 +1750,72 @@ mod tests {
     }
 
     #[test]
-    fn render_frontmatter_roundtrip() {
-        let tags = vec!["a".to_string(), "b".to_string()];
-        let content = render_frontmatter(&tags, "# Title\n\nBody\n");
-        let (tags2, body2) = parse_frontmatter(&content);
-        assert_eq!(tags2, tags);
-        assert!(body2.starts_with("# Title"));
-        assert!(body2.contains("Body"));
+    fn parse_frontmatter_nested_tags_ignored() {
+        let (tags, _) = parse_frontmatter("---\nmeta:\n  tags: hidden\ntags: visible\n---\nbody\n");
+        assert_eq!(tags, vec!["visible"]);
     }
 
     #[test]
-    fn render_frontmatter_empty_tags() {
-        let content = render_frontmatter(&[], "just body");
-        assert_eq!(content, "just body");
+    fn parse_frontmatter_quoted_comma_and_comment() {
+        let (tags, _) =
+            parse_frontmatter("---\ntags: [\"a,b\", c, 'd e'] # trailing comment\n---\nbody\n");
+        assert_eq!(tags, vec!["a,b", "c", "d e"]);
+    }
+
+    #[test]
+    fn parse_frontmatter_crlf() {
+        let (tags, body) = parse_frontmatter("---\r\ntags: a, b\r\n---\r\n\r\nline1\r\nline2\r\n");
+        assert_eq!(tags, vec!["a", "b"]);
+        assert_eq!(body, "line1\nline2\n");
+    }
+
+    #[test]
+    fn compose_preserves_unknown_frontmatter_fields() {
+        let original = "---\ntitle: My Note\ndate: 2024-01-02\ntags: old\n---\n\nbody\n";
+        let out = compose_note(Some(original), &["new".into()], "body\n");
+        assert!(out.contains("title: My Note"));
+        assert!(out.contains("date: 2024-01-02"));
+        assert!(out.contains("tags: [\"new\"]"));
+        let (tags, body) = parse_frontmatter(&out);
+        assert_eq!(tags, vec!["new"]);
+        assert_eq!(body, "body\n");
+    }
+
+    #[test]
+    fn compose_removes_only_tags() {
+        let original = "---\ntitle: Keep me\ntags:\n  - a\n  - b\n---\n\nbody\n";
+        let out = compose_note(Some(original), &[], "body\n");
+        assert!(out.contains("title: Keep me"));
+        assert!(!out.contains("tags:"));
+        let (tags, body) = parse_frontmatter(&out);
+        assert!(tags.is_empty());
+        assert_eq!(body, "body\n");
+    }
+
+    #[test]
+    fn compose_creates_and_removes_frontmatter() {
+        let created = compose_note(None, &["a".into()], "# Hi\n");
+        assert!(created.starts_with("---\ntags: [\"a\"]\n---\n\n# Hi\n"));
+        let removed = compose_note(Some(&created), &[], "# Hi\n");
+        assert_eq!(removed, "# Hi\n");
+    }
+
+    #[test]
+    fn compose_preserves_crlf_and_bom() {
+        let original = "\u{feff}---\r\ntags: a\r\n---\r\n\r\nbody\r\n";
+        let out = compose_note(Some(original), &["b".into()], "body\n");
+        assert!(out.starts_with('\u{feff}'));
+        assert!(out.contains("\r\ntags: [\"b\"]\r\n"));
+        assert!(out.ends_with("body\r\n"));
+        assert!(!out.contains("\n\nbody\r\n\r\n"));
+    }
+
+    #[test]
+    fn parse_frontmatter_roundtrips_quoted_tags() {
+        let tags = vec!["a,b".to_string(), "c \"quote\"".to_string()];
+        let content = compose_note(None, &tags, "body\n");
+        let (parsed, _) = parse_frontmatter(&content);
+        assert_eq!(parsed, tags);
     }
 
     #[test]
@@ -908,8 +1827,27 @@ mod tests {
     }
 
     #[test]
+    fn extract_title_skips_code_fences() {
+        assert_eq!(
+            extract_title("```md\n# not a title\n```\n\n# Real\n", "fallback"),
+            "Real"
+        );
+        assert_eq!(
+            extract_title(" ```\n# fake\n```\nbody\n", "fallback"),
+            "fallback"
+        );
+    }
+
+    #[test]
     fn extract_title_fallback() {
         assert_eq!(extract_title("no headings here", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn heading_requires_space_after_hashes() {
+        assert_eq!(heading_text("#Title"), None);
+        assert_eq!(heading_text("# Title"), Some("Title".into()));
+        assert_eq!(heading_text("## Title ##"), Some("Title".into()));
     }
 
     #[test]
@@ -929,6 +1867,13 @@ mod tests {
     }
 
     #[test]
+    fn strip_inline_keeps_bang_and_unclosed_bracket() {
+        assert_eq!(strip_inline("a != b"), "a != b");
+        assert_eq!(strip_inline("[unclosed text"), "unclosed text");
+        assert_eq!(strip_inline("![alt](img.png) rest"), " rest");
+    }
+
+    #[test]
     fn plain_snippet_skips_headings_and_fences() {
         let body = "# Head\n\n```rust\nfn main() {}\n```\n\nReal text here\n\n- item one\n";
         let s = plain_snippet(body, 100);
@@ -936,6 +1881,22 @@ mod tests {
         assert!(s.contains("item one"));
         assert!(!s.contains("fn main"));
         assert!(!s.contains("Head"));
+    }
+
+    #[test]
+    fn plain_snippet_skips_display_math() {
+        let body = "# Math
+
+$$
+E = mc^2
+$$
+
+Real text here
+";
+        let s = plain_snippet(body, 100);
+        assert!(s.contains("Real text here"));
+        assert!(!s.contains("mc^2"));
+        assert!(!s.contains("$$"));
     }
 
     #[test]
@@ -947,61 +1908,70 @@ mod tests {
     }
 
     #[test]
+    fn strip_extended_prefix_restores_unc() {
+        assert_eq!(
+            strip_extended_prefix(Path::new(r"\\?\UNC\server\share\note.md")),
+            PathBuf::from(r"\\server\share\note.md")
+        );
+        assert_eq!(
+            strip_extended_prefix(Path::new(r"\\?\C:\vault\note.md")),
+            PathBuf::from(r"C:\vault\note.md")
+        );
+        assert_eq!(
+            strip_extended_prefix(Path::new("/tmp/note.md")),
+            PathBuf::from("/tmp/note.md")
+        );
+    }
+
+    #[test]
+    fn public_ip_filter() {
+        assert!(is_public_ip("8.8.8.8".parse().unwrap()));
+        assert!(is_public_ip("1.1.1.1".parse().unwrap()));
+        assert!(!is_public_ip("127.0.0.1".parse().unwrap()));
+        assert!(!is_public_ip("10.0.0.1".parse().unwrap()));
+        assert!(!is_public_ip("172.16.0.1".parse().unwrap()));
+        assert!(!is_public_ip("192.168.1.1".parse().unwrap()));
+        assert!(!is_public_ip("169.254.169.254".parse().unwrap()));
+        assert!(!is_public_ip("100.64.0.1".parse().unwrap()));
+        assert!(!is_public_ip("::1".parse().unwrap()));
+        assert!(!is_public_ip("fc00::1".parse().unwrap()));
+        assert!(!is_public_ip("fe80::1".parse().unwrap()));
+        assert!(is_public_ip("2001:4860:4860::8888".parse().unwrap()));
+        assert!(!is_public_ip("::ffff:127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn fetch_image_bytes_rejects_private_targets() {
+        assert!(fetch_image_bytes_impl("http://127.0.0.1/x.png").is_err());
+        assert!(fetch_image_bytes_impl("http://localhost/x.png").is_err());
+        assert!(fetch_image_bytes_impl("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(fetch_image_bytes_impl("http://[::1]/x.png").is_err());
+        assert!(fetch_image_bytes_impl("file:///C:/Windows/system32").is_err());
+        assert!(fetch_image_bytes_impl("ftp://example.com/x.png").is_err());
+        assert!(fetch_image_bytes_impl("data:image/png;base64,AAAA").is_err());
+    }
+
+    #[ignore = "network access required"]
+    #[test]
     fn fetch_image_bytes_fetches_remote_image() {
         // Network test: exercises the real reqwest+rustls path used by the
-        // PNG/PDF export. Skips itself when the machine is offline.
-        let bytes = fetch_image_bytes("https://picsum.photos/id/237/200/150".into());
-        let bytes = match bytes {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("skipping fetch_image_bytes_fetches_remote_image (offline?): {e}");
-                return;
-            }
-        };
-        assert!(bytes.len() > 1000, "suspiciously small image: {} bytes", bytes.len());
-        // JPEG SOI marker (picsum serves jpeg)
-        assert_eq!(&bytes[0..2], &[0xFF, 0xD8], "unexpected magic bytes");
-    }
-
-    #[test]
-    fn fetch_image_bytes_rejects_non_http() {
-        // Must fail fast on the scheme check, before any network access.
-        assert!(fetch_image_bytes("file:///C:/Windows/system32".into()).is_err());
-        assert!(fetch_image_bytes("ftp://example.com/x.png".into()).is_err());
-        assert!(fetch_image_bytes("data:image/png;base64,AAAA".into()).is_err());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn repro_read_meta_after_canonicalize() {
-        // Regression: `fs::canonicalize` on Windows returns `\\?\`-prefixed
-        // paths, which used to make `strip_prefix(root)` fail after save —
-        // surfacing as "failed to read note back" toasts after every save.
-        let dir = r"D:\GitHub\rustmd\examples";
-        let rel = "markdown_render_test.md";
-        if !Path::new(&format!("{dir}\\{rel}")).exists() {
-            return; // sample notes not checked out
-        }
-        let root = Path::new(dir);
-        let full = resolve_in_root(root, rel).expect("resolve_in_root");
+        // PNG/PDF export. Run explicitly with `cargo test -- --ignored`.
+        let image = fetch_image_bytes_impl("https://picsum.photos/id/237/200/150").unwrap();
         assert!(
-            !full.to_string_lossy().starts_with(r"\\?\"),
-            "resolve_in_root must strip the \\?\\ prefix, got {full:?}"
+            image.bytes.len() > 1000,
+            "suspiciously small image: {} bytes",
+            image.bytes.len()
         );
-        let meta = read_meta(Path::new(rel), &full).expect("read_meta after save");
-        assert_eq!(meta.path, rel);
+        // JPEG SOI marker (picsum serves jpeg)
+        assert_eq!(&image.bytes[0..2], &[0xFF, 0xD8], "unexpected magic bytes");
+        assert_eq!(image.mime, "image/jpeg");
     }
 
     #[test]
     fn save_note_impl_skips_write_when_content_identical() {
-        let dir = std::env::temp_dir().join("rustmd_test_save_noop");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let args = SaveNoteArgs {
-            tags: vec!["a".into()],
-            body: "hello\n".into(),
-        };
-        let meta = save_note_impl(&dir, "note.md", &args.tags, &args.body).unwrap();
+        let dir = test_dir("save_noop");
+        let meta =
+            save_note_impl(&dir, "note.md", &["a".into()], "hello\n", None, None, false).unwrap();
         assert_eq!(meta.path, "note.md");
         let mtime_before = fs::metadata(dir.join("note.md"))
             .unwrap()
@@ -1009,8 +1979,10 @@ mod tests {
             .unwrap();
         // Wait longer than the filesystem mtime resolution, then save the
         // identical content again: the file must NOT be rewritten.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        save_note_impl(&dir, "note.md", &args.tags, &args.body).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        let meta2 =
+            save_note_impl(&dir, "note.md", &["a".into()], "hello\n", None, None, false).unwrap();
+        assert_eq!(meta.hash, meta2.hash);
         let mtime_after = fs::metadata(dir.join("note.md"))
             .unwrap()
             .modified()
@@ -1020,23 +1992,104 @@ mod tests {
             "identical content must not rewrite the file"
         );
         // Different content still writes.
-        let changed = SaveNoteArgs {
-            tags: vec!["a".into()],
-            body: "changed\n".into(),
-        };
-        save_note_impl(&dir, "note.md", &changed.tags, &changed.body).unwrap();
+        save_note_impl(
+            &dir,
+            "note.md",
+            &["a".into()],
+            "changed\n",
+            None,
+            None,
+            false,
+        )
+        .unwrap();
         let mtime_changed = fs::metadata(dir.join("note.md"))
             .unwrap()
             .modified()
             .unwrap();
-        assert_ne!(mtime_before, mtime_changed, "changed content must be written");
-        fs::remove_dir_all(&dir).ok();
+        assert_ne!(
+            mtime_before, mtime_changed,
+            "changed content must be written"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn save_note_impl_detects_external_change() {
+        let dir = test_dir("save_conflict");
+        let first = save_note_impl(&dir, "note.md", &[], "one\n", None, None, false).unwrap();
+        std::thread::sleep(Duration::from_millis(1100));
+        fs::write(dir.join("note.md"), "external\n").unwrap();
+        let conflict = save_note_impl(
+            &dir,
+            "note.md",
+            &[],
+            "two\n",
+            Some(&first.hash),
+            Some(first.mtime),
+            false,
+        );
+        assert!(conflict.is_err());
+        assert!(conflict.unwrap_err().contains("conflict"));
+        let forced = save_note_impl(
+            &dir,
+            "note.md",
+            &[],
+            "two\n",
+            Some(&first.hash),
+            Some(first.mtime),
+            true,
+        )
+        .unwrap();
+        assert_eq!(forced.title, "note");
+        assert_eq!(fs::read_to_string(dir.join("note.md")).unwrap(), "two\n");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn save_note_impl_preserves_frontmatter_fields() {
+        let dir = test_dir("save_frontmatter");
+        fs::write(
+            dir.join("note.md"),
+            "---\ntitle: Kept\ndate: 2024-01-01\ntags: old\n---\n\nbody\n",
+        )
+        .unwrap();
+        save_note_impl(
+            &dir,
+            "note.md",
+            &["new".into()],
+            "body\n",
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        let text = fs::read_to_string(dir.join("note.md")).unwrap();
+        assert!(text.contains("title: Kept"));
+        assert!(text.contains("date: 2024-01-01"));
+        assert!(text.contains("tags: [\"new\"]"));
+        assert!(!text.contains("tags: old"));
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn atomic_write_replaces_without_temp_leftovers() {
+        let dir = test_dir("atomic");
+        let target = dir.join("note.md");
+        atomic_write(&target, b"one").unwrap();
+        atomic_write(&target, b"two").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"two");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("rustmd-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind");
+        cleanup(&dir);
     }
 
     #[test]
     fn resolve_in_root_rejects_escape() {
-        let dir = std::env::temp_dir().join("rustmd_test_root_xyz");
-        fs::create_dir_all(&dir).unwrap();
+        let dir = test_dir("root_escape");
         assert!(resolve_in_root(&dir, "../outside.md").is_err());
         assert!(resolve_in_root(&dir, "..\\..\\win.md").is_err());
         assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
@@ -1045,30 +2098,57 @@ mod tests {
         // Existing paths come back canonicalized (junctions resolved), so
         // compare against a canonicalized root.
         let ok_dot = resolve_in_root(&dir, ".").unwrap();
-        // `resolve_in_root` strips the `\\?\` prefix, so compare against a
-        // canonicalized root with the same stripping applied.
         let canon_dir = strip_extended_prefix(&fs::canonicalize(&dir).unwrap());
         assert!(ok_dot.starts_with(&canon_dir));
-        fs::remove_dir_all(&dir).ok();
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn resolve_in_root_rejects_symlinked_directory_escape() {
+        let dir = test_dir("root_symlink");
+        let outside = test_dir("root_symlink_outside");
+        let link = dir.join("esc");
+        let created = create_dir_link(&outside, &link);
+        if !created {
+            cleanup(&dir);
+            cleanup(&outside);
+            return; // platform privilege unavailable
+        }
+        let result = resolve_in_root(&dir, "esc/evil.md");
+        assert!(result.is_err(), "junction/symlink escape must be rejected");
+        let _ = fs::remove_file(&link);
+        cleanup(&dir);
+        cleanup(&outside);
+    }
+
+    #[test]
+    fn collect_notes_skips_symlinked_directories() {
+        let dir = test_dir("walk_symlink");
+        fs::create_dir_all(dir.join("real")).unwrap();
+        fs::write(dir.join("real/inside.md"), "# Inside\n").unwrap();
+        let link = dir.join("loop");
+        let created = create_dir_link(&dir, &link);
+        let notes = collect_notes(&dir).unwrap();
+        assert_eq!(notes.len(), 1);
+        if created {
+            let _ = fs::remove_file(&link);
+        }
+        cleanup(&dir);
     }
 
     #[test]
     fn resolve_vault_file_serves_files_in_root() {
-        let dir = std::env::temp_dir().join("rustmd_test_vault_xyz");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = test_dir("vault_ok");
         fs::write(dir.join("img.png"), b"png").unwrap();
         let fwd = dir.to_string_lossy().replace('\\', "/");
         let file = resolve_vault_file(Path::new(&dir), &format!("{fwd}/img.png")).unwrap();
         assert!(file.ends_with("img.png"));
-        fs::remove_dir_all(&dir).ok();
+        cleanup(&dir);
     }
 
     #[test]
     fn resolve_vault_file_rejects_escapes_relative_and_missing() {
-        let dir = std::env::temp_dir().join("rustmd_test_vault_xyz");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = test_dir("vault_escape");
         let root = Path::new(&dir);
         let fwd = dir.to_string_lossy().replace('\\', "/");
         // A file OUTSIDE the root, addressed via a `..` component.
@@ -1084,7 +2164,7 @@ mod tests {
         // Missing file.
         assert!(resolve_vault_file(root, &format!("{fwd}/missing.png")).is_err());
         let _ = fs::remove_file(&outside);
-        fs::remove_dir_all(&dir).ok();
+        cleanup(&dir);
     }
 
     #[test]
@@ -1092,14 +2172,15 @@ mod tests {
         assert_eq!(mime_for_path(Path::new("a/b.PNG")), "image/png");
         assert_eq!(mime_for_path(Path::new("x.Jpeg")), "image/jpeg");
         assert_eq!(mime_for_path(Path::new("x.svg")), "image/svg+xml");
-        assert_eq!(mime_for_path(Path::new("x.unknown")), "application/octet-stream");
+        assert_eq!(
+            mime_for_path(Path::new("x.unknown")),
+            "application/octet-stream"
+        );
     }
 
     #[test]
     fn vault_file_cache_validates_mtime() {
-        let dir = std::env::temp_dir().join("rustmd_test_cache_xyz");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = test_dir("cache");
         let f = dir.join("a.bin");
         fs::write(&f, b"one").unwrap();
         let cache = VaultFileCache::new();
@@ -1108,9 +2189,129 @@ mod tests {
         // Wait past the filesystem mtime resolution, then rewrite the
         // file: the cache must notice and re-read (a note image edited
         // on disk outside the app must not keep serving stale bytes).
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(200));
         fs::write(&f, b"two-two").unwrap();
         assert_eq!(cache.read(&canonical).unwrap(), b"two-two");
-        fs::remove_dir_all(&dir).ok();
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn read_meta_after_canonicalize_has_relative_path() {
+        // Regression: `fs::canonicalize` on Windows returns `\\?\`-prefixed
+        // paths, which used to make `strip_prefix(root)` fail after save.
+        let dir = test_dir("canonical_rel");
+        fs::write(dir.join("note.md"), "# Hello\n").unwrap();
+        let root = Path::new(&dir);
+        let full = resolve_in_root(root, "note.md").expect("resolve_in_root");
+        assert!(
+            !full.to_string_lossy().starts_with(r"\\?\"),
+            "resolve_in_root must strip the extended prefix, got {full:?}"
+        );
+        let meta = read_meta(Path::new("note.md"), &full).expect("read_meta");
+        assert_eq!(meta.path, "note.md");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn search_matches_title_and_tags() {
+        let dir = test_dir("search");
+        fs::write(
+            dir.join("alpha.md"),
+            "---
+tags: secret, 工作
+---
+
+plain body without the searchable title
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("other.md"),
+            "# Other
+
+plain body
+",
+        )
+        .unwrap();
+        let by_title = search_notes(dir.to_string_lossy().to_string(), "alpha".into()).unwrap();
+        assert_eq!(by_title.len(), 1);
+        assert!(
+            by_title[0].snippet.contains("标题"),
+            "unexpected snippet: {}",
+            by_title[0].snippet
+        );
+        let by_tag = search_notes(dir.to_string_lossy().to_string(), "secret".into()).unwrap();
+        assert_eq!(by_tag.len(), 1);
+        assert!(by_tag[0].snippet.contains("标签"));
+        // A heading hides the filename fallback title; the filename itself
+        // must still be searchable.
+        fs::write(
+            dir.join("beta.md"),
+            "# Unrelated heading
+
+plain
+",
+        )
+        .unwrap();
+        let by_name = search_notes(dir.to_string_lossy().to_string(), "beta".into()).unwrap();
+        assert_eq!(by_name.len(), 1);
+        assert!(by_name[0].snippet.contains("文件名"));
+        let none = search_notes(dir.to_string_lossy().to_string(), "missing".into()).unwrap();
+        assert!(none.is_empty());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn folder_list_includes_empty_and_nested() {
+        let dir = test_dir("folders");
+        fs::create_dir_all(dir.join("a/b")).unwrap();
+        fs::create_dir_all(dir.join("empty")).unwrap();
+        fs::write(dir.join("a/b/note.md"), "# Hi\n").unwrap();
+        let folders = collect_folders(&dir).unwrap();
+        assert!(folders.contains(&"a".to_string()));
+        assert!(folders.contains(&"a/b".to_string()));
+        assert!(folders.contains(&"empty".to_string()));
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn rename_and_move_avoid_collisions() {
+        let dir = test_dir("rename_move");
+        fs::create_dir_all(dir.join("dest")).unwrap();
+        fs::write(dir.join("note.md"), "# One\n").unwrap();
+        fs::write(dir.join("dest/note.md"), "# Two\n").unwrap();
+        let moved = move_note(
+            dir.to_string_lossy().to_string(),
+            "note.md".into(),
+            "dest".into(),
+        )
+        .unwrap();
+        assert_eq!(moved, "dest/note (1).md");
+        let renamed = rename_note(
+            dir.to_string_lossy().to_string(),
+            "dest/note.md".into(),
+            "note (1)".into(),
+        )
+        .unwrap();
+        assert_eq!(renamed, "dest/note (1) (1).md");
+        cleanup(&dir);
+    }
+
+    #[cfg(unix)]
+    fn create_dir_link(target: &Path, link: &Path) -> bool {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+
+    #[cfg(windows)]
+    fn create_dir_link(target: &Path, link: &Path) -> bool {
+        use std::process::Command;
+        let status = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(link)
+            .arg(target)
+            .status();
+        matches!(status, Ok(s) if s.success())
     }
 }

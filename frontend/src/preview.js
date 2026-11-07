@@ -1,8 +1,16 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import { api } from './api.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
+import {
+  splitCodeSegments,
+  splitInlineCode,
+  sourceHasMath,
+  protectMath,
+  mathToken,
+} from './markdown.js';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -108,21 +116,6 @@ function ensureMathJax() {
   return mathJaxPromise;
 }
 
-/// True when the source has `$`/`$$` math delimiters outside fenced code
-/// blocks (cheap gate so the MathJax bundle is never loaded for math-free
-/// notes). Inline-code spans are ignored; MathJax itself skips <code> and
-/// <pre> elements during typesetting, so a stray `$` there is harmless.
-function sourceHasMath(md) {
-  return splitCodeSegments(md).some((s) => !s.code && mdSourceHasMath(s.text));
-}
-
-function mdSourceHasMath(text) {
-  // `$$` block delimiter, or an inline `$x$` pair.
-  if (text.includes('$$')) return true;
-  const re = /(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/;
-  return re.test(text);
-}
-
 /// Typeset all math in a rendered container. Resolves even when typesetting
 /// fails: the raw `$...$` source stays visible instead of a blank page.
 ///
@@ -159,7 +152,8 @@ let mermaidTheme = null;
 
 export function setPreviewTheme(theme) {
   mermaidTheme = theme;
-  mmdCache.clear(); // rendered SVGs are theme-dependent
+  // The cache key includes the theme, so no clear() here: switching theme
+  // must not throw away the other theme's rendered diagrams.
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
@@ -180,50 +174,6 @@ function ensureMermaid() {
 // outer parse untouched. Fenced code segments are skipped so samples that
 // contain <details> are not transformed.
 
-function splitCodeSegments(md) {
-  const segments = [];
-  const lines = md.split('\n');
-  let text = [];
-  let code = [];
-  let fence = null; // null outside a fence, otherwise the fence char ` or ~
-  const flushText = () => {
-    if (text.length) {
-      segments.push({ code: false, text: text.join('\n') });
-      text = [];
-    }
-  };
-  const flushCode = () => {
-    if (code.length) {
-      segments.push({ code: true, text: code.join('\n') });
-      code = [];
-    }
-  };
-  for (const line of lines) {
-    if (fence) {
-      code.push(line);
-      const m = line.match(
-        new RegExp('^\\s*' + (fence === '`' ? '`{3,}' : '~{3,}') + '\\s*$')
-      );
-      if (m) {
-        flushCode();
-        fence = null;
-      }
-      continue;
-    }
-    const m = line.match(/^\s*(`{3,}|~{3,})/);
-    if (m) {
-      flushText();
-      fence = m[1][0];
-      code = [line];
-      continue;
-    }
-    text.push(line);
-  }
-  flushCode();
-  flushText();
-  return segments;
-}
-
 function renderDetailsBlocks(md) {
   return md.replace(/<details\b[^>]*>([\s\S]*?)<\/details>/gi, (full, inner) => {
     const m = inner.match(/^\s*(<summary\b[^>]*>[\s\S]*?<\/summary>)([\s\S]*)$/i);
@@ -235,92 +185,15 @@ function renderDetailsBlocks(md) {
 
 function preprocessDetails(md) {
   return splitCodeSegments(md)
-    .map((s) => (s.code ? s.text : renderDetailsBlocks(s.text)))
+    .map((segment) => {
+      if (segment.code) return segment.text;
+      return splitInlineCode(segment.text)
+        .map((part) =>
+          part.code ? part.text : renderDetailsBlocks(part.text)
+        )
+        .join('');
+    })
     .join('\n');
-}
-
-// ---------------- Math protection ----------------
-// marked applies markdown escaping to plain text, which mangles TeX:
-// `\\` (the matrix row separator) collapses to a lone `\`, and spacing
-// commands like `\,` lose their backslash entirely. Every matrix /
-// align / cases block is destroyed before MathJax ever sees it.
-//
-// Fix: swap math segments for opaque word tokens *before* marked.parse
-// (tokens survive markdown untouched — no backslashes, no line breaks,
-// so no `\<br>` either) and restore the raw TeX into the DOM afterwards.
-// MathJax then typesets the pristine source.
-
-const mathToken = (i) => `RMDMATH${i}X`;
-
-// Display-math delimiters must be *standalone*: the opening `$$` starts at
-// the beginning of a line (or after whitespace) and the closing `$$` ends
-// the line (or is followed by whitespace). Otherwise a stray `$$` quoted
-// mid-sentence — e.g. a syntax guide writing `使用双 $$ 包裹` — pairs up
-// with the next real delimiter and swallows the surrounding prose into a
-// bogus "formula" (which then makes MathJax reject the whole note).
-// NB: the `g` flag is load-bearing — String.replace with a non-global
-// regex only replaces the FIRST match, so without it only the first
-// $$…$$ block of the note would be protected and every later display
-// formula (matrices, align, cases …) would hit marked's escaping
-// (`\\` row separators collapse) and render as a single squashed line.
-const DISPLAY_MATH_RE = /(?<=^|\s)\$\$([\s\S]*?)\$\$(?=\s|$)/gm;
-
-function protectMathInText(text, store) {
-  // Display math first ($$...$$, may span lines), then inline $...$.
-  // Same inline-math heuristics as mdSourceHasMath above.
-  let out = text.replace(DISPLAY_MATH_RE, (m) => {
-    store.push(m);
-    return mathToken(store.length - 1);
-  });
-  out = out.replace(/(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/g, (m, pre) => {
-    store.push(m.slice(pre.length));
-    return pre + mathToken(store.length - 1);
-  });
-  return out;
-}
-
-function protectMath(md, store) {
-  // Fenced code is left alone so samples that *show* math syntax stay literal.
-  return splitCodeSegments(md)
-    .map((s) => (s.code ? s.text : protectMathInText(s.text, store)))
-    .join('\n');
-}
-
-/// Swap each token for a dedicated <span class="rm-math"> holding the raw
-/// TeX, and return the spans. Tokens are plain alphanumeric words, so
-/// marked never splits one across text nodes. Per-formula spans let
-/// typesetMath typeset (and fall back) formula by formula — one bad formula
-/// must not take down the rest of the note.
-function restoreMath(container, store) {
-  const spans = [];
-  if (!store.length) return spans;
-  const nodes = [];
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  for (const node of nodes) {
-    const value = node.nodeValue;
-    const hits = [];
-    for (let i = 0; i < store.length; i++) {
-      const p = value.indexOf(mathToken(i));
-      if (p !== -1) hits.push([p, i]);
-    }
-    if (!hits.length) continue;
-    hits.sort((a, b) => a[0] - b[0]);
-    const frag = document.createDocumentFragment();
-    let pos = 0;
-    for (const [p, i] of hits) {
-      if (p > pos) frag.appendChild(document.createTextNode(value.slice(pos, p)));
-      const span = document.createElement('span');
-      span.className = 'rm-math';
-      span.textContent = store[i];
-      frag.appendChild(span);
-      spans.push(span);
-      pos = p + mathToken(i).length;
-    }
-    if (pos < value.length) frag.appendChild(document.createTextNode(value.slice(pos)));
-    node.parentNode.replaceChild(frag, node);
-  }
-  return spans;
 }
 
 // ---------------- Local image resolution ----------------
@@ -366,7 +239,21 @@ function localImageAbsPath(src) {
   if (/^(https?:|data:|blob:)/i.test(src)) return null;
   if (/^file:\/\//i.test(src)) {
     try {
-      return decodeURIComponent(src.slice('file://'.length)).replace(/\\/g, '/');
+      const url = new URL(src);
+      let pathname = decodeURIComponent(url.pathname);
+      // file://C:/x (the drive letter is parsed as the URL host)
+      if (/^[a-zA-Z]$/.test(url.host)) pathname = `/${url.host}${pathname}`;
+      // On Windows a file URL pathname for a drive looks like /C:/x.
+      if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) pathname = pathname.slice(1);
+      if (
+        url.host &&
+        url.host.toLowerCase() !== 'localhost' &&
+        !/^[a-zA-Z]$/.test(url.host)
+      ) {
+        // UNC share: file://server/share/x → //server/share/x
+        pathname = `//${url.host}${pathname}`;
+      }
+      return pathname.replace(/\\/g, '/');
     } catch {
       return null;
     }
@@ -380,19 +267,6 @@ function localImageAbsPath(src) {
   return imageCtx.root + (dir ? `/${dir}` : '') + `/${src}`;
 }
 
-function rewriteLocalImages(container) {
-  if (!imageCtx) return;
-  for (const img of container.querySelectorAll('img')) {
-    const abs = localImageAbsPath(img.getAttribute('src') || '');
-    if (abs) {
-      // srcset (raw HTML) takes precedence over src — drop it so the
-      // rewritten src is the one that loads.
-      img.removeAttribute('srcset');
-      img.src = RMD_ORIGIN + encodeURIComponent(abs);
-    }
-  }
-}
-
 /// Swap rmd:-served local images for inline data: URLs so an exported
 /// HTML file is self-contained — the rmd scheme only exists in-app
 /// (remote images stay remote, as before).
@@ -404,14 +278,216 @@ async function inlineLocalImagesForHtml(stage) {
     locals.map(async (img) => {
       const src = img.getAttribute('src');
       try {
-        const bytes = await api.readLocalImage(rmdUrlPath(src));
+        const image = await api.readLocalImage(rmdUrlPath(src));
         img.removeAttribute('srcset');
-        img.src = bytesToDataUrl(bytes, guessImageMime(bytes));
+        img.src = bytesToDataUrl(
+          image.bytes,
+          image.mime || guessImageMime(image.bytes)
+        );
       } catch (err) {
         console.warn('本地图片内联失败，导出 HTML 中该位置将为空白：', src, err);
       }
     })
   );
+}
+
+// ---------------- HTML sanitization / links ----------------
+
+// Note HTML is rendered by marked without sanitization. The webview holds the
+// full Tauri IPC surface (notes, exports, image fetch), so raw HTML from a
+// note must never reach innerHTML unsanitized. DOMPurify uses a static config
+// (no hooks, no IN_PLACE, no custom elements) and strips scripts, event
+// handlers, javascript: URLs, <style>/<iframe>/<object> and similar vectors.
+// Mermaid SVGs are generated locally with securityLevel 'strict' AFTER this
+// pass and are not part of the untrusted note text.
+const SANITIZE_CONFIG = {
+  FORBID_TAGS: [
+    'style',
+    'link',
+    'meta',
+    'base',
+    'iframe',
+    'object',
+    'embed',
+    'form',
+    'textarea',
+    'select',
+    'option',
+    'button',
+  ],
+  FORBID_ATTR: ['srcdoc'],
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+  // DOMPurify's default allowlist plus the `rmd` custom scheme used for
+  // vault images on Linux/macOS. `file:` stays blocked: local images are
+  // rewritten to `rmd` BEFORE this sanitize pass, so the webview never
+  // receives a file: URL from a note.
+  ALLOWED_URI_REGEXP:
+    /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|rmd):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
+};
+
+function sanitizeHtml(html) {
+  return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
+
+/// Rewrite vault image sources BEFORE DOMPurify sees the HTML. DOMPurify's
+/// URI allowlist intentionally rejects `file:`; local images must already be
+/// `http://rmd.localhost/…` (Windows) or `rmd://localhost/…` (others) by the
+/// time the sanitizer runs. The detached <template> never executes scripts.
+function rewriteLocalImageHtml(html) {
+  if (!imageCtx) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const img of template.content.querySelectorAll('img')) {
+    const abs = localImageAbsPath(img.getAttribute('src') || '');
+    if (!abs) continue;
+    img.removeAttribute('srcset');
+    img.setAttribute('src', RMD_ORIGIN + encodeURIComponent(abs));
+  }
+  return template.innerHTML;
+}
+
+/// External links must open in the system browser, not replace the app page.
+/// The listener is installed once per container; renderMarkdownInto reuses
+/// the same preview element across renders.
+function installLinkHandler(container) {
+  if (container.dataset.linkHandler === '1') return;
+  container.dataset.linkHandler = '1';
+  container.addEventListener('click', (event) => {
+    const target = event.target;
+    const anchor =
+      target && typeof target.closest === 'function'
+        ? target.closest('a[href]')
+        : null;
+    if (!anchor || !container.contains(anchor)) return;
+    const href = anchor.getAttribute('href') || '';
+    if (href.startsWith('#')) return; // in-document anchor
+    event.preventDefault();
+    if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+      api.openExternal(href).catch((err) => {
+        console.warn('打开外部链接失败：', href, err);
+      });
+    } else {
+      console.warn('不支持打开该链接：', href);
+    }
+  });
+}
+
+/// Swap each token for a dedicated <span class="rm-math"> holding the raw
+/// TeX, and return the spans. Tokens are plain alphanumeric words, so
+/// marked never splits one across text nodes. Per-formula spans let
+/// typesetMath typeset (and fall back) formula by formula — one bad formula
+/// must not take down the rest of the note.
+function restoreMath(container, store) {
+  const spans = [];
+  if (!store.length) return spans;
+  const nodes = [];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const value = node.nodeValue;
+    const hits = [];
+    for (let i = 0; i < store.length; i++) {
+      const p = value.indexOf(mathToken(i));
+      if (p !== -1) hits.push([p, i]);
+    }
+    if (!hits.length) continue;
+    hits.sort((a, b) => a[0] - b[0]);
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (const [p, i] of hits) {
+      if (p > pos) frag.appendChild(document.createTextNode(value.slice(pos, p)));
+      const span = document.createElement('span');
+      span.className = 'rm-math';
+      span.textContent = store[i];
+      frag.appendChild(span);
+      spans.push(span);
+      pos = p + mathToken(i).length;
+    }
+    if (pos < value.length) {
+      frag.appendChild(document.createTextNode(value.slice(pos)));
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+  return spans;
+}
+
+// MathJax and Mermaid run AFTER the DOMPurify pass, so a second targeted
+// pass removes anything executable they could introduce (notably MathJax's
+// `\href{javascript:...}` macro). It is intentionally narrow: generated SVG
+// styling and anchors must survive.
+function compactUrl(value) {
+  return String(value || '')
+    .split('')
+    .filter((ch) => ch.charCodeAt(0) > 0x20)
+    .join('')
+    .toLowerCase();
+}
+
+function isSafeLinkHref(href) {
+  const value = compactUrl(href);
+  if (!value) return false;
+  if (value.startsWith('#')) return true;
+  if (/^(https?:|mailto:|tel:)/.test(value)) return true;
+  if (/^[a-z][a-z0-9+.-]*:/.test(value)) return false; // javascript:, data:, file:, …
+  return true; // relative path
+}
+
+function sanitizeRenderedDom(container) {
+  for (const el of container.querySelectorAll('script, iframe, object, embed')) {
+    el.remove();
+  }
+  // Mermaid embeds a <style> block in its SVG. Keep local marker/fill
+  // references, but drop @import and external CSS URLs (themeCSS is
+  // user-influenced).
+  for (const style of container.querySelectorAll('style')) {
+    const css = style.textContent || '';
+    if (
+      /@import|url\s*\(\s*['"]?\s*(?:https?:|javascript:|data:text\/html)/i.test(css)
+    ) {
+      style.textContent = css
+        .replace(/@import[^;]*;?/gi, '')
+        .replace(
+          /url\s*\(\s*['"]?\s*(?:https?:|javascript:|data:text\/html)[^)]*\)/gi,
+          'none'
+        );
+    }
+  }
+  for (const el of container.querySelectorAll('*')) {
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      const value = attr.value;
+      if (name.startsWith('on')) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === 'href' || name === 'xlink:href') {
+        if (!isSafeLinkHref(value)) el.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === 'src' || name === 'xlink:href') {
+        const compact = compactUrl(value);
+        if (/^(javascript:|vbscript:|data:text\/html)/.test(compact)) {
+          el.removeAttribute(attr.name);
+        }
+        continue;
+      }
+      if (name === 'style') {
+        if (
+          /(?:expression\s*\(|url\s*\(\s*['"]?\s*(?:https?:|javascript:|data:text\/html))/i.test(
+            value
+          )
+        ) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+        // A note must not be able to overlay the app UI with a fake dialog.
+        // Remove positioning from inline styles; normal typography survives.
+        if (/position\s*:\s*(?:fixed|sticky|absolute)/i.test(value)) {
+          el.style.removeProperty('position');
+        }
+      }
+    }
+  }
 }
 
 // ---------------- Rendering ----------------
@@ -433,15 +509,16 @@ const MMD_CACHE_MAX = 128;
 async function renderMarkdownInto(container, markdownSource) {
   const mathStore = [];
   const guarded = protectMath(markdownSource, mathStore);
-  container.innerHTML = marked.parse(preprocessDetails(guarded));
-  rewriteLocalImages(container); // local img srcs → rmd protocol
+  const html = marked.parse(preprocessDetails(guarded));
+  container.innerHTML = sanitizeHtml(rewriteLocalImageHtml(html));
+  installLinkHandler(container);
   const mathSpans = restoreMath(container, mathStore);
   for (const el of container.querySelectorAll('pre code')) {
     if (el.classList.contains('language-mermaid')) continue;
     hljs.highlightElement(el);
   }
   const blocks = [...container.querySelectorAll('pre code.language-mermaid')];
-  const jobs = blocks.map(async (el, i) => {
+  const jobs = blocks.map(async (el) => {
       const host = document.createElement('div');
       host.className = 'mermaid-diagram';
       el.parentElement.replaceWith(host);
@@ -472,6 +549,7 @@ async function renderMarkdownInto(container, markdownSource) {
     jobs.push(typesetMath(container, mathSpans));
   }
   await Promise.all(jobs);
+  sanitizeRenderedDom(container);
 }
 
 export function renderPreview(markdownSource, container) {

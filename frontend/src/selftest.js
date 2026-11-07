@@ -4,7 +4,8 @@
 // webview, real Rust backend, real remote images), exports PNG + PDF for each,
 // and verifies residual raw math, remote AND local (vault) images in the
 // exported PNG (2D NCC), and multi-line math geometry. Artifacts +
-// report.json land in C:\Users\River\AppData\Local\Temp\opencode\rustmd-selftest.
+// report.json lands in the system temp dir (rustmd-selftest; override with
+// RUSTMD_SELFTEST_OUT).
 //
 // main.js imports this module dynamically, guarded by import.meta.env.DEV:
 // in release builds the flag compiles to false, so this module is never
@@ -19,9 +20,15 @@ import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 /// finally-block can restore the user's notes root and image context —
 /// exactly what the inlined version did through main.js's module state.
 export async function runSelfTest({ getState }) {
-  const SELFTEST_EXAMPLES_DIR = 'D:/GitHub/rustmd/examples';
-  const SELFTEST_OUT_DIR =
-    'C:/Users/River/AppData/Local/Temp/opencode/rustmd-selftest';
+  let config;
+  try {
+    config = await api.selftestConfig();
+  } catch (err) {
+    console.error('[selftest] cannot read selftest config:', err);
+    return;
+  }
+  const SELFTEST_EXAMPLES_DIR = config.examplesDir;
+  const SELFTEST_OUT_DIR = config.outDir;
 
   /// Text nodes outside code/pre still holding a full math delimiter pair
   /// => a formula that was never typeset.
@@ -56,11 +63,13 @@ export async function runSelfTest({ getState }) {
     try {
       const img = new Image();
       img.src = url;
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('img load timeout')), 30000);
-        img.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
-        img.addEventListener('error', () => { clearTimeout(t); reject(new Error('img load error')); }, { once: true });
-      });
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('img load timeout')), 30000);
+          img.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
+          img.addEventListener('error', () => { clearTimeout(t); reject(new Error('img load error')); }, { once: true });
+        });
+      }
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
@@ -100,8 +109,12 @@ export async function runSelfTest({ getState }) {
 
 
   function waitImg(img, timeoutMs) {
+    if (img.complete) {
+      return img.naturalWidth > 0
+        ? Promise.resolve()
+        : Promise.reject(new Error('image load error'));
+    }
     return new Promise((resolve, reject) => {
-      if (img.complete && img.naturalWidth > 0) return resolve();
       const t = setTimeout(() => reject(new Error('image load timeout')), timeoutMs);
       img.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
       img.addEventListener('error', () => { clearTimeout(t); reject(new Error('image load error')); }, { once: true });
@@ -123,11 +136,13 @@ export async function runSelfTest({ getState }) {
     try {
       const img = new Image();
       img.src = url;
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('png load timeout')), 60000);
-        img.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
-        img.addEventListener('error', () => { clearTimeout(t); reject(new Error('png load error')); }, { once: true });
-      });
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('png load timeout')), 60000);
+          img.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
+          img.addEventListener('error', () => { clearTimeout(t); reject(new Error('png load error')); }, { once: true });
+        });
+      }
       const c = document.createElement('canvas');
       c.width = width;
       c.height = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * width));
@@ -148,12 +163,11 @@ export async function runSelfTest({ getState }) {
   /// → html2canvas raster → PNG file.
   async function verifyRemoteImagesInPng(pngBytes, refs) {
     const { r, w, h, natH } = await pngToRChannel(pngBytes, VERIFY_WORK);
-    // Image left edge / width are fixed fractions of the PNG width
-    // (stage 948 CSS px, image at x=44..904) — scale independent.
+    // The export stage is 948 CSS px wide with the article at x=44..904.
+    // The rendered image width is min(naturalWidth, 860) (CSS max-width),
+    // so derive the search rectangle per image instead of assuming every
+    // image fills the article.
     const x0 = Math.round((44 * w) / 948);
-    const tw = Math.max(8, Math.round((860 * w) / 948));
-    const xLo = Math.max(0, x0 - 2);
-    const xHi = Math.min(w - tw, x0 + 2);
     const results = [];
     for (const ref of refs) {
       let best = { ncc: -1, mad: Infinity, y: -1 };
@@ -165,8 +179,18 @@ export async function runSelfTest({ getState }) {
         const img = new Image();
         img.src = url;
         await waitImg(img, 30000);
+        if (!img.naturalWidth || !img.naturalHeight) {
+          throw new Error('image decoded with zero dimensions');
+        }
         dims = img.naturalWidth + 'x' + img.naturalHeight;
-        const th = Math.max(8, Math.round((img.naturalHeight / img.naturalWidth) * tw));
+        const renderedCssWidth = Math.min(img.naturalWidth, 860);
+        const renderedCssHeight =
+          (img.naturalHeight * renderedCssWidth) / img.naturalWidth;
+        const tw = Math.max(8, Math.round((renderedCssWidth * w) / 948));
+        const th = Math.max(8, Math.round((renderedCssHeight * w) / 948));
+        const xLo = Math.max(0, x0 - 2);
+        const xHi = Math.min(w - tw, x0 + 2);
+        if (xHi < xLo) throw new Error('image does not fit the verification canvas');
         const c = document.createElement('canvas');
         c.width = tw; c.height = th;
         c.getContext('2d').drawImage(img, 0, 0, tw, th);
@@ -249,13 +273,14 @@ export async function runSelfTest({ getState }) {
     document.body.appendChild(stage);
     const result = { url };
     try {
-      const bytes = await api.fetchImageBytes(url);
+      const image = await api.fetchImageBytes(url);
+      const bytes = image.bytes;
       result.fetchedBytes = bytes.length;
       // Byte type as seen by JS (Tauri used to return a plain array-like;
       // api.js now normalizes to Uint8Array).
       result.bytesType = Object.prototype.toString.call(bytes);
       result.bytesIsUint8 = bytes instanceof Uint8Array;
-      const mime = guessImageMime(bytes);
+      const mime = image.mime || guessImageMime(bytes);
       result.mime = mime;
       const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
       const dataUrl = bytesToDataUrl(bytes, mime);
@@ -309,6 +334,10 @@ export async function runSelfTest({ getState }) {
   const report = {
     startedAt: new Date().toISOString(),
     ok: false,
+    config: {
+      examplesDir: SELFTEST_EXAMPLES_DIR,
+      outDir: SELFTEST_OUT_DIR,
+    },
     entries: [],
     errors: [],
   };
@@ -375,8 +404,8 @@ export async function runSelfTest({ getState }) {
       const remoteFetchResults = await Promise.all(
         remoteUrls.map(async (url) => {
           try {
-            const bytes = await api.fetchImageBytes(url);
-            return { url, ok: true, bytes };
+            const image = await api.fetchImageBytes(url);
+            return { url, ok: true, bytes: image.bytes };
           } catch (e) {
             return { url, ok: false, error: String(e) };
           }
@@ -386,6 +415,13 @@ export async function runSelfTest({ getState }) {
         bytes ? { url, ok, bytes: bytes.length } : { url, ok, error }
       );
       const remoteRefs = remoteFetchResults.filter((r) => r.ok);
+      for (const result of remoteFetchResults) {
+        if (!result.ok) {
+          report.errors.push(
+            `${meta.path}: remote image fetch failed: ${result.url} (${result.error})`
+          );
+        }
+      }
       // Local refs: bytes via the SAME Rust read path the export uses
       // (read_local_image), so a "present" verdict proves the full
       // chain: rmd rewrite → read_local_image → data-URL swap →
@@ -397,7 +433,8 @@ export async function runSelfTest({ getState }) {
           : '';
         const abs = `${SELFTEST_EXAMPLES_DIR}/${dir}${src.replace(/\\/g, '/')}`;
         try {
-          localRefs.push({ url: `local:${src}`, bytes: await api.readLocalImage(abs) });
+          const image = await api.readLocalImage(abs);
+          localRefs.push({ url: `local:${src}`, bytes: image.bytes });
         } catch (e) {
           report.errors.push(
             `${meta.path}: local image unreadable via backend: ${src} (${e})`
@@ -456,13 +493,13 @@ export async function runSelfTest({ getState }) {
           [...remoteRefs, ...localRefs]
         );
       }
-      await api.writeBytes(`${SELFTEST_OUT_DIR}/${meta.path}.png`, png.data);
+      await api.selftestWrite(`${meta.path}.png`, png.data);
 
       // 3) PDF export
       const t2 = performance.now();
       const pdf = await exportPdf(body);
       entry.pdf = { bytes: pdf.data.length, ms: Math.round(performance.now() - t2) };
-      await api.writeBytes(`${SELFTEST_OUT_DIR}/${meta.path}.pdf`, pdf.data);
+      await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
 
       report.entries.push(entry);
       console.log('[selftest] done', meta.path);
@@ -501,9 +538,22 @@ export async function runSelfTest({ getState }) {
   }
   report.finishedAt = new Date().toISOString();
   try {
-    await api.writeText(`${SELFTEST_OUT_DIR}/report.json`, JSON.stringify(report, null, 2));
-    console.log('[selftest] report written', report.ok ? 'OK' : 'FAILED');
+    const encoded = new TextEncoder().encode(JSON.stringify(report, null, 2));
+    await api.selftestWrite('report.json', encoded);
+    console.log(
+      `[selftest] ${report.ok ? 'OK' : 'FAILED'} — ${report.entries.length} notes, ` +
+        `${report.errors.length} error(s); report: ${SELFTEST_OUT_DIR}/report.json`
+    );
+    if (report.errors.length) console.error(report.errors.join('\n'));
   } catch (e) {
+    report.ok = false;
     console.error('[selftest] failed to write report:', e);
+  }
+  // Exit the dev app with a code CI can consume. Release builds reject the
+  // command, so this line is a no-op outside dev.
+  try {
+    await api.selftestFinish(report.ok);
+  } catch (e) {
+    console.error('[selftest] failed to finish:', e);
   }
 }

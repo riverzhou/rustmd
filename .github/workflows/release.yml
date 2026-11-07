@@ -1,0 +1,295 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish (e.g. v1.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: release quality gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            build-essential \
+            curl \
+            file \
+            xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: npm ci
+
+      - name: Check the tag matches every version file
+        run: node scripts/check-version.mjs "$RELEASE_TAG"
+
+      - name: Lint, unit tests, repo checks, Rust tests, build
+        run: npm run check
+
+  windows:
+    name: windows portable zip
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: npm ci
+
+      - name: Build the release executable
+        run: npx tauri build --no-bundle
+
+      - name: Sign the executable
+        shell: powershell
+        env:
+          RUSTMD_WIN_CERT_BASE64: ${{ secrets.RUSTMD_WIN_CERT_BASE64 }}
+          RUSTMD_WIN_CERT_PASSWORD: ${{ secrets.RUSTMD_WIN_CERT_PASSWORD }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-win.ps1
+
+      - name: Verify the executable signature
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sig = Get-AuthenticodeSignature 'target/release/rustmd.exe'
+          Write-Host "signature status: $($sig.Status)"
+          if ($sig.Status -in @('HashMismatch', 'NotSigned')) {
+            throw "rustmd.exe is not signed correctly ($($sig.Status))"
+          }
+
+      - name: Create and verify the portable zip
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-zip.ps1
+
+      - name: List release files
+        shell: powershell
+        run: Get-ChildItem release -Recurse -File | Select-Object FullName, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustmd-windows
+          path: |
+            release/*/*.zip
+            release/*/*.zip.sha256
+            release/*/*.cer
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macos universal dmg
+    needs: verify
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Add both macOS Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - run: npm ci
+
+      - name: Build the universal app bundle
+        run: npx tauri build --target universal-apple-darwin --bundles app
+
+      - name: Ad-hoc sign and verify the app
+        # No Apple Developer ID: an ad-hoc signature turns the browser's
+        # "app is damaged" error into the normal "cannot verify developer"
+        # prompt, which the user can allow in System Settings.
+        run: |
+          APP="target/universal-apple-darwin/release/bundle/macos/rustmd.app"
+          test -d "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | head -30
+          spctl -a -vv "$APP" 2>&1 || true
+
+      - name: Create the DMG
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          APP="target/universal-apple-darwin/release/bundle/macos/rustmd.app"
+          DMG="release/rustmd-$VERSION-macos-universal.dmg"
+          mkdir -p release
+          hdiutil create -volname "rustmd" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          hdiutil verify "$DMG"
+          shasum -a 256 "$DMG" | tee "$DMG.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustmd-macos
+          path: |
+            release/*.dmg
+            release/*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: linux packages
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libfuse2 \
+            build-essential \
+            curl \
+            file \
+            xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: npm ci
+
+      - name: Build deb + AppImage
+        run: npx tauri build --bundles deb,appimage
+
+      - name: Collect packages and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp target/release/bundle/deb/*.deb release/
+          cp target/release/bundle/appimage/*.AppImage release/
+          cd release
+          sha256sum *.deb *.AppImage > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustmd-linux
+          path: |
+            release/*.deb
+            release/*.AppImage
+            release/SHA256SUMS-linux.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish GitHub Release
+    needs: [verify, windows, macos, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Combined checksums
+        run: |
+          set -euo pipefail
+          cd assets
+          find . -maxdepth 1 -type f ! -name '*.sha256' ! -name 'SHA256SUMS*' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Render release notes
+        run: node scripts/release-notes.mjs "$RELEASE_TAG" > .release-notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: rustmd ${{ env.RELEASE_TAG }}
+          body_path: .release-notes.md
+          files: assets/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          draft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}

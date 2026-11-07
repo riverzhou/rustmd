@@ -344,9 +344,54 @@ body[data-theme='dark'] .btn.primary:hover {
   padding-right: 2px;
 }
 
+.nav-item .nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nav-item .folder-icon {
   opacity: 0.8;
   flex-shrink: 0;
+}
+
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nav-toggle:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.nav-toggle svg {
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+
+.nav-toggle.collapsed svg {
+  transform: rotate(0deg);
+}
+
+.nav-toggle.invisible {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.folder-children {
+  padding-left: 0;
 }
 
 .tag-cloud {
@@ -389,14 +434,66 @@ body[data-theme='dark'] .btn.primary:hover {
 }
 
 .note-list-header {
-  padding: 8px 22px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px 5px 20px;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.4px;
   color: var(--text-faint);
   font-weight: 600;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.sort-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+  flex-shrink: 0;
+}
+
+.sort-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sort-switch button:hover {
+  color: var(--text);
+  background: var(--card);
+}
+
+.sort-switch button.active {
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.sort-switch button.sort-dir {
+  min-width: 19px;
+  padding: 4px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sort-switch button.sort-dir:hover {
+  color: var(--accent);
 }
 
 .note-list {
@@ -437,6 +534,28 @@ body[data-theme='dark'] .btn.primary:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.note-item .file-name {
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-item .meta .folder-path {
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-item .meta .sep {
+  opacity: 0.65;
 }
 
 .note-item .snippet {
@@ -736,6 +855,26 @@ mark {
   pointer-events: none;
 }
 
+/* html2canvas cannot scroll an element, so tables/long code that overflow
+   horizontally would be clipped in the exported PNG/PDF. Wrap instead. */
+.export-stage .markdown-body table {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.export-stage .markdown-body th,
+.export-stage .markdown-body td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.export-stage .markdown-body pre {
+  overflow-x: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ============ Status bar ============ */
 .statusbar {
   display: flex;
@@ -838,6 +977,12 @@ mark {
   line-height: 1.75;
   font-size: 15px;
   word-wrap: break-word;
+}
+
+/* Keep note-authored fixed/sticky elements inside the preview: without a
+   containment context they could cover the whole application window. */
+#preview {
+  contain: layout paint;
 }
 
 .markdown-body > *:first-child {

@@ -56,12 +56,22 @@ fs.writeFileSync(tmpCfg, JSON.stringify({ build: { devUrl } }, null, 2));
 // scripts\run-dev.bat after editing Rust. Vite HMR for the frontend is
 // unaffected.
 const isWin = process.platform === 'win32';
-const tauri = spawn(isWin ? 'npx.cmd' : 'npx', ['tauri', 'dev', '--config', tmpCfg, '--no-watch'], {
-  cwd: root,
-  stdio: 'inherit',
-  env: process.env,
-  shell: isWin,
-});
+// On Windows, run a single quoted command through the shell (the old
+// `spawn('npx.cmd', args, { shell: true })` form triggers Node's
+// DEP0190 warning). `tmpCfg` is an internally-generated temp path; it is
+// quoted so spaces in the OS temp directory work.
+const tauri = isWin
+  ? spawn(`npx tauri dev --config "${tmpCfg}" --no-watch`, {
+      cwd: root,
+      stdio: 'inherit',
+      env: process.env,
+      shell: true,
+    })
+  : spawn('npx', ['tauri', 'dev', '--config', tmpCfg, '--no-watch'], {
+      cwd: root,
+      stdio: 'inherit',
+      env: process.env,
+    });
 
 tauri.on('close', (code, signal) => {
   fs.rmSync(tmpCfg, { force: true });

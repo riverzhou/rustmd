@@ -1,30 +1,55 @@
 {
   "name": "rustmd",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.js",
     "build": "vite build --config frontend/vite.config.js",
     "preview": "vite preview --config frontend/vite.config.js",
     "tauri": "tauri",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "npm run test:unit && npm run test:rust",
+    "test:unit": "node --test frontend/src/notelist.test.js frontend/src/markdown.test.js",
+    "test:rust": "node scripts/cargo.mjs test",
+    "check:version": "node scripts/check-version.mjs",
+    "check:repo": "node scripts/check-repo.mjs",
+    "check:rust": "node scripts/cargo.mjs fmt --check && node scripts/cargo.mjs clippy --all-targets -- -D warnings && node scripts/cargo.mjs test",
+    "check": "npm run lint && npm run test:unit && npm run check:repo && npm run check:version && npm run check:rust && npm run build",
+    "selftest": "node scripts/run-selftest.mjs",
+    "selftest:check": "node scripts/check-selftest-report.mjs",
+    "release:notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.3.0",
     "@codemirror/language-data": "^6.5.0",
-    "@tauri-apps/api": "^2.5.0",
-    "@tauri-apps/plugin-dialog": "^2.2.0",
-    "codemirror": "^6.0.1",
-    "highlight.js": "^11.10.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-opener": "^2.7.2",
+    "codemirror": "^6.0.2",
+    "dompurify": "^3.4.17",
+    "highlight.js": "^11.12.0",
     "html2canvas": "^1.4.1",
-    "jspdf": "^2.5.2",
-    "marked": "^15.0.0",
+    "jspdf": "^4.2.1",
+    "marked": "^18.1.3",
     "mathjax": "^4.1.3",
-    "mermaid": "^12.0.0"
+    "mermaid": "^12.3.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.5.0",
-    "vite": "^6.0.0"
-  }
+    "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.12.4",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "vite": "^8.3.6"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "overrides": {
+    "lodash-es": "^4.18.1"
+  },
+  "license": "GPL-3.0-or-later",
+  "author": "River"
 }

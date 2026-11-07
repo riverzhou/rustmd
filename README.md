@@ -1,95 +1,275 @@
 # rustmd
 
-用 Rust 写的本地 Markdown 笔记应用，功能对标 [YNote](https://github.com/yang0926/yanknote)：左侧笔记列表，右侧编辑器 + 实时预览。
+**Local-first Markdown notes for Windows, macOS and Linux.** Plain `.md` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
-- **后端**：Rust + [Tauri 2](https://tauri.app) —— 目录扫描、front matter 解析、全文搜索、文件读写
-- **前端**：CodeMirror 6（Markdown 编辑 + 语法高亮）+ marked（实时预览）+ highlight.js（代码高亮），Vite 打包
-- **存储**：纯本地 `.md` 文件，一个笔记库 = 一个文件夹，子目录 = 文件夹分组，标签存于文件头部 front matter
+**本地优先、离线可用的 Markdown 笔记应用**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
+
+[English](README.en.md) · [简体中文](README.md)
+
+[![CI](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml/badge.svg)](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/riverzhou/rustmd?display_name=tag&sort=semver)](https://github.com/riverzhou/rustmd/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/riverzhou/rustmd/total)](https://github.com/riverzhou/rustmd/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4f6df5)](#下载与安装)
+[![Rust](https://img.shields.io/badge/Rust-2024-000?logo=rust)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://tauri.app/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
+
+当前版本 **1.1.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+
+## 截图
+
+主界面：文件夹树、文件名卡片、排序方向、MathJax 公式与 Mermaid 图表。
+
+<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧文件夹树与文件名卡片，右侧 CodeMirror 编辑器和实时预览" width="880">
+
+深色主题与侧栏细节：
+
+<img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MathJax 公式、Mermaid 图表和实时预览" width="880">
+
+<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、文件名、标签和搜索" width="300">
+
+## 为什么是 rustmd
+
+如果你想要一个**不把笔记锁进数据库、不强制登录、打开就能写**的 Markdown 工具：
+
+- **纯文件存储**：笔记就是 `.md`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
+- **本地优先**：核心编辑、预览、搜索、导出全部离线可用；只有拉取远程图片或检查更新时才需要网络。
+- **轻量跨平台**：Rust + Tauri 2，Windows / macOS / Linux 三端；Windows 提供解压即用的绿色 zip。
+- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
+- **安全边界认真做**：笔记 HTML 消毒、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
+- **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` 文件夹即可；front matter 中的 `title:`、`date:` 等字段保存时原样保留。
+
+适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
 
 ## 功能
 
-- 笔记列表：标题（首个 heading 或文件名）+ 摘要 + 修改时间，按时间倒序
-- 侧边栏可一键隐藏（顶栏按钮或 Ctrl+B），折叠状态持久化
-- 编辑器 + 实时预览：编辑 / 分栏 / 预览 三种视图（快捷键 Ctrl+1 / Ctrl+2 / Ctrl+3），分栏可拖动；输入 500ms 防抖自动保存
-- 全文搜索：大小写不敏感，列表高亮命中片段
-- 文件夹与标签：子目录即文件夹；标签以 chips 形式编辑，持久化为 front matter
-- 导出：HTML（带内嵌样式、跟随当前主题）/ 高清 PNG（3x 渲染，约 288 DPI）/ PDF（多页、无损 PNG 切片，尺寸随内容），外链图片自动内联，一键导出
-- 深色 / 浅色主题，默认浅色（不跟随系统），可手动切换并记住选择
-- 首选项（目录、视图、主题、侧边栏、分栏比例）保存在 WebView 的 localStorage
+### 文件导航
 
-## 使用
+- **文件夹树**：支持嵌套文件夹、空文件夹、折叠/展开；选择父文件夹会包含整个子树。
+- **子文件夹默认折叠**：只显示顶层文件夹，点击箭头逐层展开；展开状态会记住。
+- **两种排序 + 方向**：可按最后修改时间或文件名排序，通过 `↑` / `↓` 按钮切换升序/降序；选择持久化。
+- **文件名卡片**：每张笔记卡片显示标题、**文件名**、摘要、所在文件夹、修改时间与标签，同名笔记也容易区分。
 
-开发模式（热更新）：
+### 搜索
 
-```bat
+- 同时搜索**标题、文件名、标签、正文**；大小写不敏感。
+- 结果列表高亮命中片段，并显示是标题、文件名还是标签命中。
+- 输入防抖 + 请求序列号，快速输入时旧结果不会覆盖新结果。
+
+### 编辑与预览
+
+- CodeMirror 6 编辑器，Markdown 语法高亮。
+- 编辑 / 分栏 / 预览三种视图（`Ctrl+1` / `Ctrl+2` / `Ctrl+3`），分栏可拖动，比例持久化。
+- 500ms 防抖自动保存；外部修改通过内容 hash 检测，覆盖前会询问。
+- 保存后更新文件树与标签计数；保存失败保留“未保存”状态，切换或关闭前提示。
+
+### Markdown 渲染
+
+- GFM：表格、任务列表、删除线、自动链接。
+- 代码高亮（highlight.js）。
+- **Mermaid** 图表：流程图、时序图、类图、甘特图、状态图、饼图、ER 图等。
+- **MathJax 4**：行内 / 块级 LaTeX、矩阵、align、cases；MathJax 与扩展都打包在应用内，离线可用。
+- `<details>` / `<summary>` 折叠块。
+- 笔记库本地图片：相对路径、`./`、`file:///`、绝对路径、`<img>` 均可显示。
+
+### 导出
+
+- **HTML**：内嵌样式、跟随当前主题、本地图片内联；远程图片保留原链接。
+- **PNG**：3× 渲染（约 288 DPI），适合分享和插入文档。
+- **PDF**：按块边界分页，无损 PNG 切片，超长笔记自动控制画布内存。
+- PNG/PDF 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图。
+- 导出目标路径由系统保存对话框选择，前端不能任意写文件。
+
+### 安全
+
+- 笔记 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。
+- MathJax / Mermaid 在消毒之后生成 DOM，再做一次窄范围清理（`on*`、危险链接、外部 CSS URL）。
+- Tauri CSP 默认启用；外部链接交给系统浏览器打开。
+- `resolve_in_root` 对笔记与图片做路径封闭，阻止 `..`、junction/symlink 写逃逸；扫描时跳过符号链接。
+- 远程图片抓取拒绝 loopback / 私有网段 / 链路本地 / 保留地址，并校验每次重定向。
+- 保存使用临时文件 + 原子替换；`baseHash` 冲突检测避免静默覆盖外部修改。
+
+## 下载与安装
+
+从 [GitHub Releases](https://github.com/riverzhou/rustmd/releases/latest) 下载：
+
+| 平台 | 产物 | 说明 |
+| --- | --- | --- |
+| Windows | `rustmd-<version>-win-x64-portable.zip` | **绿色版**：解压后直接运行 `rustmd.exe`，不写注册表 |
+| Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu 安装包 / 便携 AppImage |
+| macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
+
+每个产物都有 `.sha256`，Release 里还有合并的 `SHA256SUMS.txt`。
+
+### Windows
+
+1. 解压 zip，运行 `rustmd.exe`。
+2. 需要 **WebView2 Runtime**；Windows 10/11 通常已自带，缺失时安装 Evergreen Runtime。
+3. 发布包使用自签名证书做完整性签名（压缩包内附 `rustmd-selfsigned.cer`）；它**不能消除** SmartScreen 的“未知发布者”提示。请核对来源与 SHA256 后选择“仍要运行”。
+4. 绿色版不写安装信息；删除文件夹即可移除程序。
+
+### Linux
+
+```bash
+# Debian / Ubuntu
+sudo apt install ./rustmd_<version>_amd64.deb
+
+# AppImage
+chmod +x rustmd_<version>_amd64.AppImage
+./rustmd_<version>_amd64.AppImage
+```
+
+AppImage 需要 FUSE；没有 FUSE 时使用 `--appimage-extract-and-run`。
+
+### macOS
+
+DMG 内的 `.app` 使用 **ad-hoc 签名**（没有 Apple Developer ID，未公证）。首次打开会被 Gatekeeper 拦截：
+
+- 系统设置 → 隐私与安全性 → “仍要打开”；或
+- `xattr -dr com.apple.quarantine /Applications/rustmd.app`
+
+彻底消除提示需要 Developer ID + 公证（见 [docs/RELEASING.md](docs/RELEASING.md)）。
+
+### 校验下载
+
+```bash
+sha256sum -c SHA256SUMS.txt
+# 或使用每个资产旁对应的 .sha256 文件
+```
+
+## 快速开始
+
+1. 启动应用，选择或输入笔记目录；也可以直接打开已有的 Markdown 文件夹。
+2. 左侧 `＋` 新建笔记；点击文件夹筛选，点击箭头展开子文件夹。
+3. 标题输入框可重命名文件；标签、移动、删除、导出在顶栏。
+4. 顶栏按钮或 `Ctrl+B` 隐藏/显示侧栏。
+
+常用快捷键：
+
+| 快捷键 | 功能 |
+| --- | --- |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | 编辑 / 分栏 / 预览 |
+| `Ctrl+B` | 隐藏 / 显示侧栏 |
+| `Enter`（标题框） | 提交重命名 |
+| `Enter` 或 `,`（标签框） | 添加标签 |
+
+浏览器前端调试（不需要 Rust）：
+
+```bash
 npm install
-scripts\run-dev.bat
+npm run dev          # http://127.0.0.1:5173，使用内存 mock 数据
 ```
 
-发布构建（生成 `target\release\rustmd.exe`）：
+## 开发
 
-```bat
-scripts\run-build.bat
+前置：Node.js ≥ 20.19、Rust stable（含 `rustfmt`、`clippy`）以及对应平台的 Tauri 系统依赖（Linux 见 [docs/TESTING.md](docs/TESTING.md)）。
+
+| 任务 | 命令 |
+| --- | --- |
+| 全部检查 | `npm run check` |
+| Tauri 开发窗口 | `node scripts/launch-dev.mjs`（Windows 可用 `scripts\run-dev.bat`） |
+| 仅前端（mock） | `npm run dev` |
+| 发布 exe（不打包安装器） | `npx tauri build --no-bundle`（Windows 可用 `scripts\run-build.bat`） |
+| 前端纯函数单测 | `npm run test:unit` |
+| Rust 单测 | `npm run test:rust` |
+| 端到端自测 | `npm run selftest` / `npm run selftest:check` |
+| 重新生成图标 | `npm run icons` |
+
+`scripts/cargo.mjs` 会依次尝试 `$CARGO`、`~/.cargo/bin/cargo`、PATH 中的 `cargo`；Windows git-bash 不需要手动补 PATH。
+
+### 自动化检查
+
+`npm run check` 依次执行：
+
+1. ESLint 10
+2. Node 前端单测（排序、文件夹树、数学保护、代码段）
+3. 仓库检查（版本一致、文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
+4. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
+5. Vite 生产构建
+
+CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整质量门禁，在 Windows / Linux / macOS 三端编译，并用 Xvfb + 真实 WebKitGTK 跑端到端自测。
+
+### 端到端自测
+
+```bash
+npm run selftest
 ```
 
-> `run-*.bat` 是因为当前 shell 的 PATH 没有 rustup 的 `cargo`，脚本里补上了
-> `C:\Users\River\.cargo\bin`。如果你的 PATH 正常，直接 `npx tauri dev` /
-> `npx tauri build --no-bundle` 即可。
-
-首次启动选择笔记目录（或手动输入路径）。浏览器模式下（`npm run dev` 直接访问
-http://localhost:5173 ）使用内置内存 mock 数据，方便纯前端调试。
-
-测试笔记目录：`C:\Users\River\AppData\Local\Temp\rustmd-test-notes`
-
-## 更新日志
-
-见 [CHANGELOG.md](CHANGELOG.md)。
-
-## 测试
-
-后端单元测试：
-
-```bat
-C:\Users\River\.cargo\bin\cargo.exe test
-```
-
-覆盖 front matter 解析、标题提取、片段生成、文件名清理、路径逃逸防护、
-`fetch_image_bytes` 网络拉取（离线时自动跳过）。
-
-端到端自测（真实应用内渲染 + 导出校验，仅 dev 构建）：
-
-```bat
-RUSTMD_SELFTEST=1 scripts\run-dev.bat
-```
-
-dev 窗口会渲染 `examples\` 下全部示例笔记，逐一导出 PNG/PDF 并校验：
-残留未渲染公式、外链图片是否真的出现在导出的 PNG 中（2D NCC 匹配）、
-多行公式（矩阵 / align / cases）是否被压成单行。产物与 `report.json` 写入
-`%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`，`report.ok = false` 即表示有失败项。
-自测代码位于 `frontend/src/selftest.js`（dev 构建下由 main.js 动态注入，release 构建不包含该模块）。
+dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF，并校验：残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；自测结束应用以 0/1 退出。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
 
 ## 目录结构
 
 ```
-├── Cargo.toml / build.rs     # Tauri 应用（Rust）
-├── src/main.rs               # Tauri 命令 + 文件逻辑 + 单元测试
-├── tauri.conf.json           # Tauri 配置
-├── capabilities/default.json # 权限（core + dialog）
-├── icons/                    # 应用图标（scripts/gen-icons.mjs 生成）
-├── frontend/                 # Web 前端（Vite，无框架）
+├── src/main.rs               # 全部 Rust：命令、路径安全、front matter、rmd 协议、单测
+├── frontend/
 │   ├── index.html
 │   ├── public/               # 图标、highlight.js 主题
-│   └── src/                  # main.js / api.js / editor.js / preview.js /
-                              #   export.js / imgutil.js / selftest.js / style.css
-├── package.json              # 前端依赖 + tauri CLI
-└── scripts/                  # 图标生成、构建/运行脚本
+│   └── src/                  # main.js / api.js / editor.js / preview.js / export.js
+│                             #   notelist.js / markdown.js / imgutil.js / selftest.js / style.css
+├── scripts/                  # 开发服务器、图标、检查、自测、签名与 Windows 绿色包
+├── examples/                 # 示例笔记库，同时是自测夹具
+├── capabilities/             # Tauri 权限
+├── icons/                    # 应用图标（npm run icons 生成，含 .icns）
+├── docs/                     # 架构、测试、发布、安全文档
+├── .github/workflows/        # CI 与三端发布
+├── tauri.conf.json
+├── Cargo.toml
+└── package.json
 ```
 
-## 已知限制（v1.0）
+## 三端发布
 
-- 删除笔记直接删文件，无回收站
-- 搜索为子串匹配，未做分词；仅覆盖正文——文件名兜底的标题与标签不在搜索范围
-- front matter 只保留 `tags`：`title:`、`date:` 等其它字段会在保存时丢弃
-- 笔记中的原始 HTML（`<script>`、`onerror=` 等事件属性）**不消毒**，在预览/导出中直接执行；打开包含不可信来源文件的目录时请谨慎（消毒方案见 [AUDIT_REPORT.md](AUDIT_REPORT.md)）
-- 无快捷键（Tab 续行等编辑器内快捷键除外）
-- 移动笔记通过菜单选择目标文件夹，不支持拖拽
+发布由 [`.github/workflows/release.yml`](.github/workflows/release.yml) 完成：
+
+- 推 `v*` tag（或手动填 tag）触发；
+- Windows：绿色 zip + 自签名 Authenticode（可选真实 PFX secrets）；
+- Linux：deb + AppImage + SHA256；
+- macOS：universal DMG + ad-hoc 签名；
+- 所有资产汇总 `SHA256SUMS.txt` 并创建 GitHub Release。
+
+签名策略与 secrets 配置见 [docs/RELEASING.md](docs/RELEASING.md)。
+
+## 常见问题
+
+**Q：rustmd 开源吗？**
+是，采用 **GPL-3.0-or-later**。你可以自由使用、修改和分发；衍生作品需按 GPL 兼容方式开源。详见 [LICENSE](LICENSE)。
+
+**Q：支持同步吗？**
+应用本身不做云同步。笔记是普通文件夹，交给 Syncthing、Git、iCloud、OneDrive、Dropbox 等即可。
+
+**Q：能打开 Obsidian 的 vault 吗？**
+可以打开普通 `.md` 文件夹，文件夹层级和 front matter 标签可用。Obsidian 特有的 `[[wikilink]]`、插件、canvas 等不在支持范围内；保存时其它 front matter 字段会保留。
+
+**Q：为什么 Windows 会提示未知发布者 / macOS 会提示无法验证？**
+Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性，没有购买商业代码签名/公证。校验 SHA256 后按系统提示放行即可。
+
+**Q：支持移动端吗？**
+当前只提供 Windows / macOS / Linux 桌面端。
+
+**Q：笔记存在哪里？**
+只存在你打开的文件夹里；应用没有数据库、没有账号、不会上传笔记。
+
+**Q：如何反馈问题或贡献代码？**
+欢迎提 [Issue](https://github.com/riverzhou/rustmd/issues) 或 PR。提交前请跑 `npm run check`；如果是渲染/导出问题，附上 `npm run selftest` 的 report 会很有帮助。
+
+## 文档
+
+- [Architecture / 架构](docs/ARCHITECTURE.md)
+- [Testing & CI / 测试](docs/TESTING.md)
+- [Release & Signing / 发布签名](docs/RELEASING.md)
+- [Security / 安全](docs/SECURITY.md)
+- [Changelog / 更新日志](CHANGELOG.md)
+- [Audit Report / 审计报告](AUDIT_REPORT.md)
+- [Developer & Agent Guide / 开发指南](AGENTS.md)
+- [GitHub 项目文案与 topics](docs/GITHUB_PROJECT_COPY.md)
+
+## License
+
+rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
+
+## 支持项目
+
+如果 rustmd 对你有帮助，给一个 ⭐ 是最直接的鼓励；也欢迎分享给需要本地 Markdown 笔记的朋友。
+
+**关键词**：Markdown 笔记、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。

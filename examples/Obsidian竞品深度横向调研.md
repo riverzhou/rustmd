@@ -36,13 +36,13 @@
 
 **“免费”不是同一类价格。** Obsidian 核心免费，但官方同步按 4 美元/用户/月年付，Publish 按站点收费；Logseq 核心和 Sync 在官方公开页中分别呈现，但二手资料显示 Sync 的可访问性仍可能受 beta 或邀请条件影响；Joplin 应用可以免费使用，Cloud Basic 公开历史口径约 2.99 欧元/月；Anytype 核心可免费使用，付费模式更多体现名称、网络空间和协作额度。[2][3][4][5] Zettlr 和 Bear 分别采用开源与 Apple 生态收费模式。团队产品则普遍按席位、创作者或 AI 使用量收费。价格只能用于初筛，不能代替三年总拥有成本测算。
 
-![本地工具与对象型产品更适合个人知识管理](https://raw.githubusercontent.com/riverzhou/rustmd/master/examples/assets/fig1-adaptation-score.png)
+![本地工具与对象型产品更适合个人知识管理](assets/fig1-adaptation-score.png)
 
 *图 1：个人知识管理场景的加权决策分。数据来源：本报告基于官方功能资料的分析评分，5 分制。*
 
 **公开价格已经反映不同商业模式，但不能直接代表使用总成本。** 本地工具把成本留在设备、同步、备份和用户维护上；云端工具把成本转化为席位、存储、集成和 AI 用量。Confluence 的公开起始价为 5.42 美元/用户/月，Notion Plus 为 10 美元/用户/月，Coda Pro 为 12 美元/Doc Maker/月，Slite Basic 为 10 美元/用户/月；Coda 的 Editor 与 Viewer 免费，因此其结果不能与普通全员付费产品直接比较。[9][10][11][12]
 
-![最低持续付费方案的价格分野](https://raw.githubusercontent.com/riverzhou/rustmd/master/examples/assets/fig2-pricing.png)
+![最低持续付费方案的价格分野](assets/fig2-pricing.png)
 
 *图 2：各产品公开最低持续付费方案，统一按公开月付或年付月均换算。数据来源：各产品官方定价页，信息截至 2026 年 9 月 30 日；不含税费与 AI 用量。*
 
@@ -191,7 +191,7 @@ Basic 包括无限文档、AI 搜索与回答、文档核验和 MCP/API；Pro �
 
 与 Notion、Confluence 相比，Slite 更聚焦知识质量与检索，而不是构建复杂应用。其公开页称拥有 3000 多家企业客户，但这一数字不能替代对具体迁移成本的验证。组织若核心痛点是知识过期、找不到文档和 AI 回答缺乏来源，应把 Slite 与 Notion Business、Confluence 和专用企业搜索并列评估。
 
-![团队能力呈现云端与本地两极分化](https://raw.githubusercontent.com/riverzhou/rustmd/master/examples/assets/fig3-team-radar.png)
+![团队能力呈现云端与本地两极分化](assets/fig3-team-radar.png)
 
 *图 3：协作、搜索/AI、开放性与生态的加权比较。数据来源：本报告基于官方功能资料的分析评分，非性能或市场份额。*
 
@@ -273,7 +273,7 @@ Markdown 的开放表面只解决第一层问题。双链文件可以打开，�
 
 个人知识管理优先考虑开放文件、关联和长期保存。Obsidian 在文件开放、插件和写作之间最均衡；Logseq 更适合大纲和每日笔记；Capacities 更适合对象和关系；Joplin 更适合重视 E2EE 的归档型用户；Bear 和 Craft 更适合追求低维护写作的人。
 
-![个人知识管理适配评分](https://raw.githubusercontent.com/riverzhou/rustmd/master/examples/assets/fig1-adaptation-score.png)
+![个人知识管理适配评分](assets/fig1-adaptation-score.png)
 
 *图 1：个人知识管理场景的加权决策分。数据来源：本报告基于官方功能资料的分析评分，5 分制。*
 

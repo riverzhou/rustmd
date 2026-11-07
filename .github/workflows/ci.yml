@@ -1,0 +1,168 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            build-essential \
+            curl \
+            file \
+            xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Lint, unit tests, repo checks, Rust tests, build
+        run: npm run check
+
+  build:
+    name: compile ${{ matrix.os }}
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            build-essential \
+            curl \
+            file \
+            xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Compile desktop binary
+        run: npx tauri build --no-bundle
+
+  selftest:
+    name: e2e self-test (linux)
+    needs: quality
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      RUSTMD_SELFTEST: '1'
+      RUSTMD_SELFTEST_EXAMPLES: ${{ github.workspace }}/examples
+      RUSTMD_SELFTEST_OUT: ${{ github.workspace }}/selftest-artifacts
+      WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            build-essential \
+            curl \
+            file \
+            xdg-utils \
+            xvfb \
+            fonts-noto-cjk
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run the dev self-test
+        # The app exits itself through selftest_finish; the timeout only
+        # stops a wedged WebKit/tauri-dev process. The report below is the
+        # authoritative verdict.
+        continue-on-error: true
+        run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
+
+      - name: Verify self-test report
+        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json"
+
+      - name: Upload self-test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rustmd-selftest-${{ github.run_id }}
+          path: ${{ github.workspace }}/selftest-artifacts
+          if-no-files-found: warn
+          retention-days: 14

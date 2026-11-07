@@ -5,47 +5,117 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.1.0] - 2026-11-07
 
 ### 新增（Added）
 
-- **本地图片渲染**：笔记中以相对路径、`./` 相对路径、`file:///`、绝对路径或
-  `<img>` 标签引用的 vault 内图片现在可以在预览中显示（此前一律加载失败：
-  webview 的页面 origin 无法读取文件系统）。实现为 `rmd` 自定义 URI 协议：
-  预览把本地图片 `src` 改写为 `rmd` URL，Rust 端按当前打开的笔记根目录做
-  路径逃逸检查后供图（与笔记路径同一安全模型，根目录外的图片被拒绝），
-  并按 mtime 缓存字节。PNG/PDF 导出经 `read_local_image` 将本地图片内联为
-  data: URL，导出的 HTML 文件同样内联，保证自包含。
-- 自测新增本地图片回归校验：`examples/markdown_render_test.md` §4 增加
-  `assets/` 相对引用图，self-test 校验其在预览中真实解码、且确实出现在导出的
-  PNG 中（同一套 2D NCC 校验）。
-- Rust 单测：`resolve_vault_file` 路径逃逸/相对路径/缺失文件拒绝、
-  `mime_for_path`、`VaultFileCache` 的 mtime 失效重读。
+- **侧栏排序**：笔记列表新增“时间 / 名称”两个按钮，分别按最后修改时间、
+  按文件名（数字感知、`zh-CN` collation）排序；新增 `↑/↓` 方向按钮，
+  两种排序都支持升序/降序；选择持久化到 localStorage。
+- **文件卡片显示文件名**：每张卡片在标题下显示完整文件名（等宽字体），
+  卡片 `title` 含完整相对路径，同名笔记不再难以区分。
+- **文件夹树**：左侧文件夹区改为真正的树状结构（可折叠/展开、层级缩进、
+  子树计数），顶部“全部”始终可用；选中父文件夹会包含所有子文件夹的笔记。
+  **子文件夹默认折叠**，展开状态持久化。新增 `list_folders` 后端命令，空
+  文件夹也会出现在树中，并可作为新建/移动目标。
+- **三端 GitHub CI/CD**：`ci.yml` 在 Windows / Linux / macOS 编译，Ubuntu
+  跑完整质量门禁和 Xvfb 真实 WebView 自测；`release.yml` 在 tag 上发布
+  Windows 绿色 zip、Linux deb + AppImage、macOS universal DMG。
+- **发布签名**：Windows 自签名 Authenticode（可选真实 PFX secret），
+  macOS ad-hoc 整包签名（可选 Developer ID + 公证），所有平台附 SHA256。
+  参考 pythontdx 的发布策略：Windows 绿色 zip + 自签名、macOS ad-hoc、
+  Linux 校验和。
+- **自动化检查体系**：ESLint 10 flat config、Node 原生单测、仓库一致性检查、
+  版本检查、`rustfmt` / `clippy -D warnings` / `cargo test`、Vite 构建，
+  统一由 `npm run check` 串起。
+- **安全渲染**：集成 DOMPurify，在 `innerHTML` 前消毒笔记 HTML；Tauri CSP
+  从 `null` 改为显式策略；外部链接经 `opener` 插件交给系统浏览器。
+- **CSP / 权限**：`object-src 'none'`、禁止 inline script、限制 connect-src；
+  capabilities 增加 `opener:default`。
+- **前端纯函数测试**：`notelist.js`（排序/过滤/文件夹树）与 `markdown.js`
+  （数学保护/代码段切分）拆出并配 14 个 `node --test` 用例；新增升/降序
+  方向用例；Rust 单测增至
+  41 个（40 通过 + 1 个网络测试 ignored）。
+- **开源协议**：项目改为 **GPL-3.0-or-later**，新增根目录 `LICENSE`；
+  `package.json` / `Cargo.toml` / `tauri.conf.json` 同步声明，Windows 绿色包、
+  Linux deb/AppImage 与 macOS DMG 随附许可证。
+- **文档**：新增 `docs/ARCHITECTURE.md`、`docs/TESTING.md`、
+  `docs/RELEASING.md`、`docs/SECURITY.md`、`docs/GITHUB_PROJECT_COPY.md`；
+  重写 README / AGENTS / CHANGELOG / AUDIT_REPORT；新增英文 README.en.md；
+  README 加入主界面 / 深色主题 / 侧栏截图；生成 `icon.icns` 供 macOS 打包。
 
 ### 变更（Changed）
 
-- 自测代码从 `main.js` 拆出为独立模块 `frontend/src/selftest.js`
-  （由 main.js 在 dev 构建下动态导入，行为与原先完全一致；release 构建
-  依旧不含自测代码）。入口 `main.js` 由 1362 行减至约 860 行，只保留 UI
-  状态与接线。
-- 浏览器模拟模式（`npm run dev` 的 mock）与真实后端行为对齐：`save_note`
-  拒绝空/绝对/父目录逃逸路径（与 `resolve_in_root` 一致）；`rename_note`
-  重名时改为报错（此前静默覆盖另一篇笔记）；`move_note` 支持同文件夹
-  no-op 与冲突时自动 ` (n)` 后缀；搜索 snippet 窗口与后端一致（命中前
-  40 字符、命中后 +60 字符）。
-- 移除自测内私有的 `guessMime` 重复实现，统一使用 `imgutil.js` 的
-  `guessImageMime`；修正三处误导注释（`export.js` 的 maxWidth 说明、
-  `imgutil.js` 的去重说明、`scripts/launch-dev.mjs` 的自测文件位置）。
-- 文档：README「已知限制」补充 raw HTML 不消毒（打开不可信目录需谨慎）、
-  front matter 仅保留 `tags`、搜索不含文件名兜底标题与标签；AGENTS.md
-  记录 selftest.js 位置、自测命令的 bash 语法及已知安全缺口
-  （详见 AUDIT_REPORT.md）。
+- **保存链路**：临时文件 + 原子 rename；`baseHash` 内容 hash 冲突检测；
+  保存队列串行化，避免并发保存把旧 hash 当成冲突；保存失败保留“未保存”
+  状态，切换/关闭前提示；标签变化也参与版本号。
+- **front matter 保留式保存**：`compose_note` 只替换/插入 `tags:` 行，
+  `title:`、`date:`、注释、BOM、CRLF/LF 全部保留；带引号/逗号的标签可往返。
+- **导出写文件**：前端不再调用 `write_text` / `write_bytes`；改为
+  `save_export` 在 Rust 内打开原生保存对话框并写用户选择的路径。
+- **搜索范围**：正文 + 标题 + 文件名 + 标签；前端加查询序列号，过期响应丢弃。
+- **卡片摘要**：跳过 `$$…$$` 展示公式与 fenced code，不再把 TeX/Mermaid 源码
+  塞进列表摘要。
+- **图片 MIME**：`fetch_image_bytes` / `read_local_image` 返回
+  `{bytes, mime}`；SVG/ICO/AVIF 等导出不再空白。
+- **`file:///` 图片**：Windows 盘符路径正确剥掉前导 `/`，UNC `file://server/`
+  也能解析。
+- **数学保护**：display math 改为“行首开始、行尾结束”的正则（去掉
+  lookbehind，兼容旧 WebKit）；token 加随机前缀；行内代码中的 `$…$` 不再
+  被当作公式。
+- **路径安全**：新路径检查最深已存在祖先（junction/symlink 写逃逸）；
+  walk 跳过符号链接/reparse point；`\\?\UNC\` 正确还原。
+- **SSRF**：远程图片只允许 http(s)，拒绝 loopback/私有/链路本地/保留地址，
+  每次重定向重新校验，20s 超时、25MB 上限。
+- **依赖升级**：marked 18、jsPDF 4、mermaid 12.3、Vite 8（rolldown）、
+  dompurify 3、highlight.js 11.12、CodeMirror 6.0.2、Tauri opener 2.7。
+- **发布前依赖刷新（2026-11-07）**：`@tauri-apps/api`/CLI 2.12.4、
+  `@tauri-apps/plugin-dialog` 2.8.4、`globals` 17；Cargo.lock 更新到
+  Tauri 2.12.5、tauri-build 2.7.4、reqwest 0.12.28、serde 1.0.229 等；
+  GitHub Actions 升级到 checkout/setup-node v7、upload-artifact v7、
+  download-artifact v8、softprops/action-gh-release v3。升级后
+  `npm run check`、`npx tauri build --no-bundle`、`npm run selftest` 全部通过。
+- **自测**：路径由 `RUSTMD_SELFTEST_EXAMPLES` / `RUSTMD_SELFTEST_OUT`
+  或默认值注入，输出目录由 Rust 创建；远程图片拉取失败计入 `errors`；
+  报告由 debug-only 命令写盘，应用以 0/1 退出供 CI 消费。示例库中的
+  Obsidian 调研图改用本地 `assets/`，远程回归改用稳定的 picsum 图片，
+  不再绑定本仓库的 raw.githubusercontent URL。
+- **图标**：`npm run icons` 现在同时生成 `icon.icns`；Tauri bundle 图标列表
+  包含 `.icns`。
+- **本地图片渲染**（从 Unreleased 合并）：相对路径、`./`、`file:///`、
+  绝对路径、`<img>` 均可显示；`rmd` 自定义协议按当前笔记根做路径封闭，
+  按 mtime 缓存；导出时内联为 data URL。
+- **浏览器 mock** 与后端对齐：save 冲突、rename/move 自动后缀、搜索
+  标题/标签、文件夹列表、图片 MIME。
+
+### 修复（Fixed）
+
+- 修复审计报告中的 H-1（无消毒 HTML + `csp:null`）、H-2（junction 写逃逸）、
+  H-3（SSRF / 无限制远程拉取）、H-4（无 scope 的 `write_text/write_bytes`）。
+- 修复 M-1 `file:///` Windows 失效、M-2 front matter 丢字段、M-3 UNC 路径
+  损坏、M-4 walk 跟随符号链接/环、M-5 非原子保存/无冲突检测、M-6 SVG 等
+  导出空白、M-7 自测机器绑定/静默失明、M-8 rename/move 冲突行为不一致、
+  M-9 搜索范围与竞态、M-10 保存失败丢改/关闭丢输入。
+- 修复 `strip_inline` 吞掉孤立的 `!`、未闭合 `[` 丢文本；标题提取把代码
+  围栏里的 `#` 当标题；`#Title` 被误认为标题。
+- 修复每次保存都全量重读笔记、排序按钮缺失、搜索旧响应覆盖新结果等
+  UI 问题。
+- 修复图片 `rmd` 响应被浏览器缓存导致编辑后不更新的问题（`no-store`）。
+- 修复导出的宽表格/长代码被 html2canvas 裁切（导出舞台改为换行/固定布局）。
+- 修复自测在离线/输出目录不存在时静默通过的问题。
 
 ### 移除（Removed）
 
-- 开发期遗留的 Rust 端诊断日志：`list_notes` / `read_note` / `save_note`
-  的 `eprintln!` 调用日志，以及 panic hook、窗口关闭/销毁、应用退出的
-  stderr 打印（release 构建中为 no-op，行为无任何变化）。
+- 移除 `write_text` / `write_bytes` 两个无 scope 的任意文件写命令。
+- 移除自测/脚本中的机器绑定绝对路径（改用环境变量和默认临时目录）。
+- 移除 `setPreviewTheme` 中不必要的 mermaid 缓存清空（缓存键已含主题）。
+- 移除开发期遗留的 Rust 诊断日志（1.0.0 已移除，此处确认 release 无 stderr 噪声）。
+
+### 安全（Security）
+
+- 笔记 HTML 消毒 + CSP + 外链 opener + 路径封闭 + SSRF 防护 + 原生保存
+  对话框，形成多层防线。详见 [docs/SECURITY.md](docs/SECURITY.md)。
+- 审计状态见 [AUDIT_REPORT.md](AUDIT_REPORT.md)。
 
 ## [1.0.0] - 2026-10-02
 
@@ -56,9 +126,7 @@
 - **端到端自测（dev self-test）**：`RUSTMD_SELFTEST=1 scripts\run-dev.bat` 启动后，
   dev 窗口会用真实的 WebView2 + Rust 后端渲染 `examples/` 下全部示例笔记，逐一导出
   PNG/PDF，并用 2D NCC 相关算法验证外链图片确实出现在导出的 PNG 中；产物与
-  `report.json` 写入 `%LOCALAPPDATA%\Temp\opencode\rustmd-selftest`。仅在 dev 构建存在
-  （release 构建中自动移除）。自测校验项包括：残留未渲染公式、外链图片缺失、
-  多行公式（矩阵 / align / cases）被压成单行。
+  `report.json` 写入系统临时目录。仅在 dev 构建存在（release 构建中自动移除）。
 - 示例笔记：`examples/Markdown数学公式指南.md`（LaTeX 公式语法大全，兼作公式渲染
   回归测试样例）、`examples/Obsidian竞品深度横向调研.md`（含外链图片的长文样例）。
 - Rust 单测：`fetch_image_bytes` 真实网络拉取（离线环境自动跳过）。

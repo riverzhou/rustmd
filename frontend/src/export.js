@@ -49,32 +49,54 @@ function buildStage(markdownSource) {
 /// NB: the load wait uses `load`/`error` events, NOT img.decode() — in
 /// Chromium/WebView2, decode() never settles for object/data URLs (the
 /// image itself is fully loaded), which hung the whole export.
+/// Run async tasks with a small concurrency cap. A note with dozens of
+/// remote images must not occupy every blocking Rust worker at once.
+async function mapLimit(items, limit, task) {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next;
+        next += 1;
+        await task(items[index], index);
+      }
+    }
+  );
+  await Promise.all(workers);
+}
+
 async function inlineRemoteImages(stage) {
   const remotes = [...stage.querySelectorAll('img')].filter((img) => {
     const src = img.currentSrc || img.getAttribute('src') || '';
     return isRmdUrl(src) || /^https?:\/\//i.test(src);
   });
-  await Promise.all(
-    remotes.map(async (img) => {
-      const src = img.currentSrc || img.getAttribute('src');
-      try {
-        const bytes = isRmdUrl(src)
-          ? await api.readLocalImage(rmdUrlPath(src))
-          : await api.fetchImageBytes(src);
-        img.removeAttribute('srcset');
-        img.src = bytesToDataUrl(bytes, guessImageMime(bytes));
-        await waitImageLoad(img);
-      } catch (err) {
-        console.warn('图片拉取失败，导出中该位置将为空白：', src, err);
-      }
-    })
-  );
+  await mapLimit(remotes, 4, async (img) => {
+    const src = img.currentSrc || img.getAttribute('src');
+    try {
+      const image = isRmdUrl(src)
+        ? await api.readLocalImage(rmdUrlPath(src))
+        : await api.fetchImageBytes(src);
+      img.removeAttribute('srcset');
+      img.src = bytesToDataUrl(
+        image.bytes,
+        image.mime || guessImageMime(image.bytes)
+      );
+      await waitImageLoad(img);
+    } catch (err) {
+      console.warn('图片拉取失败，导出中该位置将为空白：', src, err);
+    }
+  });
 }
 
 /// Resolve once `img` has loaded its current src (or reject on error /
 /// 20 s timeout). Event-based because img.decode() hangs on blob: URLs.
 function waitImageLoad(img, timeoutMs = 20000) {
-  if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+  if (img.complete) {
+    return img.naturalWidth > 0
+      ? Promise.resolve()
+      : Promise.reject(new Error('image load error'));
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => { cleanup(); reject(new Error('image load timeout')); },
@@ -203,7 +225,9 @@ export async function exportPdf(markdownSource) {
     const slice = document.createElement('canvas');
     slice.width = canvas.width;
     slice.height = hPx;
-    slice.getContext('2d').drawImage(
+    const ctx = slice.getContext('2d');
+    if (!ctx) throw new Error('2D canvas context unavailable');
+    ctx.drawImage(
       canvas,
       0,
       Math.round(y0 * pxPerCss),
