@@ -54,7 +54,9 @@ npm run selftest
 2. 对每篇示例笔记走真实 `renderPreview`，检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；
 3. 逐篇导出 PNG/PDF，写入输出目录；远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；
 4. 用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中；
-5. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。
+5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色
+   （html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；
+6. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。
 
 `report.ok === false` 或任何 `errors[]` 都表示失败。报告校验：
 

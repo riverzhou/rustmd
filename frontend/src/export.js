@@ -16,6 +16,14 @@ const SCALE = 3; // 3 * 96 px/in ≈ 288 DPI
 const MAX_CANVAS_HEIGHT = 14000; // device-px cap: keeps canvas memory bounded
 const PDF_PAGE_HEIGHT = 1340; // css px per PDF page (A4-ish aspect at 948 px wide)
 
+/// Export raster scale, reduced for very long notes to keep the canvas under
+/// MAX_CANVAS_HEIGHT device pixels.
+function exportScale(cssHeight) {
+  return cssHeight * SCALE > MAX_CANVAS_HEIGHT
+    ? Math.max(1, MAX_CANVAS_HEIGHT / cssHeight)
+    : SCALE;
+}
+
 function buildStage(markdownSource) {
   const stage = document.createElement('div');
   stage.className = 'export-stage';
@@ -104,6 +112,58 @@ async function inlineRemoteImages(stage) {
   });
 }
 
+function isSvgDataUrl(src) {
+  return /^data:image\/svg\+xml(?:[;,]|$)/i.test(String(src));
+}
+
+/// Chromium interprets the source rectangle of
+/// `ctx.drawImage(svgImg, sx, sy, sw, sh, …)` in the SVG's user (viewBox)
+/// units, not in decoded pixels. html2canvas always passes a source rectangle
+/// (`naturalWidth` × `naturalHeight`), so a viewBox-only SVG gets cropped to
+/// its top-left corner and its text is blown up in the raster output (the
+/// QuantV5 charts showed a giant title and no plot). A plain bitmap has no
+/// such quirk: rasterize SVG `<img>` elements at the export resolution and
+/// let html2canvas draw a normal PNG whose source rectangle is the whole
+/// surface.
+const MAX_SVG_RASTER_PIXELS = 24_000_000; // per image: bounds transient memory
+
+async function rasterizeSvgImages(stage, scale) {
+  const images = [...stage.querySelectorAll('img')].filter((img) =>
+    isSvgDataUrl(img.currentSrc || img.getAttribute('src') || '')
+  );
+  await mapLimit(images, 2, async (img) => {
+    try {
+      await waitImageLoad(img);
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      // Freeze the layout box: swapping the src must not reflow the stage
+      // (page breaks and canvas height are measured afterwards).
+      img.style.width = `${rect.width}px`;
+      img.style.height = `${rect.height}px`;
+      const rawWidth = rect.width * scale;
+      const rawHeight = rect.height * scale;
+      const fit = Math.min(
+        1,
+        Math.sqrt(MAX_SVG_RASTER_PIXELS / (rawWidth * rawHeight))
+      );
+      const width = Math.max(1, Math.round(rawWidth * fit));
+      const height = Math.max(1, Math.round(rawHeight * fit));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('2D canvas context unavailable');
+      // No source rectangle here: that would crop in viewBox units again.
+      ctx.drawImage(img, 0, 0, width, height);
+      img.removeAttribute('srcset');
+      img.src = canvas.toDataURL('image/png');
+      await waitImageLoad(img);
+    } catch (err) {
+      console.warn('SVG 图片栅格化失败，导出中该位置可能为空白：', err);
+    }
+  });
+}
+
 /// Resolve once `img` has loaded its current src (or reject on error /
 /// 20 s timeout). Event-based because img.decode() hangs on blob: URLs.
 function waitImageLoad(img, timeoutMs = 20000) {
@@ -143,13 +203,14 @@ async function renderToCanvas(markdownSource) {
     stage.firstElementChild.style.maxWidth = `${CONTENT_WIDTH}px`;
     // Remote images are swapped for inline data: URLs (nothing to revoke).
     await inlineRemoteImages(stage);
+    // SVG images must be bitmaps before html2canvas draws them (see above).
+    // Rasterize at the scale the canvas will use; the frozen image boxes keep
+    // the stage height unchanged, but measure again in case of rounding.
+    await rasterizeSvgImages(stage, exportScale(stage.offsetHeight));
     const cssWidth = stage.offsetWidth;
     const cssHeight = stage.offsetHeight;
     // Keep the canvas bounded for very long notes (scale may drop below 3).
-    const scale =
-      cssHeight * SCALE > MAX_CANVAS_HEIGHT
-        ? Math.max(1, MAX_CANVAS_HEIGHT / cssHeight)
-        : SCALE;
+    const scale = exportScale(cssHeight);
     const canvas = await html2canvas(stage, {
       scale,
       backgroundColor: getComputedStyle(stage).backgroundColor,

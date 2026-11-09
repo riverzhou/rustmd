@@ -147,7 +147,11 @@ If a new Tauri *plugin* is used:
   the mock in `api.js` mirrors it.
 - **Preview/export**: `renderMarkdownInto` is shared by preview and export.
   Anything added there must be safe in both. `export.js` assumes the stage is
-  948 px wide (860 content + 2×44 padding).
+  948 px wide (860 content + 2×44 padding). PNG/PDF export rasterizes
+  `data:image/svg+xml` `<img>` elements before html2canvas: Chromium interprets
+  `drawImage` source rectangles in SVG user units, and html2canvas always
+  passes `naturalWidth`/`naturalHeight`, which cropped viewBox-only SVGs. The
+  self-test's inline-SVG red/blue check covers this.
 - **UI strings**: add the key to both `en` and `zh-CN` dictionaries in `i18n.js`,
   use `t()` in JS and `data-i18n*` attributes in HTML. Never hardcode a
   user-visible string in `main.js`.

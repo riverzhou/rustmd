@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-11-09
+
+### 修复（Fixed）
+
+- **PNG / PDF 导出中的内嵌 SVG 图片**：以 `data:image/svg+xml` 内联、只有
+  `viewBox` 而没有 `width` / `height` 的 `<img>` 图片，在导出时会被裁成左上角
+  一小块并把文字放大（例如 QuantV5 回测报告的图表只剩巨大的标题和坐标轴数字）。
+  原因有两个叠加：浏览器的 `naturalWidth` 只有 300px 左右；html2canvas 又把
+  `drawImage` 的源矩形按 SVG 用户单位（viewBox）解释，等于裁掉了图表的大部分。
+  现在导出前先把 SVG 图片按导出的目标分辨率栅格化为 PNG，再交给 html2canvas；
+  页面截图/HTML 导出本来就是浏览器原生渲染，不受影响。
+- **导出回归测试**：端到端自测新增一张 viewBox-only 的红蓝双色 SVG 用例，要求
+  导出 PNG 中同时存在左右两色；`report.inlineSvg` 会记录两色像素数，缺一色即
+  失败。`docs/TESTING.md` 同步说明。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.3.1**；`package.json`、`Cargo.toml`、`tauri.conf.json`、
+  `Cargo.lock`、`package-lock.json` 同步。
+- 用 `QuantV5-回测-month-20d-汇总-20261109-082004.md` 实测 PNG、PDF、HTML 三种
+  导出；PNG 图表完整，PDF 由同一张修复后的画布分页（4 页），HTML 保留矢量 SVG。
+
 ## [1.3.0] - 2026-11-07
 
 ### 新增（Added）

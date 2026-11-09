@@ -78,15 +78,47 @@ export async function runSelfTest({ getState }) {
       const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       let saturated = 0;
       let nonWhite = 0;
+      let red = 0;
+      let blue = 0;
       for (let i = 0; i < d.length; i += 4) {
         const r = d[i], g = d[i + 1], b = d[i + 2];
         if (Math.max(r, g, b) - Math.min(r, g, b) > 30) saturated++;
         if (r < 245 || g < 245 || b < 245) nonWhite++;
+        if (r > 150 && g < 100 && b < 100) red++;
+        if (b > 150 && r < 100 && g < 100) blue++;
       }
-      return { w: canvas.width, h: canvas.height, saturatedPixels: saturated, nonWhitePixels: nonWhite };
+      return {
+        w: canvas.width,
+        h: canvas.height,
+        saturatedPixels: saturated,
+        nonWhitePixels: nonWhite,
+        redPixels: red,
+        bluePixels: blue,
+      };
     } finally {
       URL.revokeObjectURL(url);
     }
+  }
+
+  /// Regression: a viewBox-only SVG image used to be cropped to its top-left
+  /// corner by html2canvas (Chromium treats the drawImage source rectangle in
+  /// SVG user units). Render a red/blue two-tone SVG and require BOTH halves
+  /// in the exported PNG; a crop leaves only the red left edge.
+  async function verifyInlineSvgExport() {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500">' +
+      '<rect width="500" height="500" fill="#ff2020"/>' +
+      '<rect x="500" width="500" height="500" fill="#2020ff"/>' +
+      '</svg>';
+    const markdown = `![inline svg](data:image/svg+xml;base64,${btoa(svg)})`;
+    const png = await exportPng(markdown);
+    const pixels = await analyzePngPixels(png.data);
+    return {
+      ok: pixels.redPixels > 1000 && pixels.bluePixels > 1000,
+      redPixels: pixels.redPixels,
+      bluePixels: pixels.bluePixels,
+      bytes: png.data.length,
+    };
   }
 
   // ---------------- Remote-image presence in the exported PNG ----------------
@@ -504,7 +536,16 @@ export async function runSelfTest({ getState }) {
       report.entries.push(entry);
       console.log('[selftest] done', meta.path);
     }
-    // 4) WebView2 export pipeline probe — one remote URL is enough to
+    // 4) Inline-SVG PNG regression (viewBox-only image must not be cropped
+    //    by html2canvas's drawImage source rectangle).
+    report.inlineSvg = await verifyInlineSvgExport();
+    if (!report.inlineSvg.ok) {
+      report.errors.push(
+        `inline SVG image missing from exported PNG ` +
+          `(red=${report.inlineSvg.redPixels}, blue=${report.inlineSvg.bluePixels})`
+      );
+    }
+    // 5) WebView2 export pipeline probe — one remote URL is enough to
     //    localize which stage (blob decode / drawImage / html2canvas)
     //    drops the image from the export.
     const probeUrl = report.entries

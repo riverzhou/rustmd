@@ -22,8 +22,8 @@
 ```bash
 npm run check
 git add -A
-git commit -m "release: v1.3.0"
-git tag v1.3.0
+git commit -m "release: v1.3.1"
+git tag v1.3.1
 git push origin master --tags
 ```
 
@@ -57,7 +57,7 @@ Windows 绿色 zip 由脚本复制 `LICENSE`。
 Windows zip 的目录结构：
 
 ```
-rustmd-1.3.0-win-x64/
+rustmd-1.3.1-win-x64/
 ├── rustmd.exe
 ├── README.md
 ├── SECURITY.md
@@ -133,17 +133,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.3.0-macos-universal.dmg.sha256
+shasum -a 256 -c rustmd-1.3.1-macos-universal.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.3.0-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.3.0-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.3.1-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.3.1-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.3.0-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.3.1-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：
