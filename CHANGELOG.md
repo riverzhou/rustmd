@@ -5,6 +5,60 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-11-11
+
+### 新增（Added）
+
+- **HTML 笔记**：笔记库现在同时识别 `.md` / `.html` / `.htm`。HTML 文件会出现在
+  文件夹树、笔记列表、搜索和文件夹计数中，并带 `HTML` 类型标记；列表标题优先取
+  `<title>`，其次第一个 `<h1>`，最后文件名。
+- **编辑器**：CodeMirror 按文件类型切换 Markdown / HTML 语法高亮，HTML 标签、
+  属性、属性值有独立配色；`<script>` / `<style>` 内的 JS/CSS 关键字、字符串、函数、变量、注释等也会分别着色；新增 **自动折行 / 不折行** 切换并持久化；右上角新增 **全屏**
+  按钮并支持 `F11` 快捷键。
+- **HTML 渲染**：HTML 笔记预览使用应用内置 WebView 的 `sandbox="allow-scripts"`
+  null-origin iframe，支持内联/远程脚本、样式、本地相对 CSS/JS/字体/图片和 ECharts
+  图表，无需外部浏览器；导出在隐藏的独立 Tauri WebView 中整页截图，超长页面按垂直段
+  截取后用 Rust 拼接为单张 PNG。所有保险库命令按窗口 label 校验，预览 iframe 与导出
+  窗口都无法调用它们。HTML 笔记不支持 front matter 标签，标签编辑器会自动隐藏。
+- **新建菜单**：顶部新建按钮改为菜单，可选择 **Markdown 笔记** 或 **HTML 页面**；
+  重命名、移动、删除、手动刷新以及 HTML / PNG / PDF 导出均支持 HTML 笔记，重命名
+  保留原扩展名。
+- **保存与导出**：HTML 笔记保存时不插入 `---` 或 `tags:`，并保留原文件的 BOM 与
+  CRLF/LF 换行风格；搜索只匹配 HTML 的可见文本（不含标签、脚本、样式）。导出 HTML
+  直接保存当前源码，PNG/PDF 使用内置 WebView 整页渲染结果，图表不会丢失。
+- **示例与测试**：新增 `examples/html-page-demo.html`，覆盖 HTML 预览、本地 CSS/JS/
+  图片、脚本执行与 PNG/PDF 导出；Rust 新增 HTML 扫描/保存/搜索/重命名测试，前端新增
+  `noteKindOf` / `noteStemOf` 单测。`npm run check`、完整 6 篇示例的 `npm run selftest`
+  和 Rust 49 项测试全部通过。
+
+### 修复（Fixed）
+
+- **HTML 预览速度与清晰度**：不再把页面光栅化为 PNG，而是用内置 WebView 的
+  原生 iframe 渲染；文字/矢量图保持清晰，滚动与缩放不模糊，首次预览通常从数秒
+  降到 1 秒内（示例约 0.4–0.7 秒）。
+- **HTML 本地资源**：修正 `base` URL 把整条路径当成一个 URL segment、导致相对
+  CSS/JS/字体/图片 404 的问题；现在这些资源都能加载（并保持 `rmd` 的 Origin 读隔离）。
+- **超长 HTML 导出**：PNG 最高 3×，超过单张 canvas 高度时按垂直段截取，Rust `png`
+  crate 拼接为一张完整 PNG；PDF 短页面 3×、较高页面 2×。短页面与 Markdown 的 3×
+  一致，长页面的有效像素密度高于 Markdown 的 14,000 设备像素高度上限。
+- **HTML 预览竞态**：快速切换笔记时，旧的异步 iframe 注册结果不会再追加到新笔记；
+  切回 Markdown 时会清理 native iframe 的消息监听器和定时器。
+- **全屏状态**：`F11` 忽略按键重复；窗口重新获得焦点时同步真实全屏状态，避免用
+  `Esc` 退出后按钮状态残留。
+- **JS/CSS 语法高亮**：补全 `<script>` / `<style>` 内的关键字、字符串、函数、变量、
+  类名、标点、注释颜色，不再只有 HTML 标签/属性有颜色。
+- **安全**：`rmd` 对 sandbox/null origin 与 `rmdhtml` 源的 CORS 读请求返回 403，
+  避免恶意 HTML 笔记用 `fetch` 读取笔记库其他文件；隐藏 WebView 与预览 iframe
+  仍受窗口 label 校验。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.4.0**；`package.json`、`Cargo.toml`、`tauri.conf.json`、
+  `Cargo.lock`、`package-lock.json` 同步，README 中英文版更新到 1.4.0。
+- `AUDIT_REPORT.md` 重写为 1.4.0 审计；`AGENTS.md`、架构/安全/测试/发布文档同步
+  HTML 渲染、Origin 白名单、全屏/折行、语法高亮和新的发布/自测流程。
+- `examples/html-page-demo.html` 增加本地 CSS/JS 资源并修正过时的无头浏览器说明。
+
 ## [1.3.1] - 2026-11-09
 
 ### 修复（Fixed）

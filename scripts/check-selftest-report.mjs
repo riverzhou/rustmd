@@ -26,8 +26,24 @@ try {
   process.exit(1);
 }
 
+const requireHtml = process.argv.includes('--require-html');
 const errors = [];
+let htmlEntries = 0;
+const maxAgeHours = Number(
+  process.env.RUSTMD_SELFTEST_MAX_AGE_HOURS || 24
+);
 if (report.ok !== true) errors.push('report.ok is not true');
+if (report.startedAt) {
+  const ageHours = (Date.now() - Date.parse(report.startedAt)) / 36e5;
+  if (maxAgeHours > 0 && ageHours > maxAgeHours) {
+    errors.push(
+      `selftest report is stale: started ${report.startedAt} ` +
+        `(${ageHours.toFixed(1)}h old; max ${maxAgeHours}h)`
+    );
+  }
+} else {
+  errors.push('report has no startedAt timestamp');
+}
 if (!Array.isArray(report.entries) || report.entries.length === 0) {
   errors.push('report has no entries');
 }
@@ -36,6 +52,20 @@ if (Array.isArray(report.errors) && report.errors.length) {
 }
 for (const entry of report.entries || []) {
   if (!entry.path) errors.push('entry without path');
+  if (entry.kind === 'html') {
+    htmlEntries += 1;
+    if (entry.render?.iframe !== true || entry.render?.ready !== true) {
+      errors.push(`${entry.path}: HTML preview iframe did not become ready`);
+    }
+    if (!entry.png?.pixels || entry.png.pixels.w < 100 || entry.png.pixels.h < 100) {
+      errors.push(`${entry.path}: HTML PNG dimensions are implausible`);
+    } else if (entry.png.pixels.nonWhitePixels < 100) {
+      errors.push(`${entry.path}: HTML PNG is essentially blank`);
+    }
+    if (entry.pdf?.magic !== '%PDF-') {
+      errors.push(`${entry.path}: HTML PDF does not start with %PDF-`);
+    }
+  }
   if (!entry.png || !(entry.png.bytes > 1000)) {
     errors.push(`${entry.path}: PNG missing or suspiciously small`);
   }
@@ -49,6 +79,10 @@ for (const entry of report.entries || []) {
       }
     }
   }
+}
+
+if (requireHtml && htmlEntries === 0) {
+  errors.push('no HTML entry found (--require-html)');
 }
 
 if (errors.length) {

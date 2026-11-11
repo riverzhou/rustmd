@@ -8,6 +8,7 @@ export function splitCodeSegments(md) {
   let text = [];
   let code = [];
   let fence = null; // null outside a fence, otherwise the fence char ` or ~
+  let fenceLen = 0;
   const flushText = () => {
     if (text.length) {
       segments.push({ code: false, text: text.join('\n') });
@@ -25,12 +26,13 @@ export function splitCodeSegments(md) {
       code.push(line);
       const m = line.match(
         new RegExp(
-          '^\\s*' + (fence === '`' ? '`{3,}' : '~{3,}') + '\\s*$'
+          '^\\s*' + (fence === '`' ? '`' : '~') + '{' + fenceLen + ',}\\s*$'
         )
       );
       if (m) {
         flushCode();
         fence = null;
+        fenceLen = 0;
       }
       continue;
     }
@@ -38,6 +40,7 @@ export function splitCodeSegments(md) {
     if (m) {
       flushText();
       fence = m[1][0];
+      fenceLen = m[1].length;
       code = [line];
       continue;
     }

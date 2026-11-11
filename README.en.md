@@ -1,6 +1,6 @@
 # rustmd
 
-**Local-first Markdown notes for Windows, macOS and Linux.** Plain `.md` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown and HTML notes for Windows, macOS and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.3.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.4.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -39,12 +39,12 @@ Chinese interface example:
 
 If you want a Markdown tool that keeps your notes as **plain files** instead of a database:
 
-- **Plain-text storage** — a note is a `.md` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
+- **Plain-text storage** — a note is a `.md` or `.html` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
 - **Offline by default** — editing, search, preview and export work without a network; only remote images and update checks need one.
 - **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
-- **More than an editor** — folder tree, full-text search, front matter tags, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
-- **Security-minded** — sanitized note HTML, CSP, path containment, SSRF protection, native save dialog for exports.
-- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code Markdown folder; unknown front matter fields (`title:`, `date:`, …) are preserved on save.
+- **More than an editor** — folder tree, full-text search, front matter tags, Markdown and HTML notes, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
+- **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
+- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code Markdown or HTML folder; unknown front matter fields (`title:`, `date:`, …) are preserved on save.
 
 Good for personal knowledge bases, engineering notes, writing drafts, course notes and local Markdown documentation.
 
@@ -70,12 +70,15 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 ### Search
 
 - Searches **title, filename, tags and body**, case-insensitively.
+- For HTML notes the searchable body is the visible page text — tags, scripts and styles are not matched as content.
 - Highlights the matching window and tells you whether the hit was in the title, filename or tags.
 - Debounced with a query sequence number so a slow old result cannot overwrite a newer one.
 
 ### Editing and preview
 
-- CodeMirror 6 with Markdown syntax highlighting.
+- CodeMirror 6 with Markdown or HTML syntax highlighting, switched by file type (HTML tags, attributes and values get distinct colors, and JS/CSS inside `<script>` / `<style>` is highlighted too).
+- Editor **auto-wrap / no-wrap** toggle, persisted across restarts — useful for long lines and wide tables.
+- Top-right **full screen** button and `F11` shortcut.
 - Edit / split / preview (`Ctrl+1` / `Ctrl+2` / `Ctrl+3`); draggable split, persisted.
 - 500 ms debounced autosave; external changes are detected by content hash and confirmed before overwrite.
 - Save failures keep an “unsaved” state and prompt before switching or closing.
@@ -89,22 +92,33 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - `<details>` / `<summary>` blocks.
 - Vault-local images via relative paths, `./`, `file:///`, absolute paths and `<img>`.
 
+### HTML notes
+
+- `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts, with an `HTML` badge.
+- Edit the HTML source on the left and see a full-page native render on the right using the app's built-in WebView (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). **No Edge, Chrome or other external browser is required.** The page's `<style>`, `<script>`, local relative CSS/JS/fonts/images and ECharts charts run natively; text stays sharp when scrolling/zooming. `<title>` (or the first `<h1>`) becomes the list title, while the filename stays visible.
+- The **New note** button offers **Markdown note** and **HTML page**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for both formats.
+- HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
+- Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot. A sanitized static preview is used only if rendering fails.
+- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** saves the current source verbatim; PNG / PDF use a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image).
+
 ### Export
 
-- **HTML** — embedded CSS, current theme, local images inlined (remote images stay linked).
-- **PNG** — 3× rendering (~288 DPI), good for sharing.
-- **PDF** — block-aware pagination, lossless PNG slices, bounded canvas memory.
-- For PNG/PDF, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images.
+- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); HTML notes save their current source verbatim.
+- **PNG** — 3× rendering (~288 DPI) for Markdown; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
+- **PDF** — block-aware pagination for Markdown; sliced pages from the full HTML render. Both use lossless PNG slices.
+- For PNG/PDF, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNG/PDF exports are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched.
 - The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 
 ### Security
 
-- Note HTML is sanitized with DOMPurify before `innerHTML`; scripts, event handlers, `javascript:` URLs, `<style>`, `<iframe>` etc. are stripped.
+- Markdown-rendered HTML is sanitized with DOMPurify before `innerHTML`; scripts, event handlers, `javascript:` URLs, `<style>`, `<iframe>` etc. are stripped. HTML-note preview runs in a sandboxed iframe (null origin), and export runs in a hidden WebView window; neither can call app commands.
 - MathJax/Mermaid run after sanitization, then a narrow post-pass removes `on*`, dangerous links and external CSS URLs.
-- CSP is enabled; external links open in the system browser.
+- CSP is enabled; external links open in the system browser. HTML preview/export runs in isolated WebViews; export returns only a PNG.
 - `resolve_in_root` contains notes and images inside the vault, rejects `..`, and blocks junction/symlink write escapes; the scanner skips symlinks.
 - Remote image fetching rejects loopback/private/link-local/reserved addresses and re-validates redirects.
 - Saves use a temp file + atomic rename; `baseHash` conflict detection avoids silent overwrites.
+- Notes are read as UTF-8; non-UTF-8 files stay visible but opening one asks you to convert it first.
+- HTML-note relative CSS/JS/fonts/images use `rmd`; `rmd` only accepts CORS requests from the app webview — sandbox/null origins and the `rmdhtml` renderer get 403.
 
 ## Download
 
@@ -183,9 +197,10 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 
 1. ESLint 10
 2. Node tests for sorting, folder tree, math protection, code segments and i18n
-3. Repository checks (version sync, doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
-4. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-5. Vite production build
+3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
+4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json`)
+5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+6. Vite production build
 
 CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate on Ubuntu, compiles on Windows/Linux/macOS, and runs the real-WebView E2E self-test under Xvfb.
 
@@ -195,7 +210,7 @@ CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate
 npm run selftest
 ```
 
-The dev window renders every note in `examples/`, exports PNG/PDF, and verifies residual raw math, multi-line math geometry, and that remote and vault-local images really appear in the exported PNG (2D NCC). Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); the app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
+The dev window renders every note in `examples/`, exports PNG/PDF, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); the HTML example verifies that the built-in WebView iframe becomes ready and PNG/PDF are produced, while exercising local relative CSS/JS/images and inline scripts. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); the app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
 
 ## Release pipeline
 
@@ -217,7 +232,7 @@ Yes — **GPL-3.0-or-later**. You can use, modify and redistribute it; derivativ
 The app does not sync. Notes are a plain folder — use Syncthing, Git, iCloud, OneDrive or Dropbox.
 
 **Can it open my Obsidian vault?**
-Yes for plain `.md` folders, folder hierarchy and front matter tags. Obsidian-specific `[[wikilinks]]`, plugins and canvas are not supported; other front matter fields are preserved on save.
+Yes for plain `.md` and `.html` folders, folder hierarchy and Markdown front matter tags. HTML notes are recognized by extension and rendered in the app's built-in WebView. Obsidian-specific `[[wikilinks]]`, plugins and canvas are not supported; other front matter fields are preserved on save for Markdown notes.
 
 **Why the Windows/macOS warning?**
 Windows uses a self-signed certificate and macOS uses ad-hoc signing. They prove integrity, not a purchased identity. Verify SHA256 and allow the app in the OS prompt.
@@ -250,4 +265,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, Markdown editor, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

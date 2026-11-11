@@ -37,7 +37,7 @@ const port = await findFreePort(PREFERRED_PORT);
 process.env.RUSTMD_VITE_PORT = String(port);
 // RUSTMD_SELFTEST=1 makes the dev window run the end-to-end self-test
 // (frontend/src/selftest.js: renders every example note, exports PNG+PDF,
-// writes artifacts + report.json to %LOCALAPPDATA%\Temp\opencode\rustmd-selftest).
+// writes artifacts + report.json to the system temp directory (rustmd-selftest).
 const devUrl = `http://127.0.0.1:${port}${process.env.RUSTMD_SELFTEST ? '?selftest=1' : ''}`;
 if (port !== PREFERRED_PORT) {
   console.log(`[rustmd] port ${PREFERRED_PORT} is in use, using free port ${port}`);

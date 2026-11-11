@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>HTML 页面渲染示例</title>
+  <link rel="stylesheet" href="assets/html-demo.css" />
+  <style>
+    /* Inline styles also run in the isolated built-in WebView preview. */
+    .notice { color: crimson; }
+  </style>
+</head>
+<body>
+  <h1>HTML 页面渲染示例</h1>
+  <p class="notice">
+    这是一个 <strong>HTML 笔记</strong>：左侧编辑源码，右侧显示整页渲染结果。
+    页面的 <code>&lt;style&gt;</code>、<code>&lt;script&gt;</code>、本地相对 CSS/JS
+    和图表都在应用内置 WebView 的 sandbox iframe 中执行，不进入应用主文档，也
+    不需要 Edge / Chrome。
+  </p>
+
+  <h2>表格</h2>
+  <table>
+    <thead>
+      <tr><th>格式</th><th>编辑器</th><th>预览</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Markdown</td><td>Markdown 语法</td><td>marked 渲染</td></tr>
+      <tr><td>HTML</td><td>HTML 语法</td><td>内置 WebView 原生渲染</td></tr>
+    </tbody>
+  </table>
+
+  <h2>本地图片</h2>
+  <p>相对路径图片通过 <code>rmd</code> 协议读取，并可导出到 PNG / PDF / HTML：</p>
+  <img src="assets/fig1-adaptation-score.png" alt="示例图表" width="420" />
+
+  <h2>代码块</h2>
+  <pre><code class="language-html">&lt;section class="note"&gt;
+  &lt;h2&gt;Hello&lt;/h2&gt;
+&lt;/section&gt;</code></pre>
+
+  <h2>脚本执行</h2>
+  <pre><code class="language-javascript">// 这段脚本在 sandbox iframe 中执行
+document.body.dataset.scriptRan = 'yes';</code></pre>
+
+  <script src="assets/html-demo.js"></script>
+  <script>
+    // Inline scripts run inside the isolated preview iframe, never in the app.
+    document.body.dataset.scriptRan = 'yes-inline';
+  </script>
+</body>
+</html>

@@ -46,6 +46,7 @@ const REQUIRED = [
   'icons/icon.ico',
   'icons/icon.icns',
   'icons/icon.png',
+  'examples/html-page-demo.html',
   'scripts/launch-dev.mjs',
   'scripts/dev-server.mjs',
   'scripts/cargo.mjs',

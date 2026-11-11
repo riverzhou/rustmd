@@ -145,7 +145,7 @@ install -m 755 target/release/rustmd release/rustmd
 
 sha256sum release/rustmd > release/SHA256SUMS
 
-tar -C release -czf release/rustmd-1.0.0-linux-x86_64.tar.gz rustmd
+tar -C release -czf release/rustmd-<version>-linux-x86_64.tar.gz rustmd
 ```
 
 目标机器只需要 GTK 3 + WebKitGTK 4.1 运行库。Ubuntu 桌面版通常已自带；

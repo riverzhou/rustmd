@@ -7,36 +7,39 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 | 组件 | 信任级别 | 说明 |
 | --- | --- | --- |
 | Rust 命令 | 可信 | 但参数来自 webview，必须自行校验 |
-| webview 前端 | 受笔记 HTML 影响 | 渲染不可信 HTML，必须消毒 + CSP |
+| webview 前端 | 受 Markdown HTML 影响 | Markdown 渲染结果必须消毒 + CSP；HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染 |
 | 笔记文件 | 不可信 | 正文、front matter、图片引用都不能直接执行/越界 |
 | 远程图片 | 不可信 | URL 可指向内网/元数据服务，必须 SSRF 防护 |
-| 导出的文件 | 用户数据 | 内容来自已消毒 DOM；目标路径由用户在原生对话框选择 |
+| 导出的文件 | 用户数据 | Markdown 导出内容来自已消毒 DOM；HTML 笔记导出按用户预期保留原始源码；目标路径由用户在原生对话框选择 |
 
 ## 已实施的控制
 
 ### 1. HTML 消毒
 
-- `preview.js` 在 `innerHTML` 前调用 `DOMPurify.sanitize`。
+- **Markdown 笔记**：`preview.js` 在 `innerHTML` 前调用 `DOMPurify.sanitize`，使用静态配置。
+- **HTML 笔记预览**：`set_html_preview` 把文档存入内存，通过 `rmdhtml` 协议加载到 `sandbox="allow-scripts allow-forms"` 的 iframe（没有 `allow-same-origin`，origin 为 null）。脚本/样式/ECharts 以及本地相对的 CSS/JS/字体/图片在 iframe 内原生运行，但 Tauri IPC 对该 origin 返回 `Origin header is not a valid URL`，父页面 DOM 也不可访问。
+- **HTML 笔记导出**：`render_html_note` 只在隐藏的独立 Tauri WebView 窗口中运行（label `html-render-*`）；除 `html_preview_finish` 外，所有保险库命令都通过 `require_main` 拒绝该窗口。超长页面分段截图后由 Rust 拼接，不需要外部浏览器。
+- **本地资源与读隔离**：HTML 预览/导出需要相对 CSS/JS/字体/图片，因此 `rmd` 为它们提供文件。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（Tauri / 本地 dev server）。`Origin: null`、`rmdhtml`、远程 iframe 一律 403；字体按 `Sec-Fetch-Dest: font` 单独放行。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
 - 静态配置，不使用 hooks、`IN_PLACE`、函数式 `ADD_TAGS/ADD_ATTR`、自定义元素；禁止 `style/link/meta/base/iframe/object/embed/form/textarea/select/option/button` 和 `srcdoc`。
 - DOMPurify 默认剥离 `<script>`、`on*` 事件、`javascript:` URL 等。
 - Mermaid 使用 `securityLevel: 'strict'`；它生成的 SVG 在消毒之后挂载，不来自笔记原文。
 - MathJax/Mermaid 在 DOMPurify **之后**运行，因此 `sanitizeRenderedDom` 再做一次窄范围清理：删除 `script/iframe/object/embed`、`on*` 事件、`javascript:`/`data:text/html` 等危险 URL、以及 mermaid `<style>` 中的 `@import`/外部 `url(...)`。
-- 导出的 HTML 由消毒后的 DOM 构建，因此导出文件同样不含脚本/事件属性。
+- Markdown 的 HTML 导出由消毒后的 DOM 构建，因此导出文件同样不含脚本/事件属性；HTML 笔记的“导出 HTML”按用户预期保存原始源码（脚本/样式保留）。
 
 ### 2. CSP
 
 `tauri.conf.json` 的 `app.security.csp` 非空：
 
-- `default-src 'self'`、`script-src 'self'`、`object-src 'none'`、`base-uri 'self'`、`form-action 'none'`、`frame-ancestors 'none'`；
-- `style-src 'self' 'unsafe-inline'`（MathJax/Mermaid 注入样式所需）；
-- `img-src` 允许 `data: blob: http: https: rmd:`（远程图 + 笔记库本地图）；
-- `connect-src` 只放 IPC 和本地 dev server；
-- `worker-src 'self' blob:`。
+- 主应用：`default-src 'self'`、`script-src 'self'`、`object-src 'none'`、`base-uri 'self'`、`form-action 'none'`、`frame-ancestors 'none'`；`frame-src http://rmdhtml.localhost rmdhtml:` 只为 HTML 预览 iframe 放行；
+- 主应用 `style-src 'self' 'unsafe-inline'`（MathJax/Mermaid 注入样式所需）；
+- 主应用 `img-src` 允许 `data: blob: http: https: rmd:`（远程图 + 笔记库本地图）；
+- 主应用 `connect-src` 只放 IPC 和本地 dev server；`worker-src 'self' blob:`；
+- `rmdhtml` 预览文档另有两套更窄的 CSP：sandbox iframe 允许内联/HTTPS/本地 `rmd` 脚本、样式、字体、图片、嵌套 frame，但 `connect-src` 不含 IPC；隐藏导出窗口同样允许这些资源，并额外允许 `ipc:` 供 `html_preview_finish` 回传截图。两套 CSP 都设置 `object-src 'none'`、`form-action 'none'`。
 
 ### 3. 路径封闭
 
 - 所有笔记路径经 `resolve_in_root`：拒绝绝对路径/`..`，已存在路径 canonicalize 后前缀检查；新路径检查最深已存在祖先，阻止 junction/symlink 写逃逸。
-- `walk` 跳过符号链接/junction，避免环和越界。
+- `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` 当作笔记。
 - `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file`，只服务当前打开的笔记库。
 - Windows `\\?\UNC\` 正确还原，不会把网络共享路径改坏。
 - 唯一的前端可触发“库外写”是 `save_export`，它在 Rust 内打开系统保存对话框，前端不提供目标路径。
@@ -53,6 +56,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 ### 5. 保存与导出
 
+- 笔记按 UTF-8 读取；非 UTF-8 文件会在列表中出现，打开时明确提示先转 UTF-8，不会被静默隐藏或覆盖。
 - 笔记保存用同目录临时文件 + rename，避免半截文件。
 - `baseHash` 冲突检测；外部修改不会被静默覆盖，必须用户确认。
 - 保存失败保持“未保存”状态；关闭窗口有 `beforeunload` 提示。
@@ -69,11 +73,12 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 2. **Windows 自签名**：只保证完整性，不建立公共信任；SmartScreen 仍会警告。真实证书需要用户自行配置。
 3. **macOS ad-hoc**：未公证，首次打开需要用户放行；不能防止用户主动运行被篡改的包。请用 SHA256 校验。
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
-5. **导出 HTML**：内容是消毒后的快照，但用户若在原笔记中放入了敏感文字，导出文件会原样包含。
-6. **本地明文**：笔记是普通 `.md` 文件，不加密；依赖操作系统/磁盘加密保护。
-7. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
-8. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
-9. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。
+5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS/字体/图片通过 `rmd` base 访问当前笔记目录；rmd 对 sandbox/null origin 与 rmdhtml 源的 CORS 读请求返回 403，普通无 Origin 的资源请求仍可加载。导出截图/临时状态在渲染后清理。
+6. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式）。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
+7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。
+8. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
+9. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
+10. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。
 
 ## 给用户的安全建议
 
@@ -85,5 +90,5 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 ## 审计与验证
 
 - `AUDIT_REPORT.md` 记录当前审计状态与已修复项。
-- `npm run check` 覆盖路径、保存、SSRF 单测；`npm run selftest` 覆盖真实 WebView 渲染与导出。
+- `npm run check` 覆盖路径、保存、SSRF 单测；`npm run selftest` 覆盖真实 WebView 渲染与导出（HTML 条目要求 iframe ready + PNG/PDF 产出；CI 传 `--require-html` 防止静默丢失 HTML 覆盖）。
 - 发布前跑 `npm run check` + `npm run selftest`，并检查 CI 三端编译。

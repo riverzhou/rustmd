@@ -292,6 +292,35 @@ async function inlineLocalImagesForHtml(stage) {
   );
 }
 
+/// Inline local `<img>` sources before sending an HTML note to the hidden
+/// WebView renderer. The renderer's html2canvas uses `crossOrigin="anonymous"`,
+/// so its request would be CORS-mode from the rmdhtml origin; the strict `rmd`
+/// origin allowlist correctly rejects that. Data URLs are same-origin and
+/// preserve the image in PNG/PDF output.
+export async function inlineLocalImagesInHtml(source) {
+  const template = document.createElement('template');
+  template.innerHTML = String(source || '');
+  const images = [...template.content.querySelectorAll('img')];
+  await Promise.all(
+    images.map(async (img) => {
+      const src = img.getAttribute('src') || '';
+      const abs = localImageAbsPath(src);
+      if (!abs) return;
+      try {
+        const image = await api.readLocalImage(abs);
+        img.removeAttribute('srcset');
+        img.setAttribute(
+          'src',
+          bytesToDataUrl(image.bytes, image.mime || guessImageMime(image.bytes))
+        );
+      } catch (err) {
+        console.warn('HTML 本地图片内联失败：', src, err);
+      }
+    })
+  );
+  return template.innerHTML;
+}
+
 // ---------------- HTML sanitization / links ----------------
 
 // Note HTML is rendered by marked without sanitization. The webview holds the
@@ -507,19 +536,13 @@ const MMD_CACHE_MAX = 128;
 /// diagrams. Resolves when every diagram has rendered (or fallen back to
 /// its source). Each diagram block is swapped for a host div, so stale
 /// renders of a previously-opened note only ever write into detached DOM.
-async function renderMarkdownInto(container, markdownSource) {
-  const mathStore = [];
-  const guarded = protectMath(markdownSource, mathStore);
-  const html = marked.parse(preprocessDetails(guarded));
-  container.innerHTML = sanitizeHtml(rewriteLocalImageHtml(html));
-  installLinkHandler(container);
-  const mathSpans = restoreMath(container, mathStore);
-  for (const el of container.querySelectorAll('pre code')) {
-    if (el.classList.contains('language-mermaid')) continue;
-    hljs.highlightElement(el);
-  }
+/// Render every `<pre><code class="language-mermaid">` block into a diagram,
+/// falling back to the source plus an error note. Shared by Markdown and
+/// HTML notes (HTML pages may embed Mermaid code blocks too).
+async function renderMermaidBlocks(container) {
   const blocks = [...container.querySelectorAll('pre code.language-mermaid')];
-  const jobs = blocks.map(async (el) => {
+  await Promise.all(
+    blocks.map(async (el) => {
       const host = document.createElement('div');
       host.className = 'mermaid-diagram';
       el.parentElement.replaceWith(host);
@@ -546,7 +569,27 @@ async function renderMarkdownInto(container, markdownSource) {
           t('preview.mermaidFailed') + (err && err.message ? err.message : err);
         host.appendChild(note);
       }
-  });
+    })
+  );
+}
+
+let htmlRenderSeq = 0;
+
+async function renderMarkdownInto(container, markdownSource) {
+  htmlRenderSeq += 1;
+  disposeNativeHtmlPreview(container);
+  disposeHtmlControl(container);
+  const mathStore = [];
+  const guarded = protectMath(markdownSource, mathStore);
+  const html = marked.parse(preprocessDetails(guarded));
+  container.innerHTML = sanitizeHtml(rewriteLocalImageHtml(html));
+  installLinkHandler(container);
+  const mathSpans = restoreMath(container, mathStore);
+  for (const el of container.querySelectorAll('pre code')) {
+    if (el.classList.contains('language-mermaid')) continue;
+    hljs.highlightElement(el);
+  }
+  const jobs = [renderMermaidBlocks(container)];
   if (sourceHasMath(markdownSource)) {
     jobs.push(typesetMath(container, mathSpans));
   }
@@ -554,14 +597,589 @@ async function renderMarkdownInto(container, markdownSource) {
   sanitizeRenderedDom(container);
 }
 
-export function renderPreview(markdownSource, container) {
+// ---------------- Sandboxed HTML notes ----------------
+//
+// Full HTML notes (reports, dashboards) need their own CSS/JS. Tauri builds
+// preview them in a sandboxed native iframe (null origin); exports use a
+// hidden Tauri WebView window and return only a PNG. Browser dev (no Rust
+// bridge) falls back to an iframe that captures itself with html2canvas.
+
+const HTML_IPC_GUARD = `
+(function () {
+  var blocked = false;
+  function drop(name) {
+    try { delete window[name]; } catch (e) {}
+    try {
+      if (Object.prototype.hasOwnProperty.call(window, name)) blocked = true;
+    } catch (e) { blocked = true; }
+  }
+  drop('__TAURI_INTERNALS__');
+  drop('__TAURI__');
+  drop('ipc');
+  // If the global is non-configurable, at least neuter invoke.
+  try {
+    if (window.__TAURI_INTERNALS__) {
+      window.__TAURI_INTERNALS__.invoke = function () {
+        return Promise.reject(new Error('HTML preview IPC blocked'));
+      };
+    }
+  } catch (e) {}
+  window.__RMD_HTML_IPC_BLOCKED__ = blocked;
+  if (blocked) {
+    try { window.stop(); } catch (e) {}
+    var show = function () {
+      document.body.innerHTML =
+        '<div style="font:14px/1.6 sans-serif;padding:24px;color:#b42318">' +
+        'HTML preview disabled: app IPC could not be isolated.</div>';
+    };
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', show);
+    } else {
+      show();
+    }
+  }
+})();
+`;
+
+const HTML_CAPTURE_SCRIPT = `
+(function () {
+  function post(msg) {
+    try {
+      parent.postMessage(Object.assign({ __rmdHtml: true }, msg), '*');
+    } catch (e) {}
+  }
+  function pageSize() {
+    var d = document.documentElement;
+    var b = document.body || d;
+    // Prefer the body's content box: documentElement.clientHeight is the
+    // iframe viewport and would capture a large blank area for short pages.
+    return {
+      width: Math.max(b.scrollWidth, b.offsetWidth, d.clientWidth, 1),
+      height: Math.max(b.scrollHeight, b.offsetHeight, 1)
+    };
+  }
+  function ready() {
+    var size = pageSize();
+    post({
+      type: 'ready',
+      width: size.width,
+      height: size.height,
+      blocked: !!window.__RMD_HTML_IPC_BLOCKED__
+    });
+  }
+  if (document.readyState === 'complete') setTimeout(ready, 1200);
+  else window.addEventListener('load', function () { setTimeout(ready, 1200); });
+  window.addEventListener('message', function (event) {
+    var data = event.data || {};
+    if (data.__rmdHtml !== true || data.type !== 'capture') return;
+    var id = data.id;
+    var size = pageSize();
+    var scale = Math.max(1, Math.min(3, Number(data.scale) || 2));
+    if (typeof html2canvas !== 'function') {
+      post({ type: 'error', id: id, message: 'html2canvas is unavailable' });
+      return;
+    }
+    var bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
+    if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = '#ffffff';
+    try {
+      html2canvas(document.body, {
+        scale: scale,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: bg,
+        width: size.width,
+        height: size.height,
+        windowWidth: size.width,
+        windowHeight: size.height,
+        scrollX: 0,
+        scrollY: 0
+      }).then(function (canvas) {
+        post({
+          type: 'png',
+          id: id,
+          dataUrl: canvas.toDataURL('image/png'),
+          cssWidth: size.width,
+          cssHeight: size.height
+        });
+      }).catch(function (err) {
+        post({ type: 'error', id: id, message: String((err && err.stack) || err) });
+      });
+    } catch (err) {
+      post({ type: 'error', id: id, message: String((err && err.stack) || err) });
+    }
+  });
+})();
+`;
+
+function inlineScript(source) {
+  return `<script>${String(source).replace(/<\/script/gi, '<\\/script')}</script>`;
+}
+
+function escapeAttr(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[ch]);
+}
+
+/// Absolute vault-folder base so relative images/assets in the HTML resolve
+/// through the existing `rmd` protocol.
+function htmlPreviewBaseHref() {
+  if (!api.isTauri || !imageCtx) return '';
+  const root = imageCtx.root.replace(/\/+$/, '');
+  const dir = imageCtx.notePath.includes('/')
+    ? imageCtx.notePath.slice(0, imageCtx.notePath.lastIndexOf('/'))
+    : '';
+  const abs = `${root}${dir ? `/${dir}` : ''}/`;
+  // Keep literal `/` separators; encode only each path segment, otherwise
+  // the base URL becomes a single segment and relative assets resolve to the
+  // origin root.
+  return (
+    RMD_ORIGIN +
+    abs
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+  );
+}
+
+function injectHtmlHead(html, injection) {
+  let out = String(html || '');
+  out = out.replace(/<base\b[^>]*>/gi, '');
+  const head = /<head\b[^>]*>/i.exec(out);
+  if (head) {
+    const at = head.index + head[0].length;
+    return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
+  }
+  const htmlTag = /<html\b[^>]*>/i.exec(out);
+  if (htmlTag) {
+    const at = htmlTag.index + htmlTag[0].length;
+    return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
+  }
+  const doctype = /<!doctype[^>]*>/i.exec(out);
+  if (doctype) {
+    const at = doctype.index + doctype[0].length;
+    return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
+  }
+  return injection + '\n' + out;
+}
+
+async function buildHtmlPreviewDocument(source) {
+  // Browser dev only (no app CSP): inline the UMD bundle so the iframe can
+  // capture itself without a second origin.
+  const mod = await import('html2canvas/dist/html2canvas.min.js?raw');
+  const html2canvasTag = inlineScript(mod.default);
+  const base = htmlPreviewBaseHref();
+  const injection = [
+    base ? `<base href="${escapeAttr(base)}">` : '',
+    inlineScript(HTML_IPC_GUARD),
+    html2canvasTag,
+    inlineScript(HTML_CAPTURE_SCRIPT),
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return injectHtmlHead(source, injection);
+}
+
+function createHtmlFrame(url) {
+  const iframe = document.createElement('iframe');
+  iframe.className = 'html-preview-frame';
+  // Browser-dev only: `allow-same-origin` is required for html2canvas (it
+  // creates its own iframe). The Tauri preview uses a null-origin sandbox
+  // instead and does not capture with html2canvas.
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  iframe.setAttribute('referrerpolicy', 'no-referrer');
+  iframe.setAttribute('title', t('preview.htmlTitle'));
+  iframe.src = url;
+  return iframe;
+}
+
+/// Ready/capture protocol for one iframe. The message sender is checked, and
+/// only PNG data URLs are accepted from the untrusted document.
+function controlHtmlFrame(iframe, timeoutMs = 30000) {
+  let id = 0;
+  const pending = new Map();
+  let readySettled = false;
+  let state = null;
+  let resolveReady;
+  let rejectReady;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const timer = setTimeout(() => {
+    if (readySettled) return;
+    readySettled = true;
+    rejectReady(new Error('HTML preview timed out'));
+  }, timeoutMs);
+  const settle = (next) => {
+    if (readySettled) return;
+    readySettled = true;
+    state = next;
+    clearTimeout(timer);
+    resolveReady(next);
+  };
+  const onMessage = (event) => {
+    if (!iframe.contentWindow || event.source !== iframe.contentWindow) return;
+    const data = event.data;
+    if (!data || data.__rmdHtml !== true) return;
+    if (data.type === 'ready') {
+      settle({
+        width: Math.max(1, Number(data.width) || 0),
+        height: Math.max(1, Number(data.height) || 0),
+        blocked: !!data.blocked,
+      });
+      return;
+    }
+    if (!data.id || !pending.has(data.id)) return;
+    const waiter = pending.get(data.id);
+    pending.delete(data.id);
+    if (data.type === 'png') {
+      const dataUrl = String(data.dataUrl || '');
+      if (!dataUrl.startsWith('data:image/png;base64,')) {
+        waiter.reject(new Error('HTML preview returned a non-PNG image'));
+        return;
+      }
+      waiter.resolve({
+        dataUrl,
+        cssWidth: Math.max(1, Number(data.cssWidth) || state?.width || 1),
+        cssHeight: Math.max(1, Number(data.cssHeight) || state?.height || 1),
+      });
+    } else if (data.type === 'error') {
+      waiter.reject(new Error(String(data.message || 'HTML capture failed')));
+    }
+  };
+  window.addEventListener('message', onMessage);
+  const capture = (scale = 2) => {
+    if (!readySettled) return ready.then(() => capture(scale));
+    if (!state || state.blocked) {
+      return Promise.reject(new Error(t('preview.htmlBlocked')));
+    }
+    const captureId = ++id;
+    return new Promise((resolve, reject) => {
+      const captureTimer = setTimeout(() => {
+        pending.delete(captureId);
+        reject(new Error('HTML capture timed out'));
+      }, 120000);
+      pending.set(captureId, {
+        resolve: (value) => {
+          clearTimeout(captureTimer);
+          resolve(value);
+        },
+        reject: (err) => {
+          clearTimeout(captureTimer);
+          reject(err);
+        },
+      });
+      iframe.contentWindow.postMessage(
+        { __rmdHtml: true, type: 'capture', id: captureId, scale },
+        '*'
+      );
+    });
+  };
+  const dispose = () => {
+    clearTimeout(timer);
+    window.removeEventListener('message', onMessage);
+    for (const waiter of pending.values()) {
+      waiter.reject(new Error('HTML preview closed'));
+    }
+    pending.clear();
+  };
+  return { ready, capture, dispose, getState: () => state };
+}
+
+function disposeHtmlControl(container) {
+  if (container._rmdHtmlControl) {
+    container._rmdHtmlControl.dispose();
+    container._rmdHtmlControl = null;
+  }
+  container.classList.remove('html-mode');
+  const holder = container.closest('.preview-holder');
+  if (holder) holder.classList.remove('html-mode');
+}
+
+/// Tear down the native (Tauri) HTML preview listener/iframe when the same
+/// container is reused for a Markdown note or another HTML note.
+function disposeNativeHtmlPreview(container) {
+  if (container._rmdPreviewCleanup) {
+    container._rmdPreviewCleanup();
+    container._rmdPreviewCleanup = null;
+  }
+}
+
+const HTML_NATIVE_HEIGHT_SCRIPT = `<script>
+(function () {
+  function send() {
+    var b = document.body;
+    var d = document.documentElement;
+    parent.postMessage({
+      __rmdPreview: true,
+      height: Math.max(
+        b ? b.scrollHeight : 0,
+        b ? b.offsetHeight : 0,
+        d ? d.scrollHeight : 0,
+        d ? d.offsetHeight : 0
+      ),
+      localScript: b && b.dataset ? b.dataset.localScript || '' : '',
+      scriptRan: b && b.dataset ? b.dataset.scriptRan || '' : ''
+    }, '*');
+  }
+  if (document.readyState === 'complete') setTimeout(send, 300);
+  else window.addEventListener('load', function () { setTimeout(send, 300); });
+  window.addEventListener('resize', send);
+})();
+</script>`;
+
+const HTML_NATIVE_LINK_SCRIPT = `<script>
+(function () {
+  // Keep note links from navigating the sandboxed preview to an arbitrary
+  // remote page: hand http(s)/mailto to the trusted parent, which opens it in
+  // the system browser. Internal anchors and non-web links are left alone.
+  document.addEventListener('click', function (event) {
+    var a = event.target && event.target.closest
+      ? event.target.closest('a')
+      : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (!href || href.charAt(0) === '#') return;
+    var url;
+    try { url = new URL(href, document.baseURI); } catch (e) { return; }
+    if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:') {
+      event.preventDefault();
+      parent.postMessage({ __rmdPreviewLink: url.href }, '*');
+    }
+  }, true);
+})();
+</script>`;
+
+async function buildNativeHtmlPreviewDocument(source) {
+  const base = htmlPreviewBaseHref();
+  const injection = [
+    base ? `<base href="${escapeAttr(base)}">` : '',
+    HTML_NATIVE_LINK_SCRIPT,
+    HTML_NATIVE_HEIGHT_SCRIPT,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return injectHtmlHead(source, injection);
+}
+
+/// Tauri path: render the note natively in a sandboxed iframe. This is fast
+/// and sharp (the WebView lays out text/charts itself); note scripts are
+/// isolated from the app DOM by the sandbox.
+async function renderHtmlNativeInto(container, htmlSource) {
+  const renderSeq = ++htmlRenderSeq;
+  disposeNativeHtmlPreview(container);
+  container.innerHTML = '';
+  container.classList.add('html-mode');
+  const holder = container.closest('.preview-holder');
+  if (holder) holder.classList.add('html-mode');
+  let url;
+  try {
+    url = await api.setHtmlPreview(await buildNativeHtmlPreviewDocument(htmlSource));
+  } catch (err) {
+    if (renderSeq === htmlRenderSeq) {
+      renderHtmlStaticFallback(container, htmlSource, err.message || err);
+    }
+    return;
+  }
+  // A newer note/preview won the race while the Rust-side document was being
+  // registered; do not append a stale iframe.
+  if (renderSeq !== htmlRenderSeq) return;
+  const iframe = document.createElement('iframe');
+  iframe.className = 'html-preview-frame';
+  iframe.setAttribute('sandbox', 'allow-scripts allow-forms');
+  iframe.setAttribute('referrerpolicy', 'no-referrer');
+  iframe.setAttribute('title', t('preview.htmlTitle'));
+  iframe.style.height = '600px';
+  let received = false;
+  let warning = null;
+  let resolveReady;
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  const onMessage = (event) => {
+    if (event.source !== iframe.contentWindow) return;
+    const data = event.data;
+    if (data && typeof data.__rmdPreviewLink === 'string') {
+      api.openExternal(data.__rmdPreviewLink).catch(() => {});
+      return;
+    }
+    if (!data || data.__rmdPreview !== true) return;
+    if (warning) {
+      warning.remove();
+      warning = null;
+    }
+    const height = Math.max(240, Math.min(Number(data.height) || 0, 60000));
+    iframe.style.height = `${height}px`;
+    if (data.localScript) iframe.dataset.localScript = String(data.localScript);
+    if (data.scriptRan) iframe.dataset.scriptRan = String(data.scriptRan);
+    if (!received) {
+      received = true;
+      iframe.dataset.ready = '1';
+      resolveReady(true);
+    }
+  };
+  window.addEventListener('message', onMessage);
+  const cleanup = () => {
+    window.removeEventListener('message', onMessage);
+    if (!received) {
+      received = true;
+      iframe.dataset.ready = '0';
+      resolveReady(false);
+    }
+    if (warning) {
+      warning.remove();
+      warning = null;
+    }
+    iframe.remove();
+  };
+  const timer = setTimeout(() => {
+    if (!received) {
+      received = true;
+      iframe.dataset.ready = '0';
+      warning = document.createElement('p');
+      warning.className = 'html-preview-warning';
+      warning.textContent = t('preview.htmlTimeout');
+      iframe.before(warning);
+      resolveReady(false);
+    }
+  }, 20000);
+  container._rmdPreviewCleanup = () => {
+    clearTimeout(timer);
+    cleanup();
+  };
+  container.appendChild(iframe);
+  iframe.src = url;
+  await ready;
+}
+
+/// Browser-dev fallback: sandboxed iframe + self-capture. Tauri builds use
+/// `renderHtmlNativeInto` (native iframe); this path uses html2canvas.
+
+async function renderHtmlIframeInto(container, htmlSource) {
+  const renderSeq = ++htmlRenderSeq;
+  disposeHtmlControl(container);
+  let url;
+  try {
+    url = await api.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource));
+  } catch (err) {
+    console.error('HTML preview registration failed:', err);
+    container.innerHTML = '';
+    const p = document.createElement('p');
+    p.className = 'html-preview-error';
+    p.textContent = t('preview.htmlFailed', { msg: err.message || err });
+    container.appendChild(p);
+    return;
+  }
+  if (renderSeq !== htmlRenderSeq) return;
+  container.innerHTML = '';
+  container.classList.add('html-mode');
+  const holder = container.closest('.preview-holder');
+  if (holder) holder.classList.add('html-mode');
+  const iframe = createHtmlFrame(url);
+  const control = controlHtmlFrame(iframe);
+  container._rmdHtmlControl = control;
+  container.appendChild(iframe);
+  iframe.src = url;
+  try {
+    const state = await control.ready;
+    if (container._rmdHtmlControl !== control) return;
+    if (state.blocked) {
+      iframe.title = t('preview.htmlBlocked');
+      return;
+    }
+    const height = Math.min(Math.max(240, state.height), 60000);
+    iframe.style.height = `${height}px`;
+    iframe.dataset.ready = '1';
+  } catch (err) {
+    if (container._rmdHtmlControl === control) {
+      console.error('HTML preview failed:', err);
+      container.innerHTML = '';
+      const p = document.createElement('p');
+      p.className = 'html-preview-error';
+      p.textContent = t('preview.htmlFailed', { msg: err.message || err });
+      container.appendChild(p);
+    }
+  }
+}
+
+/// Last-resort static preview when the built-in WebView renderer fails: the
+/// note's shadow body is sanitized exactly like Markdown-authored HTML.
+/// Scripts and charts are missing, so a warning is shown above it.
+function renderHtmlStaticFallback(container, source, message) {
+  container.classList.add('html-mode');
+  container.innerHTML = '';
+  const banner = document.createElement('p');
+  banner.className = 'html-preview-warning';
+  banner.textContent = t('preview.htmlNoRenderer', { msg: message });
+  const body = document.createElement('div');
+  body.className = 'html-static-body';
+  body.innerHTML = sanitizeHtml(rewriteLocalImageHtml(htmlBodySource(source)));
+  container.append(banner, body);
+}
+
+/// Render the current HTML source in a hidden 948 px-wide iframe and return a
+/// full-page PNG data URL. The visible preview may be narrower; exports use a
+/// deterministic width so page breaks and chart layout are stable.
+export async function captureHtmlPreview(source) {
+  const url = await api.setHtmlPreview(await buildHtmlPreviewDocument(source));
+  const iframe = createHtmlFrame(url);
+  iframe.classList.add('html-capture-frame');
+  iframe.style.cssText =
+    'position:fixed;left:-100000px;top:0;width:948px;height:1200px;' +
+    'border:0;visibility:visible;';
+  const control = controlHtmlFrame(iframe, 45000);
+  try {
+    document.body.appendChild(iframe);
+    iframe.src = url;
+    const state = await control.ready;
+    if (state.blocked) throw new Error(t('preview.htmlBlocked'));
+    // Let ECharts / CSS transitions settle before rasterizing.
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    // Keep the canvas under the WebView's practical limits for long reports.
+    const scale = Math.max(1, Math.min(2.5, 16000 / Math.max(1, state.height)));
+    return await control.capture(scale);
+  } finally {
+    control.dispose();
+    iframe.remove();
+  }
+}
+
+/**
+ * Render a note into a container. Markdown goes through marked + DOMPurify.
+ * HTML notes go through the sandboxed native preview iframe (or a
+ * browser-dev iframe fallback); their scripts never run in the main document.
+ */
+export function renderPreview(source, container, kind = 'markdown') {
   ensureMermaid();
-  return renderMarkdownInto(container, markdownSource);
+  if (kind === 'html') {
+    return api.isTauri
+      ? renderHtmlNativeInto(container, source)
+      : renderHtmlIframeInto(container, source);
+  }
+  return renderMarkdownInto(container, source);
+}
+
+/// Sanitized `<body>` HTML, used only by the standalone-HTML fallback export.
+function htmlBodySource(source) {
+  const html = String(source || '');
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body ? doc.body.innerHTML : html;
+  } catch {
+    return html;
+  }
 }
 
 // Standalone HTML document for export. Diagrams are rendered to inline SVG
-// with the export theme so the file is self-contained.
-export async function buildExportHtml(title, markdownSource, theme) {
+// with the export theme so the file is self-contained. (The app's HTML-note
+// export writes the note source verbatim instead; this is the Markdown path.)
+export async function buildExportHtml(title, source, theme, kind = 'markdown') {
   const prev = mermaidTheme;
   setPreviewTheme(theme);
   const stage = document.createElement('div');
@@ -569,7 +1187,14 @@ export async function buildExportHtml(title, markdownSource, theme) {
   document.body.appendChild(stage);
   let body;
   try {
-    await renderMarkdownInto(stage, markdownSource);
+    if (kind === 'html') {
+      // Safe fallback for direct callers; the app exports HTML notes verbatim.
+      stage.innerHTML = sanitizeHtml(
+        rewriteLocalImageHtml(htmlBodySource(source))
+      );
+    } else {
+      await renderMarkdownInto(stage, source);
+    }
     // The exported HTML is a standalone file: the rmd scheme only exists
     // in-app, so vault images must be inlined as data: URLs here.
     await inlineLocalImagesForHtml(stage);

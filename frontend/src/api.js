@@ -6,9 +6,18 @@
 // or browser debugging gives false confidence.
 
 import { guessImageMime } from './imgutil.js';
+import { noteKindOf, noteStemOf } from './notelist.js';
 
 const isTauri =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const HTML_PREVIEW_ORIGIN = /windows/i.test(
+  (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+)
+  ? 'http://rmdhtml.localhost/'
+  : 'rmdhtml://localhost/';
+
+let mockHtmlPreviewUrl = null;
 
 let invoke = null;
 if (isTauri) {
@@ -74,7 +83,8 @@ export const api = {
       path,
       args: { tags, body, baseHash, baseMtime, force },
     }),
-  createNote: (dir, folder) => invoke('create_note', { dir, folder }),
+  createNote: (dir, folder, kind = 'markdown') =>
+    invoke('create_note', { dir, folder, kind }),
   renameNote: (dir, path, name) => invoke('rename_note', { dir, path, name }),
   deleteNote: (dir, path) => invoke('delete_note', { dir, path }),
   moveNote: (dir, path, destFolder) =>
@@ -103,6 +113,50 @@ export const api = {
   /// as the `rmd` protocol). `path` is an absolute path.
   readLocalImage: async (path) =>
     normalizeImage(await invoke('read_local_image', { path })),
+  async setFullscreen(enabled) {
+    if (!isTauri) {
+      if (enabled) {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+      return;
+    }
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setFullscreen(Boolean(enabled));
+  },
+  async isFullscreen() {
+    if (!isTauri) return Boolean(document.fullscreenElement);
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    return getCurrentWindow().isFullscreen();
+  },
+
+  /// Browser-dev fallback for the HTML-note iframe renderer. Tauri builds
+  /// use the built-in WebView renderer (`renderHtmlNote`) instead.
+  setHtmlPreview: async (html) => {
+    if (isTauri) {
+      const token = await invoke('set_html_preview', { html });
+      return `${HTML_PREVIEW_ORIGIN}${encodeURIComponent(token)}`;
+    }
+    if (mockHtmlPreviewUrl) URL.revokeObjectURL(mockHtmlPreviewUrl);
+    mockHtmlPreviewUrl = URL.createObjectURL(
+      new Blob([html], { type: 'text/html' })
+    );
+    return mockHtmlPreviewUrl;
+  },
+  /// Render an HTML note to a full-page PNG in the app's built-in WebView
+  /// (hidden Tauri window; no external browser). `mode` is "preview" or
+  /// "export". Returns PNG bytes + layout dimensions.
+  renderHtmlNote: async (dir, path, html, mode = 'export') => {
+    const result = await invoke('render_html_note', { dir, path, html, mode });
+    return {
+      png: toUint8(result.png),
+      width: result.width,
+      height: result.height,
+      cssWidth: result.cssWidth,
+      cssHeight: result.cssHeight,
+    };
+  },
   // Dev-only self-test plumbing (Rust rejects these in release builds).
   selftestConfig: () => invoke('selftest_config'),
   selftestWrite: (name, data) => invoke('selftest_write', { name, data }),
@@ -211,6 +265,30 @@ const mockNotes = new Map([
       mtime: Date.now() / 1000 - 86400,
     },
   ],
+  [
+    'guides/html-page.html',
+    {
+      tags: [],
+      body: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>HTML 页面示例</title>
+</head>
+<body>
+  <h1>HTML 页面示例</h1>
+  <p>这是一个 <strong>HTML</strong> 笔记：编辑器里是源码，右侧是消毒后的实时预览。</p>
+  <ul>
+    <li>支持标题、列表、表格、图片和链接</li>
+    <li>脚本、事件属性和 iframe 会被移除</li>
+  </ul>
+  <blockquote>HTML 笔记不支持 Markdown 的 front matter 标签。</blockquote>
+</body>
+</html>
+`,
+      mtime: Date.now() / 1000 - 600,
+    },
+  ],
 ]);
 
 function mockHash(text) {
@@ -249,18 +327,54 @@ function mockSnippet(body) {
     .slice(0, 100);
 }
 
+function mockHtmlDoc(source) {
+  if (typeof DOMParser === 'undefined') return null;
+  try {
+    return new DOMParser().parseFromString(String(source), 'text/html');
+  } catch {
+    return null;
+  }
+}
+
+function mockHtmlTitle(source, fallback) {
+  const doc = mockHtmlDoc(source);
+  const text = (selector) => {
+    const el = doc && doc.querySelector(selector);
+    return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  };
+  return text('title') || text('h1') || fallback;
+}
+
+function mockHtmlText(source) {
+  const doc = mockHtmlDoc(source);
+  if (!doc || !doc.body) {
+    return String(source)
+      .replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  for (const el of doc.querySelectorAll('script, style, head, noscript, template')) {
+    el.remove();
+  }
+  return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 function mockMeta(path) {
   const n = mockNotes.get(path);
   if (!n) return null;
   const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-  const name = path.split('/').pop().replace(/\.md$/i, '');
+  const name = noteStemOf(path);
+  const kind = noteKindOf(path);
+  const html = kind === 'html';
   return {
     path,
     folder,
-    title: mockTitle(n.body, name),
-    tags: [...n.tags],
-    snippet: mockSnippet(n.body),
+    title: html ? mockHtmlTitle(n.body, name) : mockTitle(n.body, name),
+    tags: html ? [] : [...n.tags],
+    snippet: html ? mockHtmlText(n.body).slice(0, 100) : mockSnippet(n.body),
     mtime: n.mtime,
+    kind,
     hash: mockHash(n.body),
   };
 }
@@ -285,15 +399,19 @@ function mockSearch(query) {
   const hits = [];
   for (const [path, n] of mockNotes) {
     const meta = mockMeta(path);
-    const bodyLower = n.body.toLowerCase();
+    const body =
+      meta.kind === 'html'
+        ? mockHtmlText(n.body)
+        : stripMockFrontMatter(n.body);
+    const bodyLower = body.toLowerCase();
     const titleLower = meta.title.toLowerCase();
-    const fileStem = path.split('/').pop().replace(/\.md$/i, '');
+    const fileStem = noteStemOf(path);
     const nameLower = fileStem.toLowerCase();
     const tagsLower = meta.tags.join(' ').toLowerCase();
     let snippet = null;
     const idx = bodyLower.indexOf(q);
     if (idx !== -1) {
-      const window = n.body
+      const window = body
         .slice(Math.max(0, idx - 40), idx + q.length + 60)
         .replace(/\n/g, ' ');
       snippet = (idx > 0 ? '…' : '') + window.trim();
@@ -318,15 +436,50 @@ function sanitizeMockName(name) {
   return trimmed || 'untitled';
 }
 
+function mockRelativePath(value, label = 'path') {
+  const raw = String(value || '');
+  if (!raw.trim()) throw new Error(`empty ${label}`);
+  const normalized = raw.split(String.fromCharCode(92)).join('/');
+  if (
+    normalized.startsWith('/') ||
+    normalized.startsWith('//') ||
+    (normalized.length > 2 &&
+      /[A-Za-z]/.test(normalized[0]) &&
+      normalized[1] === ':' &&
+      normalized[2] === '/')
+  ) {
+    throw new Error(`absolute ${label} not allowed`);
+  }
+  if (normalized.split('/').includes('..')) {
+    throw new Error(`${label} escapes notes root`);
+  }
+  return normalized;
+}
+
+function stripMockFrontMatter(body) {
+  const text = String(body || '');
+  const nl = String.fromCharCode(10);
+  const lines = text.split(nl);
+  if (!lines.length || lines[0].trimEnd() !== '---') return text;
+  const end = lines.findIndex(
+    (line, index) =>
+      index > 0 && (line.trimEnd() === '---' || line.trimEnd() === '...')
+  );
+  if (end < 0) return text;
+  return lines.slice(end + 1).join(nl);
+}
+
 function mockUniqueName(path, currentPath) {
   if (path === currentPath) return path;
   if (!mockNotes.has(path)) return path;
   const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
   const name = path.slice(dir.length);
-  const stem = name.replace(/\.md$/i, '');
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '.md';
   let i = 1;
-  while (mockNotes.has(`${dir}${stem} (${i}).md`)) i += 1;
-  return `${dir}${stem} (${i}).md`;
+  while (mockNotes.has(`${dir}${stem} (${i})${ext}`)) i += 1;
+  return `${dir}${stem} (${i})${ext}`;
 }
 
 function mockInvoke(command, args) {
@@ -346,30 +499,21 @@ function mockInvoke(command, args) {
           case 'read_note': {
             const n = mockNotes.get(args.path);
             if (!n) throw new Error('note not found');
+            const kind = noteKindOf(args.path);
             return resolve({
-              tags: [...n.tags],
+              tags: kind === 'html' ? [] : [...n.tags],
               body: n.body,
               mtime: n.mtime,
               hash: mockHash(n.body),
+              kind,
             });
           }
           case 'save_note': {
             // Mirror resolve_in_root's rejection (main.rs): empty / absolute /
             // parent-dir paths are refused, so browser dev sees the same
             // validation errors as the Tauri backend.
-            if (!args.path || args.path.trim() === '') {
-              throw new Error('empty path');
-            }
-            if (
-              args.path.startsWith('/') ||
-              /^[a-zA-Z]:[\\/]/.test(args.path)
-            ) {
-              throw new Error('absolute path not allowed');
-            }
-            if (args.path.split('/').includes('..')) {
-              throw new Error('path escapes notes root');
-            }
-            const existing = mockNotes.get(args.path);
+            const savePath = mockRelativePath(args.path);
+            const existing = mockNotes.get(savePath);
             if (
               !args.args.force &&
               args.args.baseHash !== undefined &&
@@ -380,19 +524,24 @@ function mockInvoke(command, args) {
                 throw new Error('conflict: note changed on disk');
               }
             }
-            mockNotes.set(args.path, {
-              tags: [...args.args.tags],
+            mockNotes.set(savePath, {
+              tags:
+                noteKindOf(savePath) === 'html' ? [] : [...args.args.tags],
               body: args.args.body,
               mtime: Date.now() / 1000,
             });
-            return resolve(mockMeta(args.path));
+            return resolve(mockMeta(savePath));
           }
           case 'create_note': {
-            const folder = args.folder ? `${args.folder}/` : '';
-            let candidate = `${folder}untitled.md`;
+            const folderPath = args.folder
+              ? mockRelativePath(args.folder, 'folder')
+              : '';
+            const folder = folderPath ? `${folderPath}/` : '';
+            const ext = args.kind === 'html' || args.kind === 'htm' ? 'html' : 'md';
+            let candidate = `${folder}untitled.${ext}`;
             let i = 1;
             while (mockNotes.has(candidate)) {
-              candidate = `${folder}untitled ${i}.md`;
+              candidate = `${folder}untitled ${i}.${ext}`;
               i += 1;
             }
             mockNotes.set(candidate, {
@@ -408,10 +557,13 @@ function mockInvoke(command, args) {
             const dir = args.path.includes('/')
               ? args.path.slice(0, args.path.lastIndexOf('/') + 1)
               : '';
-            const clean = sanitizeMockName(args.name);
-            const name = clean.toLowerCase().endsWith('.md')
-              ? clean
-              : `${clean}.md`;
+            // Preserve the current format (mirrors Rust rename_note).
+            const ext = (args.path.match(/\.(md|html|htm)$/i) || ['.md'])[0].toLowerCase();
+            const clean = sanitizeMockName(args.name).replace(
+              /\.(?:md|html|htm)$/i,
+              ''
+            );
+            const name = `${clean || 'untitled'}.${ext}`;
             const target = mockUniqueName(dir + name, args.path);
             if (target !== args.path) {
               mockNotes.delete(args.path);
@@ -427,7 +579,10 @@ function mockInvoke(command, args) {
             const n = mockNotes.get(args.path);
             if (!n) throw new Error('note not found');
             const name = args.path.split('/').pop();
-            const dest = args.destFolder ? `${args.destFolder}/` : '';
+            const destFolder = args.destFolder
+              ? mockRelativePath(args.destFolder, 'folder')
+              : '';
+            const dest = destFolder ? `${destFolder}/` : '';
             const target = mockUniqueName(dest + name, args.path);
             if (target !== args.path) {
               mockNotes.delete(args.path);

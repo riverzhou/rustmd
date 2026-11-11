@@ -1,8 +1,8 @@
 # rustmd
 
-**Local-first Markdown notes for Windows, macOS and Linux.** Plain `.md` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown and HTML notes for Windows, macOS and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
-**本地优先、离线可用的 Markdown 笔记应用**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
+**本地优先、离线可用的 Markdown / HTML 笔记应用**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
 
 [English](README.en.md) · [简体中文](README.md)
 
@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.3.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.4.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -41,16 +41,16 @@
 
 如果你想要一个**不把笔记锁进数据库、不强制登录、打开就能写**的 Markdown 工具：
 
-- **纯文件存储**：笔记就是 `.md`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
-- **本地优先**：核心编辑、预览、搜索、导出全部离线可用；只有拉取远程图片或检查更新时才需要网络。
+- **纯文件存储**：笔记就是 `.md` 或 `.html`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
+- **本地优先**：核心编辑、预览、搜索、导出全部离线可用；拉取远程图片、加载 HTML 报告里的 CDN 脚本等场景才需要网络。
 - **轻量跨平台**：Rust + Tauri 2，Windows / macOS / Linux 三端；Windows 提供解压即用的绿色 zip。
 - **不只是编辑器**：文件夹树、全文搜索、front matter 标签、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
-- **安全边界认真做**：笔记 HTML 消毒、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
-- **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` 文件夹即可；front matter 中的 `title:`、`date:` 等字段保存时原样保留。
+- **安全边界认真做**：Markdown HTML 消毒、HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
+- **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` / `.html` 文件夹即可；front matter 中的 `title:`、`date:` 等字段保存时原样保留。
 
 适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
 
-关键词：local-first、Markdown 笔记、Markdown 编辑器、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
+关键词：local-first、Markdown 笔记、HTML 笔记、Markdown 编辑器、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
 
 ## 功能
 
@@ -72,13 +72,15 @@
 
 ### 搜索
 
-- 同时搜索**标题、文件名、标签、正文**；大小写不敏感。
+- 同时搜索**标题、文件名、标签、正文**；大小写不敏感。HTML 笔记搜索的是页面可见文本，不会把标签、脚本或样式当作正文命中。
 - 结果列表高亮命中片段，并显示是标题、文件名还是标签命中。
 - 输入防抖 + 请求序列号，快速输入时旧结果不会覆盖新结果。
 
 ### 编辑与预览
 
-- CodeMirror 6 编辑器，Markdown 语法高亮。
+- CodeMirror 6 编辑器，按文件类型切换 Markdown / HTML 语法高亮（HTML 标签、属性、属性值有独立配色；`<script>` / `<style>` 内的 JS/CSS 也按关键字、字符串、函数、变量、注释等分别着色）。
+- 编辑器支持 **自动折行 / 不折行** 切换，状态会记住；长行/宽表格可一键切换。
+- 右上角 **全屏** 按钮与 `F11` 快捷键可切换全屏，退出后回到窗口模式。
 - 编辑 / 分栏 / 预览三种视图（`Ctrl+1` / `Ctrl+2` / `Ctrl+3`），分栏可拖动，比例持久化。
 - 500ms 防抖自动保存；外部修改通过内容 hash 检测，覆盖前会询问。
 - 保存后更新文件树与标签计数；保存失败保留“未保存”状态，切换或关闭前提示。
@@ -92,22 +94,33 @@
 - `<details>` / `<summary>` 折叠块。
 - 笔记库本地图片：相对路径、`./`、`file:///`、绝对路径、`<img>` 均可显示。
 
+### HTML 笔记
+
+- 笔记库中的 `.html` / `.htm` 文件会和 Markdown 一起出现在文件夹树、笔记列表、搜索结果和文件夹计数中，并带 `HTML` 类型标记。
+- 左侧编辑 HTML 源码，右侧用应用内置 WebView（Windows 的 WebView2 / Linux 的 WebKitGTK / macOS 的 WKWebView）直接整页渲染；无需安装 Edge、Chrome 或任何外部浏览器。页面自带的 `<style>`、`<script>`、本地相对 CSS/JS/字体/图片、ECharts 图表都会执行，滚动/缩放为原生清晰文本。`<title>` 或第一个 `<h1>` 作为列表标题，文件名仍可见。
+- 顶部新建按钮提供 **Markdown 笔记 / HTML 页面** 两种选择；重命名、移动、删除、手动刷新和 HTML / PNG / PDF 导出与 Markdown 笔记一致。
+- HTML 笔记没有 front matter，因此不显示标签编辑器；保存时不会插入 `---` 或 `tags:`，并保留文件原有的 BOM 与 CRLF/LF 换行风格。
+- 预览在 **sandbox iframe** 中运行（无 `allow-same-origin`，origin 为 null），拿不到父页面 DOM/Tauri IPC；导出在隐藏的独立 Tauri WebView 窗口中执行，所有笔记/保险库命令按窗口 label 校验，隐藏窗口只能回传截图。渲染失败时才回退为 DOMPurify 消毒后的静态预览。
+- 图表页面通常依赖 CDN 脚本，首次渲染/导出需要联网；HTML 笔记的 **导出 HTML** 直接保存当前源码，PNG / PDF 则由内置 WebView 整页截图（超长页面分段拼接）后导出。
+
 ### 导出
 
-- **HTML**：内嵌样式、跟随当前主题、本地图片内联；远程图片保留原链接。
-- **PNG**：3× 渲染（约 288 DPI），适合分享和插入文档。
-- **PDF**：按块边界分页，无损 PNG 切片，超长笔记自动控制画布内存。
-- PNG/PDF 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图。
+- **HTML**：Markdown 笔记导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；HTML 笔记直接保存当前源码。
+- **PNG**：Markdown 笔记 3× 渲染（约 288 DPI）；HTML 笔记按页面高度在 1–3× 间自适应（短页面 3×，超长报告目标高度约 48k 设备像素），整页保持。
+- **PDF**：Markdown 按块边界分页；HTML 笔记按整页 PNG 切片为多页，均使用无损 PNG。
+- PNG/PDF 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图；HTML 笔记的 PNG/PDF 由内置 WebView 整页渲染后导出，图表会保留，超长报告按高度自适应分段截取并拼接为单图。
 - 导出目标路径由系统保存对话框选择，前端不能任意写文件。
 
 ### 安全
 
-- 笔记 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。
+- Markdown 渲染出的 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。HTML 笔记预览在 sandbox iframe（null origin）中运行，导出在隐藏 WebView 中运行，二者都无法调用应用命令。
 - MathJax / Mermaid 在消毒之后生成 DOM，再做一次窄范围清理（`on*`、危险链接、外部 CSS URL）。
-- Tauri CSP 默认启用；外部链接交给系统浏览器打开。
+- Tauri CSP 默认启用；外部链接交给系统浏览器打开。HTML 预览/导出在隔离的 WebView 中运行，导出只回传 PNG。
 - `resolve_in_root` 对笔记与图片做路径封闭，阻止 `..`、junction/symlink 写逃逸；扫描时跳过符号链接。
 - 远程图片抓取拒绝 loopback / 私有网段 / 链路本地 / 保留地址，并校验每次重定向。
 - 保存使用临时文件 + 原子替换；`baseHash` 冲突检测避免静默覆盖外部修改。
+- 笔记按 UTF-8 读取；非 UTF-8 文件不会被静默隐藏，打开时会提示先转换为 UTF-8。
+- HTML 笔记的相对 CSS/JS/字体/图片走 `rmd`；`rmd` 只接受来自应用 webview 的 CORS 请求，sandbox/null origin 与 `rmdhtml` 源一律 403。
 
 ## 下载与安装
 
@@ -170,6 +183,7 @@ sha256sum -c SHA256SUMS.txt
 | --- | --- |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | 编辑 / 分栏 / 预览 |
 | `Ctrl+B` | 隐藏 / 显示侧栏 |
+| `F11` | 全屏 / 退出全屏 |
 | `Enter`（标题框） | 提交重命名 |
 | `Enter` 或 `,`（标签框） | 添加标签 |
 
@@ -205,9 +219,10 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 
 1. ESLint 10
 2. Node 前端单测（排序、文件夹树、数学保护、代码段、多语言）
-3. 仓库检查（版本一致、文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
-4. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
-5. Vite 生产构建
+3. 仓库检查（文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
+4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 一致）
+5. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
+6. Vite 生产构建
 
 CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整质量门禁，在 Windows / Linux / macOS 三端编译，并用 Xvfb + 真实 WebKitGTK 跑端到端自测。
 
@@ -217,7 +232,7 @@ CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整
 npm run selftest
 ```
 
-dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF，并校验：残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；自测结束应用以 0/1 退出。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
+dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF。Markdown 笔记校验残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）；HTML 示例校验 built-in WebView 的 iframe 是否 ready、PNG/PDF 是否产出，并加载本地相对 CSS/JS/图片与内联脚本。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；自测结束应用以 0/1 退出。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
 
 ## 目录结构
 
@@ -260,7 +275,7 @@ dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF，�
 应用本身不做云同步。笔记是普通文件夹，交给 Syncthing、Git、iCloud、OneDrive、Dropbox 等即可。
 
 **Q：能打开 Obsidian 的 vault 吗？**
-可以打开普通 `.md` 文件夹，文件夹层级和 front matter 标签可用。Obsidian 特有的 `[[wikilink]]`、插件、canvas 等不在支持范围内；保存时其它 front matter 字段会保留。
+可以打开普通 `.md` / `.html` 文件夹，文件夹层级和 Markdown front matter 标签可用。HTML 笔记按文件扩展名识别，编辑源码并由应用内置 WebView 渲染整页预览。Obsidian 特有的 `[[wikilink]]`、插件、canvas 等不在支持范围内；保存 Markdown 时其它 front matter 字段会保留。
 
 **Q：为什么 Windows 会提示未知发布者 / macOS 会提示无法验证？**
 Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性，没有购买商业代码签名/公证。校验 SHA256 后按系统提示放行即可。
@@ -293,4 +308,4 @@ rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
 
 如果 rustmd 对你有帮助，给一个 ⭐ 是最直接的鼓励；也欢迎分享给需要本地 Markdown 笔记的朋友。
 
-**关键词**：Markdown 笔记、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
+**关键词**：Markdown 笔记、HTML 笔记、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。

@@ -14,6 +14,8 @@ import {
   folderMatches,
   normalizeSort,
   normalizeSortState,
+  noteKindOf,
+  noteStemOf,
   sortNotes,
 } from './notelist.js';
 
@@ -128,4 +130,18 @@ test('ancestorFolders lists only ancestors', () => {
   assert.deepEqual(ancestorFolders('a/b/c'), ['a', 'a/b']);
   assert.deepEqual(ancestorFolders('a'), []);
   assert.deepEqual(ancestorFolders(''), []);
+});
+
+test('noteKindOf follows the extension', () => {
+  assert.equal(noteKindOf('a/b/page.html'), 'html');
+  assert.equal(noteKindOf('a/b/PAGE.HTM'), 'html');
+  assert.equal(noteKindOf('a/b/note.md'), 'markdown');
+  assert.equal(noteKindOf('a/b/note.txt'), 'markdown');
+});
+
+test('noteStemOf strips only note extensions', () => {
+  assert.equal(noteStemOf('a/b/page.html'), 'page');
+  assert.equal(noteStemOf('a/b/page.htm'), 'page');
+  assert.equal(noteStemOf('a/b/note.md'), 'note');
+  assert.equal(noteStemOf('a/b/note.md.backup'), 'note.md.backup');
 });

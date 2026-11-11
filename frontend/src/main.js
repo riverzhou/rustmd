@@ -4,10 +4,13 @@ import { createEditor } from './editor.js';
 import {
   renderPreview,
   buildExportHtml,
+  captureHtmlPreview,
   setPreviewTheme,
   setImageContext,
+  inlineLocalImagesInHtml,
 } from './preview.js';
-import { exportPng, exportPdf } from './export.js';
+import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
+import { bytesToDataUrl, dataUrlToBytes } from './imgutil.js';
 import {
   applyStaticTranslations,
   getLanguage,
@@ -27,6 +30,8 @@ import {
   flattenFolderTree,
   folderOf,
   normalizeSortState,
+  noteKindOf,
+  noteStemOf,
   sortNotes,
 } from './notelist.js';
 
@@ -58,10 +63,13 @@ const state = {
   folderTree: [],
   tags: [], // [{ name, count }]
   current: null, // relative path
+  currentKind: 'markdown', // "markdown" | "html"
   currentHash: '',
   currentMtime: 0,
   tagsOfCurrent: [],
   view: localStorage.getItem('rustmd-view') || 'split',
+  wrap: localStorage.getItem('rustmd-wrap') !== 'off',
+  fullscreen: false,
   // Default theme is LIGHT regardless of the OS setting (v1.0): the app's
   // light palette is the house style. A manual toggle is still persisted in
   // localStorage and always wins once the user has chosen one.
@@ -101,9 +109,12 @@ const noteList = $('note-list');
 const noteCount = $('note-count');
 const sortSwitch = $('sort-switch');
 const sortDirBtn = $('sort-dir');
+const wrapBtn = $('btn-wrap');
+const fullscreenBtn = $('btn-fullscreen');
 const editorPane = $('editor-pane');
 const emptyState = $('empty-state');
 const noteTitle = $('note-title');
+const noteKind = $('note-kind');
 const tagEditor = $('tag-editor');
 const workspace = $('workspace');
 const editorHolder = $('editor-holder');
@@ -192,8 +203,50 @@ function countWords(text) {
   return cjk + latin;
 }
 
+/// Visible text of an HTML note for the word/character counter. Regex-based
+/// on purpose: this runs on every keystroke, and DOMParser would re-parse the
+/// whole document each time.
+function htmlTextOf(source) {
+  const entities = {
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    '#39': "'",
+    nbsp: ' ',
+  };
+  return String(source)
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(
+      /<(script|style|head|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+      ' '
+    )
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (m, name) => entities[name] ?? m)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function stemOf(path) {
-  return fileNameOf(path).replace(/\.md$/i, '');
+  return noteStemOf(path);
+}
+
+/** Format badge in the topbar; HTML notes also hide the Markdown tag editor. */
+function updateKindBadge(kind = state.currentKind) {
+  const isHtml = kind === 'html';
+  if (noteKind) {
+    noteKind.textContent = isHtml ? 'HTML' : 'MD';
+    noteKind.classList.toggle('html', isHtml);
+    noteKind.title = t(
+      isHtml ? 'note.kindHtmlTitle' : 'note.kindMarkdownTitle'
+    );
+    noteKind.setAttribute(
+      'aria-label',
+      isHtml ? t('note.kindHtml') : t('note.kindMarkdown')
+    );
+  }
+  // HTML notes have no front matter; a tag editor would silently do nothing.
+  tagEditor.classList.toggle('hidden', isHtml);
 }
 
 const FOLDER_SVG =
@@ -212,10 +265,17 @@ function applyTheme(theme) {
   const link = $('hljs-theme');
   if (link) link.href = theme === 'dark' ? '/hljs/github-dark.css' : '/hljs/github.css';
   // Mermaid bakes its theme in at render time; re-render the open note so
-  // diagrams match the new theme.
-  if (state.current && editor && editor.state.doc.length) {
-    renderPreview(editor.state.doc.toString(), previewEl);
+  // diagrams match the new theme. HTML notes have their own page theme and
+  // re-running the headless renderer for a CSS toggle is wasteful.
+  if (
+    state.current &&
+    editor &&
+    editor.state.doc.length &&
+    state.currentKind !== 'html'
+  ) {
+    renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
   }
+  updateKindBadge();
 }
 
 $('btn-theme').addEventListener('click', () => {
@@ -237,6 +297,84 @@ $('view-switch').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-mode]');
   if (btn) applyView(btn.dataset.mode);
 });
+// ---------------- Line wrapping ----------------
+
+function applyWrap(enabled) {
+  state.wrap = enabled;
+  if (editor) editor.setLineWrapping(enabled);
+  localStorage.setItem('rustmd-wrap', enabled ? 'on' : 'off');
+  const key = enabled ? 'topbar.wrapOn' : 'topbar.wrapOff';
+  wrapBtn.classList.toggle('active', enabled);
+  wrapBtn.title = t(key);
+  wrapBtn.setAttribute('aria-label', t(key));
+  wrapBtn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+}
+
+wrapBtn.addEventListener('click', () => applyWrap(!state.wrap));
+
+// ---------------- Fullscreen ----------------
+
+function updateFullscreenButton() {
+  const key = state.fullscreen
+    ? 'topbar.fullscreenOff'
+    : 'topbar.fullscreenOn';
+  fullscreenBtn.classList.toggle('active', state.fullscreen);
+  fullscreenBtn.title = t(key);
+  fullscreenBtn.setAttribute('aria-label', t(key));
+  fullscreenBtn.setAttribute('aria-pressed', state.fullscreen ? 'true' : 'false');
+}
+
+async function setFullscreen(enabled) {
+  try {
+    await api.setFullscreen(enabled);
+  } catch (err) {
+    toast(t('toast.error', { msg: err.message || err }), true);
+    return;
+  }
+  state.fullscreen = enabled;
+  updateFullscreenButton();
+}
+
+function toggleFullscreen() {
+  void setFullscreen(!state.fullscreen);
+}
+
+fullscreenBtn.addEventListener('click', toggleFullscreen);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'F11' && !e.repeat) {
+    e.preventDefault();
+    toggleFullscreen();
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  if (!api.isTauri) {
+    state.fullscreen = Boolean(document.fullscreenElement);
+    updateFullscreenButton();
+  }
+});
+async function syncFullscreenState() {
+  if (!api.isTauri) {
+    state.fullscreen = Boolean(document.fullscreenElement);
+    updateFullscreenButton();
+    return;
+  }
+  try {
+    const value = await api.isFullscreen();
+    if (Boolean(value) !== state.fullscreen) {
+      state.fullscreen = Boolean(value);
+      updateFullscreenButton();
+    }
+  } catch {
+    // Window is not ready yet or the permission is unavailable; the button
+    // still works through setFullscreen.
+  }
+}
+
+syncFullscreenState();
+window.addEventListener('focus', () => {
+  void syncFullscreenState();
+});
+
 
 // ---------------- Sidebar visibility ----------------
 
@@ -305,12 +443,16 @@ async function enterDir(dir) {
   // Let an in-flight save finish before the old vault's state is discarded.
   await saveQueue.catch(() => false);
   state.dir = dir;
+  noteSelectSeq += 1;
+  searchSeq += 1;
+  clearTimeout(searchTimer);
   localStorage.setItem('rustmd-dir', dir);
   // A new vault must not inherit the previous vault's selection/filter,
   // editor contents or stale conflict token.
   state.filter = { folder: null, tag: null, query: '' };
   state.searchHits = null;
   state.current = null;
+  state.currentKind = 'markdown';
   state.currentHash = '';
   state.currentMtime = 0;
   state.tagsOfCurrent = [];
@@ -322,11 +464,13 @@ async function enterDir(dir) {
   noteTitle.value = '';
   statusPath.textContent = '';
   suppressChange = true;
+  editor.setLanguage('markdown');
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '' } });
   suppressChange = false;
-  renderPreview('', previewEl);
+  renderPreview('', previewEl, 'markdown');
   renderTagEditor();
   updateCounts();
+  updateKindBadge('markdown');
   setSaveStatus('saved');
   editorPane.classList.remove('visible');
   emptyState.classList.remove('hidden');
@@ -393,8 +537,11 @@ async function refreshSearch() {
   const query = state.filter.query;
   const seq = ++searchSeq;
   try {
-    const hits = await api.searchNotes(state.dir, query);
-    if (seq !== searchSeq || query !== state.filter.query) return;
+    const dir = state.dir;
+    const hits = await api.searchNotes(dir, query);
+    if (seq !== searchSeq || query !== state.filter.query || dir !== state.dir) {
+      return;
+    }
     state.searchHits = hits;
   } catch (err) {
     if (seq !== searchSeq || query !== state.filter.query) return;
@@ -705,9 +852,16 @@ function renderNoteList() {
     for (const t of n.tags.slice(0, 3)) {
       metaBits.push(`<span class="mini-tag">${esc(t)}</span>`);
     }
+    const kind = n.kind || noteKindOf(n.path);
+    // Markdown files already show their `.md` name; only HTML needs a badge
+    // in the list. The topbar always shows the open note's format.
+    const kindBadge =
+      kind === 'html'
+        ? `<span class="kind-badge html" title="${esc(t('note.kindHtmlTitle'))}">HTML</span>`
+        : '';
     item.innerHTML = `
       <div class="title">${highlightText(n.title, state.filter.query)}</div>
-      <div class="file-name">${highlightText(fileNameOf(n.path), state.filter.query)}</div>
+      <div class="file-line"><span class="file-name">${highlightText(fileNameOf(n.path), state.filter.query)}</span>${kindBadge}</div>
       ${snippet ? `<div class="snippet">${highlightText(snippet, state.filter.query)}</div>` : ''}
       <div class="meta">${metaBits.join('<span class="sep">·</span>')}</div>`;
     item.addEventListener('click', () => selectNote(n.path));
@@ -804,9 +958,13 @@ function onEditorChange() {
   clearTimeout(state.previewTimer);
   state.previewTimer = setTimeout(() => {
     if (state.current === path && editor) {
-      renderPreview(editor.state.doc.toString(), previewEl);
+      renderPreview(
+        editor.state.doc.toString(),
+        previewEl,
+        state.currentKind
+      );
     }
-  }, 250);
+  }, state.currentKind === 'html' ? 1500 : 250);
   updateCounts();
 }
 
@@ -957,7 +1115,9 @@ function applyNoteContent(path, content, { preserveView = false, focus = false }
   state.currentMtime = content.mtime || 0;
   // Local images resolve relative to THIS note's folder.
   setImageContext(state.dir, path);
-  state.tagsOfCurrent = content.tags;
+  state.currentKind = content.kind || noteKindOf(path);
+  editor.setLanguage(state.currentKind);
+  state.tagsOfCurrent = content.tags || [];
   // Loading must not mark the note dirty (a spurious save right after opening
   // would re-touch the file and, under `tauri dev`, retrigger the file watcher
   // → app restart loop → "window closed" + "files gone").
@@ -977,9 +1137,10 @@ function applyNoteContent(path, content, { preserveView = false, focus = false }
   );
   suppressChange = false;
   clearTimeout(state.previewTimer); // drop the previous note's pending update
-  renderPreview(content.body, previewEl);
+  renderPreview(content.body, previewEl, state.currentKind);
   noteTitle.value = stemOf(path);
   renderTagEditor();
+  updateKindBadge(state.currentKind);
   updateCounts();
   statusPath.textContent = path;
   setSaveStatus('saved');
@@ -991,22 +1152,26 @@ function applyNoteContent(path, content, { preserveView = false, focus = false }
 
 /** Close the open note and return to the empty state (delete / external delete). */
 function clearCurrentNote() {
+  noteSelectSeq += 1;
   clearTimeout(state.saveTimer);
   clearTimeout(state.previewTimer);
   state.pendingSave = false;
   state.saveFailed = false;
   state.current = null;
+  state.currentKind = 'markdown';
   state.currentHash = '';
   state.currentMtime = 0;
   state.tagsOfCurrent = [];
   suppressChange = true;
+  editor.setLanguage('markdown');
   editor.dispatch({
     changes: { from: 0, to: editor.state.doc.length, insert: '' },
   });
   suppressChange = false;
-  renderPreview('', previewEl);
+  renderPreview('', previewEl, 'markdown');
   noteTitle.value = '';
   renderTagEditor();
+  updateKindBadge('markdown');
   updateCounts();
   setSaveStatus('saved');
   statusPath.textContent = '';
@@ -1014,9 +1179,14 @@ function clearCurrentNote() {
   emptyState.classList.remove('hidden');
 }
 
+let noteSelectSeq = 0;
+
 async function selectNote(path) {
   if (path === state.current) return;
+  const seq = ++noteSelectSeq;
+  const dir = state.dir;
   const ok = await flushSave();
+  if (seq !== noteSelectSeq || dir !== state.dir) return;
   if (!ok && !confirm(t('dialog.switchNote'))) {
     return;
   }
@@ -1025,17 +1195,22 @@ async function selectNote(path) {
     state.saveFailed = false;
   }
   try {
-    const content = await api.readNote(state.dir, path);
+    const content = await api.readNote(dir, path);
+    // A second click (or a vault change) may have won while read_note was in
+    // flight; never apply a stale note over the user's latest choice.
+    if (seq !== noteSelectSeq || dir !== state.dir) return;
     state.current = path;
     applyNoteContent(path, content, { focus: true });
     renderNoteList();
   } catch (err) {
+    if (seq !== noteSelectSeq || dir !== state.dir) return;
     toast(t('toast.openFailed', { msg: err.message || err }), true);
   }
 }
 
 function updateCounts() {
-  const text = editor ? editor.state.doc.toString() : '';
+  const raw = editor ? editor.state.doc.toString() : '';
+  const text = state.currentKind === 'html' ? htmlTextOf(raw) : raw;
   const words = countWords(text);
   const chars = text.replace(/\s/g, '').length;
   statusCounts.textContent = t('note.counts', { words, chars });
@@ -1071,7 +1246,11 @@ async function commitRename() {
   try {
     const newPath = await api.renameNote(state.dir, state.current, value);
     state.current = newPath;
+    state.currentKind = noteKindOf(newPath);
+    editor.setLanguage(state.currentKind);
+    updateKindBadge(state.currentKind);
     setImageContext(state.dir, newPath); // image resolution follows the note
+    renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
     statusPath.textContent = newPath;
     noteTitle.value = stemOf(newPath);
     await loadNotes();
@@ -1104,6 +1283,8 @@ $('btn-rename').addEventListener('click', () => {
 
 function renderTagEditor() {
   tagEditor.innerHTML = '';
+  // HTML notes have no front matter; updateKindBadge hides the container.
+  if (state.currentKind === 'html') return;
   for (const tag of state.tagsOfCurrent) {
     const chip = document.createElement('span');
     chip.className = 'tag-chip';
@@ -1142,7 +1323,31 @@ function onMetaChanged() {
 
 // ---------------- New / delete / move ----------------
 
-$('btn-new-note').addEventListener('click', async () => {
+let newNoteMenu = null;
+
+function closeNewNoteMenu() {
+  if (!newNoteMenu) return;
+  newNoteMenu.remove();
+  newNoteMenu = null;
+  window.removeEventListener('mousedown', onNewNoteOutside, true);
+  window.removeEventListener('keydown', onNewNoteEsc, true);
+}
+
+function onNewNoteOutside(e) {
+  if (
+    newNoteMenu &&
+    !newNoteMenu.contains(e.target) &&
+    !e.target.closest('#btn-new-note')
+  ) {
+    closeNewNoteMenu();
+  }
+}
+
+function onNewNoteEsc(e) {
+  if (e.key === 'Escape') closeNewNoteMenu();
+}
+
+async function createNewNote(kind) {
   if (!state.dir) return;
   const ok = await flushSave();
   if (!ok && !confirm(t('dialog.newNote'))) return;
@@ -1155,13 +1360,42 @@ $('btn-new-note').addEventListener('click', async () => {
     searchInput.value = '';
     state.filter.query = '';
     state.searchHits = null;
-    const path = await api.createNote(state.dir, state.filter.folder || '');
+    const path = await api.createNote(
+      state.dir,
+      state.filter.folder || '',
+      kind
+    );
     await loadNotes();
     await selectNote(path);
   } catch (err) {
     toast(t('toast.newFailed', { msg: err.message || err }), true);
   }
-});
+}
+
+function openNewNoteMenu() {
+  if (!state.dir) return;
+  closeNewNoteMenu();
+  const rect = $('btn-new-note').getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'export-menu new-note-menu';
+  for (const kind of ['markdown', 'html']) {
+    const button = document.createElement('button');
+    button.textContent = t(kind === 'html' ? 'new.html' : 'new.markdown');
+    button.addEventListener('click', () => {
+      closeNewNoteMenu();
+      void createNewNote(kind);
+    });
+    menu.appendChild(button);
+  }
+  document.body.appendChild(menu);
+  menu.style.top = `${rect.bottom + 6}px`;
+  menu.style.left = `${Math.max(8, rect.left)}px`;
+  newNoteMenu = menu;
+  window.addEventListener('mousedown', onNewNoteOutside, true);
+  window.addEventListener('keydown', onNewNoteEsc, true);
+}
+
+$('btn-new-note').addEventListener('click', openNewNoteMenu);
 
 $('btn-delete').addEventListener('click', async () => {
   if (!state.current) return;
@@ -1222,10 +1456,11 @@ async function openMoveModal() {
       try {
         const newPath = await api.moveNote(state.dir, state.current, opt.path);
         state.current = newPath;
+        state.currentKind = noteKindOf(newPath);
         setImageContext(state.dir, newPath);
         // Relative image paths resolve against the note's NEW folder —
         // re-render so the preview's rmd URLs point at the right files.
-        renderPreview(editor.state.doc.toString(), previewEl);
+        renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
         statusPath.textContent = newPath;
         noteTitle.value = stemOf(newPath);
         await loadNotes();
@@ -1263,17 +1498,22 @@ async function runSearch() {
   const q = searchInput.value.trim();
   state.filter.query = q;
   const seq = ++searchSeq;
+  const dir = state.dir;
   if (!q) {
     state.searchHits = null;
     renderNoteList();
     return;
   }
   try {
-    const hits = await api.searchNotes(state.dir, q);
-    if (seq !== searchSeq) return; // a newer query already started
+    const hits = await api.searchNotes(dir, q);
+    if (seq !== searchSeq || q !== state.filter.query || dir !== state.dir) {
+      return; // a newer query or another vault won
+    }
     state.searchHits = hits;
   } catch (err) {
-    if (seq !== searchSeq) return;
+    if (seq !== searchSeq || q !== state.filter.query || dir !== state.dir) {
+      return;
+    }
     toast(t('toast.searchFailed', { msg: err.message || err }), true);
     state.searchHits = [];
   }
@@ -1348,21 +1588,82 @@ async function runExport(kind) {
   }
   const title = noteTitle.value.trim() || t('note.untitled');
   const body = editor.state.doc.toString();
+  const currentKind = state.currentKind;
 
   let payload;
   try {
     if (kind === 'html') {
-      const html = await buildExportHtml(title, body, state.theme);
-      payload = {
-        data: new TextEncoder().encode(html),
-        ext: 'html',
-        mime: 'text/html',
-        filterName: t('export.filterHtml'),
-        extensions: ['html', 'htm'],
-      };
+      if (currentKind === 'html') {
+        // An HTML note is already a standalone document: export it verbatim
+        // so its scripts, styles and charts keep working outside the app.
+        payload = {
+          data: new TextEncoder().encode(body),
+          ext: 'html',
+          mime: 'text/html',
+          filterName: t('export.filterHtml'),
+          extensions: ['html', 'htm'],
+        };
+      } else {
+        const html = await buildExportHtml(title, body, state.theme, currentKind);
+        payload = {
+          data: new TextEncoder().encode(html),
+          ext: 'html',
+          mime: 'text/html',
+          filterName: t('export.filterHtml'),
+          extensions: ['html', 'htm'],
+        };
+      }
+    } else if (currentKind === 'html') {
+      // Render the page in a hidden Tauri WebView window, or the dev-only
+      // sandboxed iframe in browser mode, then save/capture it.
+      toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
+      let pngBytes;
+      let pdfDataUrl;
+      let cssWidth;
+      if (api.isTauri) {
+        // html2canvas in the hidden WebView requests local images in CORS
+        // mode; inline them first so the strict rmd origin allowlist does not
+        // drop vault images from the export.
+        const exportBody = await inlineLocalImagesInHtml(body);
+        const shot = await api.renderHtmlNote(
+          state.dir,
+          state.current,
+          exportBody,
+          kind === 'pdf' ? 'pdf' : 'export'
+        );
+        pngBytes = shot.png;
+        if (kind === 'pdf') {
+          pdfDataUrl = bytesToDataUrl(shot.png, 'image/png');
+        }
+        cssWidth = shot.cssWidth;
+      } else {
+        const shot = await captureHtmlPreview(body);
+        pngBytes = dataUrlToBytes(shot.dataUrl);
+        pdfDataUrl = shot.dataUrl;
+        cssWidth = shot.cssWidth;
+      }
+      if (kind === 'png') {
+        payload = {
+          data: pngBytes,
+          ext: 'png',
+          mime: 'image/png',
+          filterName: t('export.filterPng'),
+          extensions: ['png'],
+        };
+      } else {
+        const pdf = await pdfFromPngDataUrl(pdfDataUrl, cssWidth);
+        payload = {
+          ...pdf,
+          filterName: t('export.filterPdf'),
+          extensions: ['pdf'],
+        };
+      }
     } else {
       toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
-      const exported = kind === 'png' ? await exportPng(body) : await exportPdf(body);
+      const exported =
+        kind === 'png'
+          ? await exportPng(body, currentKind)
+          : await exportPdf(body, currentKind);
       payload = {
         ...exported,
         filterName: t(
@@ -1472,10 +1773,14 @@ onLanguageChange(() => {
   renderTags();
   renderNoteList();
   renderTagEditor();
+  applyWrap(state.wrap);
+  updateFullscreenButton();
+  updateKindBadge();
   updateCounts();
   setSaveStatus(state.saveStatus);
   applySidebar(isSidebarCollapsed());
   closeExportMenu();
+  closeNewNoteMenu();
   for (const el of document.querySelectorAll('.modal-backdrop')) el.remove();
 });
 
@@ -1486,6 +1791,9 @@ async function boot() {
   bindLanguageSelects();
   applyTheme(state.theme);
   initEditor();
+  applyWrap(state.wrap);
+  updateFullscreenButton();
+  updateKindBadge('markdown');
   applyView(state.view);
   applySidebar(localStorage.getItem('rustmd-sidebar') === 'closed');
   renderSortControls();

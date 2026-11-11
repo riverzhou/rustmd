@@ -29,6 +29,14 @@ body[data-theme='light'] {
   --hl-comment: #8b93a7;
   --hl-number: #c26a2e;
   --hl-link: #2f6fdb;
+  --hl-tag: #2f6fdb;
+  --hl-attr: #b26a00;
+  --hl-string: #177a4b;
+  --hl-keyword: #a626a4;
+  --hl-var: #2f8fa3;
+  --hl-func: #4078f2;
+  --hl-class: #b26a00;
+  --hl-punct: #69707f;
   --danger: #e5484d;
 }
 
@@ -57,6 +65,14 @@ body[data-theme='dark'] {
   --hl-comment: #6f7686;
   --hl-number: #e5a34d;
   --hl-link: #6ea8ff;
+  --hl-tag: #6ea8ff;
+  --hl-attr: #e5a34d;
+  --hl-string: #7bd88f;
+  --hl-keyword: #c678dd;
+  --hl-var: #56b6c2;
+  --hl-func: #61afef;
+  --hl-class: #e5c07b;
+  --hl-punct: #99a0af;
   --danger: #ff6369;
 }
 
@@ -570,8 +586,16 @@ body[data-theme='dark'] .btn.primary:hover {
   text-overflow: ellipsis;
 }
 
-.note-item .file-name {
+.note-item .file-line {
   margin-top: 1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.note-item .file-name {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.35;
@@ -579,6 +603,24 @@ body[data-theme='dark'] .btn.primary:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.note-item .kind-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.note-item .kind-badge.html {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .note-item .meta .folder-path {
@@ -689,6 +731,25 @@ mark {
 .note-title:focus {
   border-color: var(--accent);
   background: var(--card);
+}
+
+.note-kind {
+  flex-shrink: 0;
+  margin-left: -6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.note-kind.html {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .tag-editor {
@@ -1031,6 +1092,50 @@ mark {
   line-height: 1.75;
   font-size: 15px;
   word-wrap: break-word;
+}
+
+/* Sandboxed HTML-note preview: the iframe owns the page layout. */
+.preview-holder.html-mode {
+  padding: 0;
+}
+
+.markdown-body.html-mode {
+  max-width: none;
+}
+
+.html-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 300px;
+  border: 0;
+  background: #fff;
+}
+
+
+.html-preview-error {
+  margin: 24px 0;
+  color: var(--danger);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.html-preview-warning {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border: 1px solid #f0c4c4;
+  border-radius: 8px;
+  background: #fdf2f2;
+  color: #7a1f1f;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.html-static-body {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 26px 34px 60px;
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 /* Keep note-authored fixed/sticky elements inside the preview: without a

@@ -12,8 +12,13 @@
 // bundled into shipped binaries.
 
 import { api } from './api.js';
-import { renderPreview, setImageContext, isRmdUrl } from './preview.js';
-import { exportPng, exportPdf } from './export.js';
+import {
+  renderPreview,
+  setImageContext,
+  isRmdUrl,
+  inlineLocalImagesInHtml,
+} from './preview.js';
+import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 
 /// `getState` returns the live app state (dir / current note) so the
@@ -136,7 +141,10 @@ export async function runSelfTest({ getState }) {
   // downsampled to VERIFY_WORK px for speed; the reference is resampled to
   // the matching size and slid vertically (small x tolerance) to find the
   // best NCC.
-  const VERIFY_WORK = 128;
+  // 192 (not 128) keeps NCC stable for small HTML images with an explicit
+  // width attribute: at 128 the 420 px example image is only ~57 px wide and
+  // resampling noise pulled a present image down to NCC ≈ 0.72.
+  const VERIFY_WORK = 192;
   const VERIFY_PRESENT_NCC = 0.75;
 
 
@@ -215,7 +223,13 @@ export async function runSelfTest({ getState }) {
           throw new Error('image decoded with zero dimensions');
         }
         dims = img.naturalWidth + 'x' + img.naturalHeight;
-        const renderedCssWidth = Math.min(img.naturalWidth, 860);
+        // HTML notes may set a width attribute / style (styles are stripped),
+        // so use the known rendered CSS width when provided instead of
+        // assuming every image fills the 860 px article.
+        const renderedCssWidth = Math.min(
+          Number(ref.cssWidth) > 0 ? Number(ref.cssWidth) : img.naturalWidth,
+          860
+        );
         const renderedCssHeight =
           (img.naturalHeight * renderedCssWidth) / img.naturalWidth;
         const tw = Math.max(8, Math.round((renderedCssWidth * w) / 948));
@@ -380,14 +394,182 @@ export async function runSelfTest({ getState }) {
     const notes = await api.listNotes(SELFTEST_EXAMPLES_DIR);
     for (const meta of notes) {
       const entry = { path: meta.path, remoteImagesInSource: null };
-      const { body } = await api.readNote(SELFTEST_EXAMPLES_DIR, meta.path);
-      entry.remoteImagesInSource = (body.match(/!\[[^\]]*\]\(\s*https?:/g) || []).length;
+      const { body, kind } = await api.readNote(SELFTEST_EXAMPLES_DIR, meta.path);
+      entry.kind = kind;
+      if (kind === 'html') {
+        // HTML notes render in the built-in WebView; this branch is a
+        // render/capture smoke test (the cross-origin iframe cannot be
+        // inspected pixel-by-pixel from the main document).
+        await api.setNotesRoot(SELFTEST_EXAMPLES_DIR);
+        setImageContext(SELFTEST_EXAMPLES_DIR, meta.path);
+        const box = document.createElement('div');
+        box.className = 'markdown-body';
+        box.style.cssText = 'position:fixed;left:-100000px;top:0;width:900px;';
+        document.body.appendChild(box);
+        const t0 = performance.now();
+        try {
+          await renderPreview(body, box, 'html');
+          const frame = box.querySelector('iframe.html-preview-frame');
+          entry.render = {
+            ms: Math.round(performance.now() - t0),
+            iframe: !!frame,
+            ready: frame?.dataset.ready === '1',
+            localScript: frame?.dataset.localScript || '',
+            inlineScript: frame?.dataset.scriptRan || '',
+          };
+          if (!frame || frame.dataset.ready !== '1') {
+            report.errors.push(
+              `${meta.path}: HTML preview did not become ready`
+            );
+          }          if (
+            meta.path.endsWith('html-page-demo.html') &&
+            entry.render.localScript !== 'yes'
+          ) {
+            report.errors.push(
+              `${meta.path}: local relative JS did not run in the preview`
+            );
+          }
+        } catch (e) {
+          report.errors.push(`${meta.path}: HTML preview failed: ${e}`);
+        } finally {
+          box._rmdPreviewCleanup?.();
+          box.remove();
+        }
+
+        try {
+          const t1 = performance.now();
+          const exportBody = await inlineLocalImagesInHtml(body);
+          const shot = await api.renderHtmlNote(
+            SELFTEST_EXAMPLES_DIR,
+            meta.path,
+            exportBody,
+            'export'
+          );
+          const pixels = await analyzePngPixels(shot.png);
+          entry.png = {
+            bytes: shot.png.length,
+            ms: Math.round(performance.now() - t1),
+            pixels,
+            source: 'built-in-webview',
+            width: shot.width,
+            height: shot.height,
+          };
+          if (!(shot.width > 100 && shot.height > 100)) {
+            report.errors.push(
+              `${meta.path}: HTML PNG has implausible dimensions ` +
+                `${shot.width}x${shot.height}`
+            );
+          }
+          if (!(pixels.nonWhitePixels > 100)) {
+            report.errors.push(`${meta.path}: HTML PNG is essentially blank`);
+          }
+          // Verify the example's local relative image actually made it into
+          // the exported raster (read through the same backend path).
+          const htmlImages = [
+            ...new DOMParser()
+              .parseFromString(body, 'text/html')
+              .querySelectorAll('img'),
+          ];
+          const refs = [];
+          for (const img of htmlImages) {
+            const src = img.getAttribute('src') || '';
+            if (!src || /^(https?:|data:|blob:|file:)/i.test(src)) continue;
+            const noteDir = meta.path.includes('/')
+              ? meta.path.slice(0, meta.path.lastIndexOf('/')) + '/'
+              : '';
+            const abs = `${SELFTEST_EXAMPLES_DIR}/${noteDir}${src.replace(/\\/g, '/')}`;
+            try {
+              const image = await api.readLocalImage(abs);
+              refs.push({
+                url: `local:${src}`,
+                bytes: image.bytes,
+                cssWidth: Number.parseInt(img.getAttribute('width') || '', 10) || undefined,
+              });
+            } catch (e) {
+              report.errors.push(
+                `${meta.path}: HTML local image unreadable: ${src} (${e})`
+              );
+            }
+          }
+          entry.png.localImages = refs.length;
+          entry.png.inlinedImages = (exportBody.match(/data:image\//g) || []).length;
+          if (refs.length && entry.png.inlinedImages === 0) {
+            report.errors.push(
+              `${meta.path}: HTML local images were not inlined for export`
+            );
+          }
+          await api.selftestWrite(`${meta.path}.png`, shot.png);
+
+          // Exercise the real PDF scale path as the app does (mode:'pdf'),
+          // not just the export-mode PNG reused for PDF.
+          const pdfShot = await api.renderHtmlNote(
+            SELFTEST_EXAMPLES_DIR,
+            meta.path,
+            exportBody,
+            'pdf'
+          );
+          const t2 = performance.now();
+          const pdf = await pdfFromPngDataUrl(
+            bytesToDataUrl(pdfShot.png, 'image/png'),
+            pdfShot.cssWidth
+          );
+          entry.pdf = {
+            bytes: pdf.data.length,
+            ms: Math.round(performance.now() - t2),
+            mode: 'pdf',
+            width: pdfShot.width,
+            height: pdfShot.height,
+            magic: new TextDecoder().decode(pdf.data.slice(0, 5)),
+          };
+          if (entry.pdf.magic !== '%PDF-') {
+            report.errors.push(
+              `${meta.path}: HTML PDF does not start with %PDF-`
+            );
+          }
+          await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
+        } catch (e) {
+          report.errors.push(`${meta.path}: HTML PNG/PDF export failed: ${e}`);
+        }
+        report.entries.push(entry);
+        console.log('[selftest] done', meta.path);
+        continue;
+      }
+      // Mirror preview.js's image resolution for both note formats. For HTML
+      // notes remember an explicit width attribute so the PNG presence check
+      // searches for the size html2canvas actually rendered.
+      const htmlImages =
+        kind === 'html'
+          ? [
+              ...new DOMParser()
+                .parseFromString(body, 'text/html')
+                .querySelectorAll('img'),
+            ]
+          : [];
+      const htmlWidthBySrc = new Map();
+      for (const img of htmlImages) {
+        const src = img.getAttribute('src') || '';
+        const width = Number.parseInt(img.getAttribute('width') || '', 10);
+        if (src && Number.isFinite(width) && width > 0) {
+          htmlWidthBySrc.set(src, width);
+        }
+      }
+      const imageSrcs =
+        kind === 'html'
+          ? htmlImages
+              .map((img) => img.getAttribute('src') || '')
+              .filter(Boolean)
+          : (body.match(/!\[[^\]]*\]\(([^)]*)\)/g) || []).map((m) =>
+              m.slice(m.indexOf('(') + 1, -1).trim().split(/\s+/)[0]
+            );
+      entry.remoteImagesInSource = imageSrcs.filter((s) =>
+        /^https?:/i.test(s)
+      ).length;
       // Local (vault) image refs — anything that is not a remote/data/
       // blob/file URL. These go through the `rmd` protocol; the preview
       // resolves them relative to THIS note's folder.
-      const localSrcs = (body.match(/!\[[^\]]*\]\(([^)]*)\)/g) || [])
-        .map((m) => m.slice(m.indexOf('(') + 1, -1).trim().split(/\s+/)[0])
-        .filter((s) => s && !/^(https?:|data:|blob:|file:)/i.test(s));
+      const localSrcs = imageSrcs.filter(
+        (s) => s && !/^(https?:|data:|blob:|file:)/i.test(s)
+      );
       entry.localImagesInSource = localSrcs.length;
       setImageContext(SELFTEST_EXAMPLES_DIR, meta.path);
 
@@ -397,7 +579,7 @@ export async function runSelfTest({ getState }) {
       box.style.cssText = 'position:fixed;left:-100000px;top:0;width:900px;';
       document.body.appendChild(box);
       const t0 = performance.now();
-      await renderPreview(body, box);
+      await renderPreview(body, box, kind);
       // Remote + local imgs: renderPreview only guarantees DOM + math +
       // mermaid are done, NOT that <img> fetches settled — wait for
       // load/error before snapshotting (the old immediate check raced and
@@ -446,7 +628,9 @@ export async function runSelfTest({ getState }) {
       const remoteFetch = remoteFetchResults.map(({ url, ok, error, bytes }) =>
         bytes ? { url, ok, bytes: bytes.length } : { url, ok, error }
       );
-      const remoteRefs = remoteFetchResults.filter((r) => r.ok);
+      const remoteRefs = remoteFetchResults
+        .filter((r) => r.ok)
+        .map((r) => ({ ...r, cssWidth: htmlWidthBySrc.get(r.url) }));
       for (const result of remoteFetchResults) {
         if (!result.ok) {
           report.errors.push(
@@ -466,7 +650,11 @@ export async function runSelfTest({ getState }) {
         const abs = `${SELFTEST_EXAMPLES_DIR}/${dir}${src.replace(/\\/g, '/')}`;
         try {
           const image = await api.readLocalImage(abs);
-          localRefs.push({ url: `local:${src}`, bytes: image.bytes });
+          localRefs.push({
+            url: `local:${src}`,
+            bytes: image.bytes,
+            cssWidth: htmlWidthBySrc.get(src),
+          });
         } catch (e) {
           report.errors.push(
             `${meta.path}: local image unreadable via backend: ${src} (${e})`
@@ -513,7 +701,7 @@ export async function runSelfTest({ getState }) {
       // 2) PNG export (remote images → fetch_image_bytes, local vault
       //    images → read_local_image in Rust)
       const t1 = performance.now();
-      const png = await exportPng(body);
+      const png = await exportPng(body, kind);
       entry.png = {
         bytes: png.data.length,
         ms: Math.round(performance.now() - t1),
@@ -529,7 +717,7 @@ export async function runSelfTest({ getState }) {
 
       // 3) PDF export
       const t2 = performance.now();
-      const pdf = await exportPdf(body);
+      const pdf = await exportPdf(body, kind);
       entry.pdf = { bytes: pdf.data.length, ms: Math.round(performance.now() - t2) };
       await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
 

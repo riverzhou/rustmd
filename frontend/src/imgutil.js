@@ -15,6 +15,18 @@ export function bytesToDataUrl(bytes, mime) {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
+/// Decode a data: URL's base64 payload into bytes. Used for the PNG captured
+/// from the sandboxed HTML renderer, which posts a data URL back.
+export function dataUrlToBytes(dataUrl) {
+  const comma = String(dataUrl).indexOf(',');
+  if (comma < 0) throw new Error('invalid data URL');
+  const base64 = String(dataUrl).slice(comma + 1);
+  const bin = atob(base64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 const ascii = (bytes, start, end) =>
   String.fromCharCode(...bytes.subarray(start, end));
 

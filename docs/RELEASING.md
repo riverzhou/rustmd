@@ -8,26 +8,42 @@
 
 ## 1. 版本与发布说明
 
-一次发布需要四处一致：
+一次发布需要以下版本一致：
 
 - `package.json` 的 `version`
 - `Cargo.toml` 的 `[package] version`
 - `tauri.conf.json` 的 `version`
+- `Cargo.lock` 与 `package-lock.json` 的根包版本
 - git tag：`v<version>`
 
-`npm run check:version` 会校验前三处；release workflow 会再校验 tag。
+`npm run check:version` 会校验前三个用户可见版本；`Cargo.lock`/`package-lock.json`
+由 `npm version` 与 `cargo check/build` 自动同步，提交前用 `git diff` 确认。
+release workflow 会再校验 tag。
 
-更新 `CHANGELOG.md`，可选地新增 `RELEASE_NOTES-<version>.md`（release 正文优先使用它，否则提取 CHANGELOG 对应小节）。
+**Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，或在 `CHANGELOG.md`
+中提供对应小节；`scripts/release-notes.mjs` 找不到两者会直接失败。发布前先跑：
+
+```bash
+node scripts/check-version.mjs v1.4.0
+node scripts/release-notes.mjs v1.4.0 >/dev/null
+```
 
 ```bash
 npm run check
+npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.3.1"
-git tag v1.3.1
-git push origin master --tags
+git commit -m "release: v1.4.0"
+git tag v1.4.0
+
+# GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
+git push github master
+git push github v1.4.0
+git push origin master
+git push origin v1.4.0
 ```
 
-也可以手动触发 `release` workflow，填一个已存在的 tag。
+推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
+`v1.4.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
@@ -39,25 +55,26 @@ verify (Ubuntu, npm run check + tag/version)
 publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
 
-只有 `publish` 需要 `contents: write`；build job 都是只读。
+只有 `publish` 需要 `contents: write`；build job 都是只读。发布前请在本地运行
+`npm run selftest`；GitHub workflow 只负责三端构建与发布。
 
 ## 3. 产物
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、`README.md`、`rustmd-selfsigned.cer` |
+| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、`README.md`、`SECURITY.md`、`LICENSE`；自签名构建还含 `rustmd-selfsigned.cer` |
 | Linux | `rustmd_<version>_amd64.deb` | Debian/Ubuntu 安装包 |
 | Linux | `rustmd_<version>_amd64.AppImage` | 便携包（需要 FUSE，或 `--appimage-extract-and-run`） |
 | macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
 | 全部 | `SHA256SUMS.txt`、各平台 `*.sha256` / `SHA256SUMS-linux.txt` | 完整性校验 |
 
 所有 bundle（deb / AppImage / DMG）通过 `bundle.licenseFile` 随附 `LICENSE`；
-Windows 绿色 zip 由脚本复制 `LICENSE`。
+Windows 绿色 zip 由脚本复制 `LICENSE` 与 `SECURITY.md`。
 
 Windows zip 的目录结构：
 
 ```
-rustmd-1.3.1-win-x64/
+rustmd-1.4.0-win-x64/
 ├── rustmd.exe
 ├── README.md
 ├── SECURITY.md
@@ -133,17 +150,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.3.1-macos-universal.dmg.sha256
+shasum -a 256 -c rustmd-1.4.0-macos-universal.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.3.1-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.3.1-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.4.0-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.4.0-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.3.1-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.4.0-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

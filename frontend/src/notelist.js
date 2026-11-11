@@ -43,6 +43,21 @@ export function fileNameOf(path) {
   return normalized.slice(normalized.lastIndexOf('/') + 1);
 }
 
+export const NOTE_KIND_MARKDOWN = 'markdown';
+export const NOTE_KIND_HTML = 'html';
+
+/** `"html"` for `.html`/`.htm`, `"markdown"` otherwise (mirrors Rust). */
+export function noteKindOf(path) {
+  return /\.(?:html|htm)$/i.test(fileNameOf(path))
+    ? NOTE_KIND_HTML
+    : NOTE_KIND_MARKDOWN;
+}
+
+/** File name without the note extension (`.md`, `.html`, `.htm`). */
+export function noteStemOf(path) {
+  return fileNameOf(path).replace(/\.(?:md|html|htm)$/i, '');
+}
+
 export function folderOf(path) {
   const normalized = String(path || '').replace(/\\/g, '/');
   const idx = normalized.lastIndexOf('/');

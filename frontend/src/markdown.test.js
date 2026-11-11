@@ -15,6 +15,16 @@ test('splitCodeSegments separates fenced code', () => {
   assert.equal(segments[1].text, '```js\nx\n```');
 });
 
+test('splitCodeSegments respects the opening fence length', () => {
+  const nl = String.fromCharCode(10);
+  const segments = splitCodeSegments(['a', '````', '```', '````', 'b'].join(nl));
+  assert.deepEqual(
+    segments.map((s) => s.code),
+    [false, true, false]
+  );
+  assert.equal(segments[1].text, ['````', '```', '````'].join(nl));
+});
+
 test('sourceHasMath ignores math inside fences', () => {
   assert.equal(sourceHasMath('$x$'), true);
   assert.equal(sourceHasMath('plain'), false);

@@ -50,6 +50,10 @@ export const MESSAGES = {
     'topbar.delete': 'Delete',
     'topbar.export': 'Export… (HTML / PNG / PDF)',
     'topbar.theme': 'Toggle theme',
+    'topbar.wrapOn': 'Auto wrap: on (click to disable)',
+    'topbar.wrapOff': 'Auto wrap: off (click to enable)',
+    'topbar.fullscreenOn': 'Full screen (F11)',
+    'topbar.fullscreenOff': 'Exit full screen (F11)',
 
     'view.edit': 'Edit',
     'view.split': 'Split',
@@ -78,9 +82,16 @@ export const MESSAGES = {
 
     'time.unknown': 'Modified time unknown',
     'note.untitled': 'Untitled',
+    'note.kindMarkdown': 'Markdown note',
+    'note.kindHtml': 'HTML note',
+    'note.kindMarkdownTitle': 'Markdown note · rendered preview',
+    'note.kindHtmlTitle':
+      'HTML note · isolated live preview (scripts and styles run in a sandbox)',
     'note.counts': (v) =>
       `${v.words} ${v.words === 1 ? 'word' : 'words'} · ` +
       `${v.chars} ${v.chars === 1 ? 'character' : 'characters'}`,
+    'new.markdown': 'Markdown note',
+    'new.html': 'HTML page',
 
     'tag.remove': 'Remove',
     'tag.addPlaceholder': '+ tag',
@@ -143,6 +154,15 @@ export const MESSAGES = {
     'toast.error': 'Error: {msg}',
     'toast.jsError': 'JS error: {msg}',
     'preview.mermaidFailed': 'Mermaid render failed: ',
+    'preview.htmlTitle': 'HTML preview',
+    'preview.htmlBlocked':
+      'HTML preview is disabled: app IPC could not be isolated.',
+    'preview.htmlFailed': 'HTML preview failed: {msg}',
+    'preview.htmlTimeout':
+      'The HTML preview is taking too long; it may still finish loading.',
+    'preview.htmlRendering': 'Rendering HTML…',
+    'preview.htmlNoRenderer':
+      'HTML rendering failed ({msg}). Showing a sanitized static preview without scripts or charts.',
     'export.footer': 'Exported by rustmd · {date}',
   },
 
@@ -185,6 +205,10 @@ export const MESSAGES = {
     'topbar.delete': '删除',
     'topbar.export': '导出…（HTML / PNG / PDF）',
     'topbar.theme': '切换主题',
+    'topbar.wrapOn': '自动折行：开（点击关闭）',
+    'topbar.wrapOff': '自动折行：关（点击开启）',
+    'topbar.fullscreenOn': '全屏 (F11)',
+    'topbar.fullscreenOff': '退出全屏 (F11)',
 
     'view.edit': '编辑',
     'view.split': '分栏',
@@ -212,7 +236,14 @@ export const MESSAGES = {
 
     'time.unknown': '修改时间未知',
     'note.untitled': '无标题',
+    'note.kindMarkdown': 'Markdown 笔记',
+    'note.kindHtml': 'HTML 笔记',
+    'note.kindMarkdownTitle': 'Markdown 笔记 · 渲染预览',
+    'note.kindHtmlTitle':
+      'HTML 笔记 · 隔离的实时预览（脚本和样式在 sandbox 中运行）',
     'note.counts': (v) => `${v.words} 字 · ${v.chars} 字符`,
+    'new.markdown': 'Markdown 笔记',
+    'new.html': 'HTML 页面',
 
     'tag.remove': '移除',
     'tag.addPlaceholder': '+ 标签',
@@ -273,6 +304,14 @@ export const MESSAGES = {
     'toast.error': '错误：{msg}',
     'toast.jsError': 'JS 错误：{msg}',
     'preview.mermaidFailed': 'Mermaid 渲染失败：',
+    'preview.htmlTitle': 'HTML 预览',
+    'preview.htmlBlocked':
+      'HTML 预览已禁用：无法隔离应用 IPC。',
+    'preview.htmlFailed': 'HTML 预览失败：{msg}',
+    'preview.htmlTimeout': 'HTML 预览加载时间过长，内容可能稍后才会显示。',
+    'preview.htmlRendering': '正在渲染 HTML…',
+    'preview.htmlNoRenderer':
+      'HTML 渲染失败（{msg}）。当前显示消毒后的静态预览（脚本与图表不可用）。',
     'export.footer': '由 rustmd 导出 · {date}',
   },
 };

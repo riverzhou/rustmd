@@ -22,6 +22,9 @@ struct NoteMeta {
     tags: Vec<String>,
     snippet: String,
     mtime: i64, // unix seconds
+    /// `"markdown"` or `"html"`: decides how the body is parsed/previewed and
+    /// whether front matter applies.
+    kind: String,
     /// Content hash of the raw file. The frontend sends it back on save so a
     /// file changed by another program is detected even when the mtime
     /// resolution (seconds) would miss it.
@@ -42,6 +45,7 @@ struct NoteContent {
     body: String,
     mtime: i64,
     hash: String,
+    kind: String,
 }
 
 #[derive(Deserialize)]
@@ -543,6 +547,289 @@ fn compose_note(existing: Option<&str>, tags: &[String], body: &str) -> String {
     out
 }
 
+// ---------------- HTML notes ----------------
+
+const NOTE_EXTENSIONS: [&str; 3] = ["md", "html", "htm"];
+
+/// `"html"` for `.html`/`.htm`, `"markdown"` otherwise. The extension is the
+/// single source of truth: a file renamed to `.html` is treated as an HTML
+/// note even when its contents look like Markdown.
+fn note_kind(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("html" | "htm") => "html",
+        _ => "markdown",
+    }
+}
+
+fn is_note_file_name(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| NOTE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+/// Same as `compose_note`, but HTML notes have no front matter: keep the
+/// exact body the editor produced (LF-normalized), restore the file's BOM and
+/// CRLF/LF style, and never inject a `tags:` block.
+fn compose_html(existing: Option<&str>, body: &str) -> String {
+    let (bom, line_ending) = match existing {
+        Some(text) => {
+            let doc = split_document(text);
+            (doc.bom, doc.line_ending)
+        }
+        None => (false, "\n"),
+    };
+    let normalized = normalize_newlines(body);
+    let mut out = String::with_capacity(normalized.len() + 2);
+    if bom {
+        out.push('\u{feff}');
+    }
+    if line_ending == "\r\n" {
+        out.push_str(&normalized.replace('\n', "\r\n"));
+    } else {
+        out.push_str(&normalized);
+    }
+    out
+}
+
+fn find_ascii_ci(haystack: &str, needle: &str, from: usize) -> Option<usize> {
+    let bytes = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() || from >= bytes.len() || needle.len() > bytes.len() - from {
+        return None;
+    }
+    (from..=bytes.len() - needle.len())
+        .find(|&i| bytes[i..i + needle.len()].eq_ignore_ascii_case(needle))
+}
+
+/// End byte index of a start tag, honouring quoted attribute values.
+fn find_tag_end(html: &str, start: usize) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let mut quote = 0u8;
+    let mut i = start;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if quote == 0 {
+            match b {
+                b'"' | b'\'' => quote = b,
+                b'>' => return Some(i),
+                _ => {}
+            }
+        } else if b == quote {
+            quote = 0;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Decode the handful of named entities plus numeric references that matter
+/// for plain-text titles/snippets. Unknown entities are preserved verbatim.
+fn decode_html_entities(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut rest = raw;
+    while let Some(pos) = rest.find('&') {
+        out.push_str(&rest[..pos]);
+        let tail = &rest[pos..];
+        let Some(end) = tail.find(';') else {
+            out.push_str(tail);
+            return out;
+        };
+        // An ampersand followed by an implausibly long run is plain text, not
+        // an entity; emit it and continue scanning from the next character.
+        if end > 12 {
+            out.push('&');
+            rest = &tail[1..];
+            continue;
+        }
+        let entity = &tail[1..end];
+        let decoded = match entity {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" | "#39" => Some('\''),
+            "nbsp" => Some(' '),
+            _ if entity.starts_with("#x") || entity.starts_with("#X") => {
+                u32::from_str_radix(&entity[2..], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+            }
+            _ if entity.starts_with('#') => {
+                entity[1..].parse::<u32>().ok().and_then(char::from_u32)
+            }
+            _ => None,
+        };
+        match decoded {
+            Some(ch) => {
+                out.push(ch);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Collapse an HTML document to plain text for snippets/search. Skips
+/// comments and raw-text elements (`script`, `style`, `head`, …) and inserts a
+/// space at block boundaries so adjacent paragraphs do not concatenate.
+fn html_to_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len() / 2);
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            // A literal `<` in body text (e.g. `1 < 2`) is not a tag. Only
+            // treat it as markup when a plausible tag opener follows.
+            let next = bytes.get(i + 1).copied();
+            if !next.is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?')) {
+                out.push('<');
+                i += 1;
+                continue;
+            }
+            if html[i..].starts_with("<!--") {
+                match html[i + 4..].find("-->") {
+                    Some(end) => i += 4 + end + 3,
+                    None => break,
+                }
+                continue;
+            }
+            let Some(end) = find_tag_end(html, i + 1) else {
+                break;
+            };
+            let inner = html[i + 1..end].trim();
+            let closing = inner.starts_with('/');
+            let name: String = inner
+                .trim_start_matches('/')
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            let lower = name.to_ascii_lowercase();
+            if !closing
+                && !inner.ends_with('/')
+                && matches!(
+                    lower.as_str(),
+                    "script" | "style" | "head" | "noscript" | "template"
+                )
+            {
+                let close = format!("</{lower}");
+                if let Some(close_at) = find_ascii_ci(html, &close, end + 1)
+                    && let Some(gt) = html[close_at..].find('>')
+                {
+                    i = close_at + gt + 1;
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
+                    continue;
+                }
+            }
+            if matches!(
+                lower.as_str(),
+                "br" | "p"
+                    | "div"
+                    | "li"
+                    | "tr"
+                    | "td"
+                    | "th"
+                    | "h1"
+                    | "h2"
+                    | "h3"
+                    | "h4"
+                    | "h5"
+                    | "h6"
+                    | "section"
+                    | "article"
+                    | "header"
+                    | "footer"
+                    | "blockquote"
+                    | "table"
+                    | "ul"
+                    | "ol"
+                    | "pre"
+                    | "hr"
+            ) && !out.ends_with(' ')
+            {
+                out.push(' ');
+            }
+            i = end + 1;
+            continue;
+        }
+        let next = html[i..]
+            .find('<')
+            .map(|offset| i + offset)
+            .unwrap_or(bytes.len());
+        for ch in decode_html_entities(&html[i..next]).chars() {
+            if ch.is_whitespace() {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        i = next;
+    }
+    out.trim().to_string()
+}
+
+/// Text of the first `<tag …>…</tag>` occurrence, or None.
+fn extract_html_element_text(html: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}");
+    let mut from = 0;
+    while let Some(pos) = find_ascii_ci(html, &open, from) {
+        let after = pos + open.len();
+        let boundary = html
+            .as_bytes()
+            .get(after)
+            .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/');
+        if !boundary {
+            from = after;
+            continue;
+        }
+        let tag_end = find_tag_end(html, after)?;
+        let close_at = find_ascii_ci(html, &close, tag_end + 1)?;
+        let text = html_to_text(&html[tag_end + 1..close_at]);
+        if !text.trim().is_empty() {
+            return Some(text.trim().to_string());
+        }
+        from = close_at + 1;
+    }
+    None
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut out: String = s.chars().take(max_chars).collect();
+    if s.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
+
+/// Title + snippet for an HTML note: `<title>` first, then the first `<h1>`,
+/// then the file stem. The snippet is visible text, never raw markup.
+fn html_meta(text: &str, fallback_title: &str) -> (String, String) {
+    let title = extract_html_element_text(text, "title")
+        .or_else(|| extract_html_element_text(text, "h1"))
+        .unwrap_or_else(|| fallback_title.to_string());
+    let plain = html_to_text(text);
+    (
+        truncate_chars(title.trim(), 120),
+        truncate_chars(&plain, 100),
+    )
+}
+
 // ---------------- Text helpers ----------------
 
 fn heading_text(line: &str) -> Option<String> {
@@ -733,11 +1020,19 @@ fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
         .parent()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default();
-    let text = fs::read_to_string(full).ok()?;
-    let (tags, body) = parse_frontmatter(&text);
+    let bytes = fs::read(full).ok()?;
+    // Keep non-UTF-8 notes visible in the list (instead of silently hiding
+    // them); opening one returns a clear UTF-8 error in read_note.
+    let text = String::from_utf8_lossy(&bytes).to_string();
     let name = full.file_stem()?.to_string_lossy().to_string();
-    let title = extract_title(&body, &name);
-    let snippet = plain_snippet(&body, 100);
+    let kind = note_kind(full);
+    let (tags, title, snippet) = if kind == "html" {
+        let (title, snippet) = html_meta(&text, &name);
+        (Vec::new(), title, snippet)
+    } else {
+        let (tags, body) = parse_frontmatter(&text);
+        (tags, extract_title(&body, &name), plain_snippet(&body, 100))
+    };
     Some(NoteMeta {
         path: rel_s,
         folder,
@@ -745,7 +1040,8 @@ fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
         tags,
         snippet,
         mtime: mtime_of(full),
-        hash: content_hash(text.as_bytes()),
+        kind: kind.to_string(),
+        hash: content_hash(&bytes),
     })
 }
 
@@ -782,7 +1078,7 @@ fn walk(dir: &Path, root: &Path, out: &mut Vec<NoteMeta>) -> Result<(), String> 
         if file_type.is_dir() {
             walk(&path, root, out)?;
         } else if file_type.is_file()
-            && name.to_lowercase().ends_with(".md")
+            && is_note_file_name(&name)
             && let Ok(rel) = path.strip_prefix(root)
             && let Some(meta) = read_meta(rel, &path)
         {
@@ -827,10 +1123,40 @@ fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>) -> Result<(), St
 
 fn sanitize_filename(s: &str) -> String {
     const INVALID: [char; 9] = ['<', '>', ':', '"', '|', '?', '*', '\\', '/'];
-    let cleaned: String = s.chars().filter(|c| !INVALID.contains(c)).collect();
-    let trimmed = cleaned.trim().trim_end_matches('.');
+    let cleaned: String = s
+        .chars()
+        .filter(|c| !INVALID.contains(c) && !c.is_control())
+        .collect();
+    let trimmed = cleaned.trim().trim_end_matches(['.', ' ']);
+    let reserved = matches!(
+        trimmed.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    );
     if trimmed.is_empty() {
         "untitled".to_string()
+    } else if reserved {
+        format!("_{trimmed}")
     } else {
         trimmed.to_string()
     }
@@ -893,8 +1219,20 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
 
 // ---------------- Commands ----------------
 
+/// Only the main application window may use note/vault commands. The hidden
+/// HTML renderer window (label `html-render-*`) runs note scripts, so it gets
+/// exactly one allowed command: `html_preview_finish`.
+fn require_main(window: &tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() == "main" {
+        Ok(())
+    } else {
+        Err("command is not available from this window".into())
+    }
+}
+
 #[tauri::command]
-fn list_notes(dir: String) -> Result<Vec<NoteMeta>, String> {
+fn list_notes(window: tauri::WebviewWindow, dir: String) -> Result<Vec<NoteMeta>, String> {
+    require_main(&window)?;
     collect_notes(Path::new(&dir))
 }
 
@@ -902,21 +1240,44 @@ fn list_notes(dir: String) -> Result<Vec<NoteMeta>, String> {
 /// the "move to folder" dialog can offer folders that do not contain a note
 /// yet.
 #[tauri::command]
-fn list_folders(dir: String) -> Result<Vec<String>, String> {
+fn list_folders(window: tauri::WebviewWindow, dir: String) -> Result<Vec<String>, String> {
+    require_main(&window)?;
     collect_folders(Path::new(&dir))
 }
 
-#[tauri::command]
-fn read_note(dir: String, path: String) -> Result<NoteContent, String> {
-    let full = resolve_in_root(Path::new(&dir), &path)?;
-    let text = fs::read_to_string(&full).map_err(|e| e.to_string())?;
-    let (tags, body) = parse_frontmatter(&text);
+fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
+    let full = resolve_in_root(root, path)?;
+    let bytes = fs::read(&full).map_err(|e| e.to_string())?;
+    let text = String::from_utf8(bytes.clone())
+        .map_err(|_| "note is not valid UTF-8; convert it to UTF-8 before opening".to_string())?;
+    let kind = note_kind(&full);
+    let (tags, body) = if kind == "html" {
+        // No front matter for HTML: the editor edits the whole document. The
+        // BOM stays on disk only; `compose_html` restores it on save.
+        (
+            Vec::new(),
+            normalize_newlines(text.strip_prefix('\u{feff}').unwrap_or(&text)),
+        )
+    } else {
+        parse_frontmatter(&text)
+    };
     Ok(NoteContent {
         tags,
         body,
         mtime: mtime_of(&full),
-        hash: content_hash(text.as_bytes()),
+        hash: content_hash(&bytes),
+        kind: kind.to_string(),
     })
+}
+
+#[tauri::command]
+fn read_note(
+    window: tauri::WebviewWindow,
+    dir: String,
+    path: String,
+) -> Result<NoteContent, String> {
+    require_main(&window)?;
+    read_note_impl(Path::new(&dir), &path)
 }
 
 const CONFLICT_ERR: &str = "conflict: note changed on disk";
@@ -950,7 +1311,12 @@ fn save_note_impl(
             return Err(CONFLICT_ERR.into());
         }
     }
-    let content = compose_note(existing_text.as_deref(), tags, body);
+    let content = if note_kind(Path::new(rel)) == "html" {
+        // HTML notes have no front matter; tags are a Markdown-only concept.
+        compose_html(existing_text.as_deref(), body)
+    } else {
+        compose_note(existing_text.as_deref(), tags, body)
+    };
     // Skip the write when the on-disk content is already identical. A
     // no-op write still updates the file mtime, which (a) re-sorts the
     // note list and (b) under `tauri dev` trips the file watcher,
@@ -965,7 +1331,13 @@ fn save_note_impl(
 }
 
 #[tauri::command]
-fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, String> {
+fn save_note(
+    window: tauri::WebviewWindow,
+    dir: String,
+    path: String,
+    args: SaveNoteArgs,
+) -> Result<NoteMeta, String> {
+    require_main(&window)?;
     save_note_impl(
         Path::new(&dir),
         &path,
@@ -977,9 +1349,7 @@ fn save_note(dir: String, path: String, args: SaveNoteArgs) -> Result<NoteMeta, 
     )
 }
 
-#[tauri::command]
-fn create_note(dir: String, folder: String) -> Result<String, String> {
-    let root = Path::new(&dir);
+fn create_note_impl(root: &Path, folder: &str, kind: Option<&str>) -> Result<String, String> {
     let canon_root = canonical_root(root)?;
     let folder = folder.replace('\\', "/").trim_matches('/').to_string();
     let target_dir = if folder.is_empty() {
@@ -988,10 +1358,14 @@ fn create_note(dir: String, folder: String) -> Result<String, String> {
         resolve_in_root(root, &folder)?
     };
     fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
-    let mut candidate = "untitled.md".to_string();
+    let ext = match kind {
+        Some("html" | "htm") => "html",
+        _ => "md",
+    };
+    let mut candidate = format!("untitled.{ext}");
     let mut i = 1u32;
     while target_dir.join(&candidate).exists() {
-        candidate = format!("untitled {i}.md");
+        candidate = format!("untitled {i}.{ext}");
         i += 1;
     }
     let full = target_dir.join(&candidate);
@@ -1000,15 +1374,40 @@ fn create_note(dir: String, folder: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn rename_note(dir: String, path: String, name: String) -> Result<String, String> {
-    let root = Path::new(&dir);
-    let full = resolve_in_root(root, &path)?;
-    let clean = sanitize_filename(&name);
-    let new_name = if clean.to_lowercase().ends_with(".md") {
-        clean
-    } else {
-        format!("{clean}.md")
-    };
+fn create_note(
+    window: tauri::WebviewWindow,
+    dir: String,
+    folder: String,
+    kind: Option<String>,
+) -> Result<String, String> {
+    require_main(&window)?;
+    create_note_impl(Path::new(&dir), &folder, kind.as_deref())
+}
+
+fn rename_note_impl(root: &Path, path: &str, name: &str) -> Result<String, String> {
+    let full = resolve_in_root(root, path)?;
+    // Keep the note's current format: renaming an HTML page never silently
+    // turns it into a Markdown note (or vice versa). A supported extension in
+    // the typed name is treated as part of the title and replaced.
+    let ext = full
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| NOTE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or("md")
+        .to_string();
+    let clean = sanitize_filename(name);
+    let clean_lower = clean.to_ascii_lowercase();
+    let stem = NOTE_EXTENSIONS
+        .iter()
+        .find_map(|e| {
+            let suffix = format!(".{e}");
+            clean_lower
+                .strip_suffix(&suffix)
+                .map(|_| clean[..clean.len() - suffix.len()].trim())
+        })
+        .unwrap_or_else(|| clean.trim());
+    let stem = if stem.is_empty() { "untitled" } else { stem };
+    let new_name = format!("{stem}.{ext}");
     let parent = full
         .parent()
         .ok_or_else(|| "no parent dir".to_string())?
@@ -1027,7 +1426,19 @@ fn rename_note(dir: String, path: String, name: String) -> Result<String, String
 }
 
 #[tauri::command]
-fn delete_note(dir: String, path: String) -> Result<(), String> {
+fn rename_note(
+    window: tauri::WebviewWindow,
+    dir: String,
+    path: String,
+    name: String,
+) -> Result<String, String> {
+    require_main(&window)?;
+    rename_note_impl(Path::new(&dir), &path, &name)
+}
+
+#[tauri::command]
+fn delete_note(window: tauri::WebviewWindow, dir: String, path: String) -> Result<(), String> {
+    require_main(&window)?;
     let full = resolve_in_root(Path::new(&dir), &path)?;
     if !full.is_file() {
         return Err("not a file".into());
@@ -1036,15 +1447,22 @@ fn delete_note(dir: String, path: String) -> Result<(), String> {
 }
 
 /// `name` is a file name with an extension (e.g. `note.md`). Returns
-/// `note (1).md`, `note (2).md`, … in `parent`, skipping `exclude`.
+/// `note (1).md`, `note (2).md`, … in `parent`, skipping `exclude`. The
+/// extension is preserved so moving/renaming an HTML note keeps it HTML.
 fn unique_sibling(parent: &Path, name: &str, exclude: &Path) -> Result<PathBuf, String> {
-    let stem = Path::new(name)
+    let path = Path::new(name);
+    let stem = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "untitled".to_string());
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| !e.is_empty())
+        .unwrap_or("md");
     for i in 1..10_000u32 {
-        let candidate = parent.join(format!("{stem} ({i}).md"));
+        let candidate = parent.join(format!("{stem} ({i}).{ext}"));
         if candidate == exclude || !candidate.exists() {
             return Ok(candidate);
         }
@@ -1052,10 +1470,8 @@ fn unique_sibling(parent: &Path, name: &str, exclude: &Path) -> Result<PathBuf, 
     Err("too many files with the same name".into())
 }
 
-#[tauri::command]
-fn move_note(dir: String, path: String, dest_folder: String) -> Result<String, String> {
-    let root = Path::new(&dir);
-    let full = resolve_in_root(root, &path)?;
+fn move_note_impl(root: &Path, path: &str, dest_folder: &str) -> Result<String, String> {
+    let full = resolve_in_root(root, path)?;
     let normalized = dest_folder.replace('\\', "/").trim_matches('/').to_string();
     let dest = if normalized.is_empty() {
         canonical_root(root)?
@@ -1074,6 +1490,17 @@ fn move_note(dir: String, path: String, dest_folder: String) -> Result<String, S
     }
     fs::rename(&full, &target).map_err(|e| e.to_string())?;
     rel_from_root(root, &target)
+}
+
+#[tauri::command]
+fn move_note(
+    window: tauri::WebviewWindow,
+    dir: String,
+    path: String,
+    dest_folder: String,
+) -> Result<String, String> {
+    require_main(&window)?;
+    move_note_impl(Path::new(&dir), &path, &dest_folder)
 }
 
 /// First match window for search snippets. `lower` is the lowercased string
@@ -1102,9 +1529,7 @@ fn snippet_window(lower: &str, original: &str, pos: usize, q_len: usize) -> Stri
     }
 }
 
-#[tauri::command]
-fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
-    let root = Path::new(&dir);
+fn search_notes_impl(root: &Path, query: &str) -> Result<Vec<SearchHit>, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -1118,7 +1543,13 @@ fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
         let Ok(text) = fs::read_to_string(&full) else {
             continue;
         };
-        let (_, body) = parse_frontmatter(&text);
+        // Search visible text for HTML notes, not markup: a hit on `class=`
+        // or a tag name is not something the user can see in the preview.
+        let body = if meta.kind == "html" {
+            html_to_text(&text)
+        } else {
+            parse_frontmatter(&text).1
+        };
         let body_lower = body.to_lowercase();
         let title_lower = meta.title.to_lowercase();
         let file_name = Path::new(&meta.path)
@@ -1148,18 +1579,30 @@ fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
     Ok(hits)
 }
 
+#[tauri::command]
+fn search_notes(
+    window: tauri::WebviewWindow,
+    dir: String,
+    query: String,
+) -> Result<Vec<SearchHit>, String> {
+    require_main(&window)?;
+    search_notes_impl(Path::new(&dir), &query)
+}
+
 /// Open the native save dialog and write the selected bytes. The frontend
 /// never supplies a destination path: the only file the backend writes is the
 /// one the user picked in the OS dialog, so a compromised webview cannot use
 /// export as an arbitrary-file-write primitive.
 #[tauri::command]
 fn save_export(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     default_name: String,
     filter_name: String,
     extensions: Vec<String>,
     data: Vec<u8>,
 ) -> Result<Option<String>, String> {
+    require_main(&window)?;
     use tauri_plugin_dialog::DialogExt;
     let default_name = sanitize_filename(default_name.trim());
     let mut builder = app.dialog().file().set_file_name(&default_name);
@@ -1326,7 +1769,8 @@ fn fetch_image_bytes_impl(url_str: &str) -> Result<FetchedImage, String> {
 /// taint), which is why external pictures came out blank. The backend
 /// fetch refuses loopback/private targets and validates every redirect.
 #[tauri::command]
-fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
+fn fetch_image_bytes(window: tauri::WebviewWindow, url: String) -> Result<FetchedImage, String> {
+    require_main(&window)?;
     fetch_image_bytes_impl(&url)
 }
 
@@ -1397,6 +1841,15 @@ fn mime_for_path(p: &Path) -> &'static str {
         Some("avif") => "image/avif",
         Some("svg") => "image/svg+xml",
         Some("ico") => "image/x-icon",
+        Some("html" | "htm") => "text/html; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("json") => "application/json; charset=utf-8",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("otf") => "font/otf",
+        Some("txt" | "md") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     }
 }
@@ -1507,7 +1960,12 @@ impl VaultState {
 /// Remember the notes root the frontend just opened, so the `rmd` image
 /// protocol (and `read_local_image`) know which vault to serve.
 #[tauri::command]
-fn set_notes_root(state: tauri::State<'_, VaultState>, dir: String) -> Result<(), String> {
+fn set_notes_root(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, VaultState>,
+    dir: String,
+) -> Result<(), String> {
+    require_main(&window)?;
     let root = Path::new(&dir);
     if !root.is_dir() {
         return Err(format!("directory not found: {dir}"));
@@ -1525,9 +1983,11 @@ fn set_notes_root(state: tauri::State<'_, VaultState>, dir: String) -> Result<()
 /// proven path used for remote images.
 #[tauri::command]
 fn read_local_image(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, VaultState>,
     path: String,
 ) -> Result<LocalImage, String> {
+    require_main(&window)?;
     let root = state
         .root
         .lock()
@@ -1552,7 +2012,6 @@ fn serve_rmd(
         Response::builder()
             .status(status)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .header("Access-Control-Allow-Origin", "*")
             .header("Cache-Control", "no-store")
             .body(body.as_bytes().to_vec())
             .expect("static response")
@@ -1560,8 +2019,49 @@ fn serve_rmd(
     if request.method() != tauri::http::Method::GET {
         return text(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
     }
+    // Sandboxed HTML previews are null-origin; the hidden HTML export window
+    // uses the rmdhtml origin. Do not let their scripts CORS-read the whole
+    // vault through the image protocol (plain <img>/<script>/<link> requests
+    // do not carry Origin and still work for local assets).
+    let origin = request
+        .headers()
+        .get("origin")
+        .and_then(|value| value.to_str().ok());
+    // Only the app webview may CORS-read vault files. No-Origin requests are
+    // ordinary subresources (`<img>`, `<link>`, classic `<script>`), which
+    // cannot read a response. Everything else — sandboxed previews, the
+    // hidden export window, remote iframes — is rejected.
+    let dest = request
+        .headers()
+        .get("sec-fetch-dest")
+        .and_then(|value| value.to_str().ok());
+    let preview_origin = origin.is_some_and(|o| {
+        o == "null"
+            || o.starts_with("http://rmdhtml.localhost")
+            || o.starts_with("rmdhtml://localhost")
+    });
+    let preview_font = preview_origin && dest == Some("font");
+    let allowed_origin = if preview_font {
+        origin
+    } else {
+        match origin {
+            None => None,
+            Some("tauri://localhost")
+            | Some("http://tauri.localhost")
+            | Some("https://tauri.localhost")
+            | Some("http://127.0.0.1:5173") => Some(origin.unwrap()),
+            Some(o) if o.starts_with("http://127.0.0.1:") || o.starts_with("http://localhost:") => {
+                Some(o)
+            }
+            Some(_) => return text(StatusCode::FORBIDDEN, "forbidden origin"),
+        }
+    };
     // `rmd://localhost/<percent-encoded absolute path>`
-    let raw = request.uri().path().trim_start_matches('/');
+    let raw = request
+        .uri()
+        .path()
+        .strip_prefix('/')
+        .unwrap_or_else(|| request.uri().path());
     let path = percent_encoding::percent_decode_str(raw)
         .decode_utf8_lossy()
         .to_string();
@@ -1578,14 +2078,613 @@ fn serve_rmd(
             Err(e) if e == NOT_FOUND => text(StatusCode::NOT_FOUND, &e),
             Err(e) if e == TOO_LARGE => text(StatusCode::PAYLOAD_TOO_LARGE, &e),
             Err(e) => text(StatusCode::INTERNAL_SERVER_ERROR, &e),
-            Ok(bytes) => Response::builder()
-                .header("Content-Type", mime_for_path(&file))
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Cache-Control", "no-store")
-                .body(bytes)
-                .expect("image response"),
+            Ok(bytes) => {
+                let mime = mime_for_path(&file);
+                let mut builder = Response::builder()
+                    .header("Content-Type", mime)
+                    .header("Cache-Control", "no-store")
+                    .header("X-Content-Type-Options", "nosniff");
+                // A vault HTML/SVG loaded as a document must not run active
+                // content with rmd-origin access to the rest of the vault.
+                if mime.starts_with("text/html") || mime == "image/svg+xml" {
+                    builder = builder.header(
+                        "Content-Security-Policy",
+                        "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:",
+                    );
+                }
+                if let Some(origin) = allowed_origin {
+                    builder = builder
+                        .header("Access-Control-Allow-Origin", origin)
+                        .header("Vary", "Origin");
+                }
+                builder.body(bytes).expect("image response")
+            }
         },
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HtmlRender {
+    png: Vec<u8>,
+    /// PNG pixel dimensions.
+    width: u32,
+    height: u32,
+    /// CSS viewport used for layout (the PNG may be 1.5–2× larger).
+    css_width: u32,
+    css_height: u32,
+}
+
+/// Remove `<base>` tags so our vault-relative base is the one that wins.
+fn strip_base_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = find_ascii_ci(rest, "<base", 0) {
+        let after = pos + 5;
+        let boundary = rest[after..]
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+        if !boundary {
+            // `<basefont>` / text such as `<base...` is not a base element.
+            out.push_str(&rest[..after]);
+            rest = &rest[after..];
+            continue;
+        }
+        out.push_str(&rest[..pos]);
+        let Some(end) = find_tag_end(rest, pos + 1) else {
+            return out + rest;
+        };
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+// ---------------- Built-in WebView HTML renderer (no external browser) ----------------
+//
+// If Edge/Chrome/Chromium is not installed, the app still has its own WebView
+// (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). A hidden
+// Tauri window loads the note from the `rmdhtml` custom scheme, runs its
+// scripts/styles, rasterizes itself with html2canvas and sends the PNG back.
+// The hidden window's label is checked by every app command, so note scripts
+// cannot use the app's vault commands. No note script runs in the main window.
+
+const HTML2CANVAS_JS: &str = include_str!("../node_modules/html2canvas/dist/html2canvas.min.js");
+
+const HTML_PREVIEW_CSP: &str = "default-src 'none'; script-src 'unsafe-inline' https: rmd: http://rmd.localhost; style-src 'unsafe-inline' https: rmd: http://rmd.localhost; img-src 'self' data: blob: http: https: rmd:; font-src * data: rmd: http://rmd.localhost; media-src 'self' data: blob: http: https: rmd:; connect-src 'self' ipc: http://ipc.localhost https: http:; object-src 'none'; base-uri *; form-action 'none'; frame-src http: https: data: rmd: http://rmd.localhost";
+
+// Preview iframes are sandboxed and only need rendering/height reporting; no
+// IPC endpoints are allowed in their connect-src.
+const HTML_IFRAME_CSP: &str = "default-src 'none'; script-src 'unsafe-inline' https: rmd: http://rmd.localhost; style-src 'unsafe-inline' https: rmd: http://rmd.localhost; img-src 'self' data: blob: http: https: rmd:; font-src * data: rmd: http://rmd.localhost; media-src 'self' data: blob: http: https: rmd:; connect-src 'self' https: http:; object-src 'none'; base-uri *; form-action 'none'; frame-src http: https: data: rmd: http://rmd.localhost";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HtmlCapture {
+    png: Vec<u8>,
+    width: u32,
+    height: u32,
+    css_width: u32,
+    css_height: u32,
+}
+
+struct HtmlPreviewState {
+    docs: Mutex<Vec<(String, String)>>,
+    pending: Mutex<HashMap<String, std::sync::mpsc::Sender<Result<HtmlCapture, String>>>>,
+}
+
+impl HtmlPreviewState {
+    fn new() -> Self {
+        Self {
+            docs: Mutex::new(Vec::new()),
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, token: &str) -> Option<String> {
+        self.docs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(t, _)| t == token)
+            .map(|(_, html)| html.clone())
+    }
+
+    fn prepare(&self, token: &str) -> std::sync::mpsc::Receiver<Result<HtmlCapture, String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.pending.lock().unwrap().insert(token.to_string(), tx);
+        rx
+    }
+
+    fn finish(&self, token: &str, result: Result<HtmlCapture, String>) {
+        if let Some(tx) = self.pending.lock().unwrap().remove(token) {
+            let _ = tx.send(result);
+        }
+    }
+
+    fn cancel(&self, token: &str) {
+        self.pending.lock().unwrap().remove(token);
+    }
+
+    fn remove_doc(&self, token: &str) {
+        self.docs.lock().unwrap().retain(|(t, _)| t != token);
+    }
+}
+
+fn random_token(prefix: &str) -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_err() {
+        // Extremely unlikely; fall back to a time/counter seed rather than
+        // failing preview/export.
+        let seed = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+            ^ u128::from(TEMP_COUNTER.fetch_add(1, Ordering::Relaxed));
+        bytes.copy_from_slice(&seed.to_le_bytes());
+    }
+    format!(
+        "{prefix}{}",
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    )
+}
+
+fn html_preview_window_url(token: &str) -> String {
+    if cfg!(windows) {
+        format!("http://rmdhtml.localhost/{token}")
+    } else {
+        format!("rmdhtml://localhost/{token}")
+    }
+}
+
+fn serve_html_preview(
+    state: &HtmlPreviewState,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    let not_found = |msg: &str| -> Response<Vec<u8>> {
+        Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(msg.as_bytes().to_vec())
+            .expect("static response")
+    };
+    if request.method() != tauri::http::Method::GET {
+        return Response::builder()
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(b"method not allowed".to_vec())
+            .expect("static response");
+    }
+    let token = request.uri().path().trim_start_matches('/');
+    let Some(html) = state.get(token) else {
+        return not_found("preview not found");
+    };
+    let csp = if token.starts_with("p-") {
+        HTML_IFRAME_CSP
+    } else {
+        HTML_PREVIEW_CSP
+    };
+    Response::builder()
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Content-Security-Policy", csp)
+        .header("Cache-Control", "no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .body(html.into_bytes())
+        .expect("html preview response")
+}
+
+#[tauri::command]
+fn set_html_preview(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, HtmlPreviewState>,
+    html: String,
+) -> Result<String, String> {
+    require_main(&window)?;
+    if html.len() > 16 * 1024 * 1024 {
+        return Err("HTML preview is too large (> 16 MB)".into());
+    }
+    let token = random_token("p-");
+    let mut docs = state.docs.lock().unwrap();
+    docs.push((token.clone(), html));
+    if docs.len() > 8 {
+        let drop = docs.len() - 8;
+        docs.drain(0..drop);
+    }
+    Ok(token)
+}
+
+fn insert_after_head(html: &str, injection: &str) -> String {
+    let mut from = 0usize;
+    while let Some(pos) = find_ascii_ci(html, "<head", from) {
+        let after = pos + 5;
+        let boundary = html[after..]
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_ascii_whitespace() || c == '>');
+        if !boundary {
+            // `<header>` and similar tags are not `<head>`.
+            from = after;
+            continue;
+        }
+        if let Some(end) = find_tag_end(html, pos + 1) {
+            let mut out = String::with_capacity(html.len() + injection.len() + 1);
+            out.push_str(&html[..=end]);
+            out.push('\n');
+            out.push_str(injection);
+            out.push_str(&html[end + 1..]);
+            return out;
+        }
+        break;
+    }
+    format!("{injection}\n{html}")
+}
+
+fn html_preview_base_href(parent: &Path) -> String {
+    let dir = parent.to_string_lossy().replace('\\', "/");
+    let dir = dir.trim_end_matches('/');
+    // Encode each segment separately so the base URL keeps real `/`
+    // separators; encoding the whole path produced one segment and made
+    // relative assets resolve against the origin root.
+    let encoded = dir
+        .split('/')
+        .map(|segment| {
+            percent_encoding::utf8_percent_encode(segment, percent_encoding::NON_ALPHANUMERIC)
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    if cfg!(windows) {
+        format!("http://rmd.localhost/{encoded}/")
+    } else {
+        format!("rmd://localhost/{encoded}/")
+    }
+}
+
+fn build_webview_document(html: &str, parent: &Path, token: &str, mode: &str) -> String {
+    let base = html_preview_base_href(parent);
+    let escaped_base = base.replace('&', "&amp;").replace('"', "&quot;");
+    let capture = format!(
+        r#"(function () {{
+  function invokeFinish(payload) {{
+    try {{
+      window.__TAURI_INTERNALS__.invoke('html_preview_finish', {{ payload: payload }})
+        .catch(function (e) {{ document.title = 'RMD_IPC_ERR'; }});
+    }} catch (e) {{
+      document.title = 'RMD_IPC_MISSING';
+    }}
+  }}
+  function pageSize() {{
+    var body = document.body;
+    var root = document.documentElement;
+    var w = Math.max(body.scrollWidth, body.offsetWidth, root.scrollWidth, root.offsetWidth, root.clientWidth, 1);
+    var h = Math.max(body.scrollHeight, body.offsetHeight, root.scrollHeight, root.offsetHeight, 1);
+    var bg = getComputedStyle(body).backgroundColor || '#ffffff';
+    if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = '#ffffff';
+    return {{ w: w, h: h, bg: bg }};
+  }}
+  function single(size) {{
+    var maxScale = '{mode}' === 'pdf' ? (size.h <= 5000 ? 3 : 2) : 3;
+    var scale = Math.max(1, Math.min(maxScale, 30000 / size.h));
+    html2canvas(document.body, {{
+      scale: scale, useCORS: true, allowTaint: false, logging: false,
+      backgroundColor: size.bg, width: size.w, height: size.h,
+      windowWidth: size.w, windowHeight: size.h, scrollX: 0, scrollY: 0
+    }}).then(function (canvas) {{
+      invokeFinish({{
+        token: '{token}',
+        dataUrl: canvas.toDataURL('image/png'),
+        cssWidth: size.w, cssHeight: size.h,
+        width: canvas.width, height: canvas.height
+      }});
+    }}).catch(function (e) {{
+      invokeFinish({{ token: '{token}', error: String((e && e.stack) || e) }});
+    }});
+  }}
+  function segments(size) {{
+    // One export image can be taller than the canvas limit: capture vertical
+    // slices and let Rust stitch them into one PNG. Scale targets ~48k device
+    // px of height, matching the old external-browser quality.
+    var maxScale = '{mode}' === 'pdf' ? (size.h <= 5000 ? 3 : 2) : 3;
+    var scale = Math.max(1, Math.min(maxScale, 48000 / size.h));
+    var segCss = Math.max(2000, Math.floor(16000 / scale));
+    var parts = [];
+    function next(offset) {{
+      if (offset >= size.h) {{
+        invokeFinish({{
+          token: '{token}', segments: parts,
+          cssWidth: size.w, cssHeight: size.h,
+          width: Math.round(size.w * scale), height: 0
+        }});
+        return;
+      }}
+      var segH = Math.min(segCss, size.h - offset);
+      html2canvas(document.body, {{
+        scale: scale, useCORS: true, allowTaint: false, logging: false,
+        backgroundColor: size.bg, x: 0, y: offset, width: size.w, height: segH,
+        windowWidth: size.w, windowHeight: size.h, scrollX: 0, scrollY: 0
+      }}).then(function (canvas) {{
+        parts.push(canvas.toDataURL('image/png'));
+        next(offset + segH);
+      }}).catch(function (e) {{
+        invokeFinish({{ token: '{token}', error: String((e && e.stack) || e) }});
+      }});
+    }}
+    next(0);
+  }}
+  function run() {{
+    var size = pageSize();
+    if ('{mode}' === 'export' && size.h > 12000) segments(size);
+    else single(size);
+  }}
+  if (document.readyState === 'complete') setTimeout(run, 1500);
+  else window.addEventListener('load', function () {{ setTimeout(run, 1500); }});
+}})();"#
+    );
+    let injection = format!(
+        "<base href=\"{escaped_base}\">\n<script>{}</script>\n<script>{}</script>",
+        HTML2CANVAS_JS.replace("</script", r"<\/script"),
+        capture
+    );
+    insert_after_head(&strip_base_tags(html), &injection)
+}
+
+/// Stitch PNG segments (same width, stacked vertically) into one RGBA8 PNG.
+fn stitch_png_segments(segments: &[Vec<u8>]) -> Result<(Vec<u8>, u32, u32), String> {
+    use std::io::Cursor;
+    if segments.is_empty() {
+        return Err("HTML renderer returned no image segments".into());
+    }
+    let mut infos = Vec::with_capacity(segments.len());
+    let mut total_height = 0u32;
+    let mut width = 0u32;
+    for data in segments {
+        let decoder = png::Decoder::new(Cursor::new(data));
+        let reader = decoder.read_info().map_err(|e| e.to_string())?;
+        let info = reader.info();
+        if info.width == 0 || info.height == 0 {
+            return Err("HTML renderer returned an empty segment".into());
+        }
+        if width == 0 {
+            width = info.width;
+        } else if width != info.width {
+            return Err("HTML renderer segments have different widths".into());
+        }
+        total_height = total_height.saturating_add(info.height);
+        infos.push(info.clone());
+    }
+    let color = infos[0].color_type;
+    let depth = infos[0].bit_depth;
+    for info in &infos {
+        if info.color_type != color || info.bit_depth != depth {
+            return Err("HTML renderer segments use different PNG formats".into());
+        }
+    }
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut out, width, total_height);
+        encoder.set_color(color);
+        encoder.set_depth(depth);
+        let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+        let mut stream = writer.stream_writer().map_err(|e| e.to_string())?;
+        for data in segments {
+            let decoder = png::Decoder::new(Cursor::new(data));
+            let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
+            let size = reader
+                .output_buffer_size()
+                .ok_or_else(|| "invalid PNG segment".to_string())?;
+            let mut buf = vec![0; size];
+            let frame = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
+            stream
+                .write_all(&buf[..frame.buffer_size()])
+                .map_err(|e| e.to_string())?;
+        }
+        stream.finish().map_err(|e| e.to_string())?;
+        writer.finish().map_err(|e| e.to_string())?;
+    }
+    Ok((out, width, total_height))
+}
+
+fn decode_png_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let (header, payload) = data_url
+        .split_once(',')
+        .ok_or_else(|| "HTML renderer returned an invalid data URL".to_string())?;
+    if !header.starts_with("data:image/png;base64") {
+        return Err("HTML renderer returned a non-PNG image".into());
+    }
+    let mut out = Vec::with_capacity(payload.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for b in payload.bytes() {
+        let value = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            b'\r' | b'\n' | b' ' | b'\t' => continue,
+            _ => return Err("invalid base64 in HTML renderer result".into()),
+        };
+        buf = (buf << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    if !out.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("HTML renderer did not produce a PNG".into());
+    }
+    if out.len() > 120 * 1024 * 1024 {
+        return Err("rendered HTML image is too large (> 120 MB)".into());
+    }
+    Ok(out)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HtmlPreviewPayload {
+    token: String,
+    #[serde(default)]
+    data_url: Option<String>,
+    #[serde(default)]
+    segments: Option<Vec<String>>,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    css_width: Option<u32>,
+    #[serde(default)]
+    css_height: Option<u32>,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+}
+
+#[tauri::command]
+fn html_preview_finish(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, HtmlPreviewState>,
+    payload: HtmlPreviewPayload,
+) -> Result<(), String> {
+    if !window.label().starts_with("html-render-") {
+        return Err("HTML renderer result is not allowed from this window".into());
+    }
+    let HtmlPreviewPayload {
+        token,
+        data_url,
+        segments,
+        error,
+        css_width,
+        css_height,
+        width,
+        height,
+    } = payload;
+    if window.label() != format!("html-render-{token}") {
+        return Err("HTML renderer result token does not belong to this window".into());
+    }
+    let css_width = css_width.unwrap_or(0);
+    let css_height = css_height.unwrap_or(0);
+    // Always resolve the waiting renderer, even when decoding/stitching fails;
+    // otherwise the command error would leave it blocked until the 60 s
+    // timeout.
+    let result = (|| -> Result<HtmlCapture, String> {
+        if let Some(error) = error {
+            return Err(error);
+        }
+        if let Some(segments) = segments.filter(|parts| !parts.is_empty()) {
+            if segments.len() > 64 {
+                return Err("HTML renderer returned too many segments".into());
+            }
+            let mut decoded = Vec::with_capacity(segments.len());
+            for segment in segments {
+                decoded.push(decode_png_data_url(&segment)?);
+            }
+            return stitch_png_segments(&decoded).map(|(png, width, height)| HtmlCapture {
+                png,
+                width,
+                height,
+                css_width,
+                css_height,
+            });
+        }
+        let data_url = data_url.ok_or_else(|| "missing image data".to_string())?;
+        decode_png_data_url(&data_url).map(|png| HtmlCapture {
+            png,
+            width: width.unwrap_or(0),
+            height: height.unwrap_or(0),
+            css_width,
+            css_height,
+        })
+    })();
+    state.finish(&token, result);
+    state.remove_doc(&token);
+    Ok(())
+}
+
+async fn render_html_note_webview(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HtmlPreviewState>,
+    dir: String,
+    path: String,
+    html: String,
+    mode: String,
+) -> Result<HtmlRender, String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if mode != "preview" && mode != "export" && mode != "pdf" {
+        return Err(format!("unsupported HTML render mode: {mode}"));
+    }
+    if html.len() > 16 * 1024 * 1024 {
+        return Err("HTML note is too large (> 16 MB)".into());
+    }
+    let full = resolve_in_root(Path::new(&dir), &path)?;
+    let parent = full
+        .parent()
+        .ok_or_else(|| "note has no parent directory".to_string())?;
+    let token = random_token("r-");
+    let document = build_webview_document(&html, parent, &token, &mode);
+    {
+        let mut docs = state.docs.lock().unwrap();
+        docs.push((token.clone(), document));
+        if docs.len() > 8 {
+            let drop = docs.len() - 8;
+            docs.drain(0..drop);
+        }
+    }
+    let rx = state.prepare(&token);
+    let label = format!("html-render-{token}");
+    let url = html_preview_window_url(&token)
+        .parse::<tauri::Url>()
+        .map_err(|e| e.to_string())?;
+    let window = match WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
+        .visible(false)
+        .inner_size(1200.0, 1000.0)
+        .title("")
+        .build()
+    {
+        Ok(window) => window,
+        Err(err) => {
+            state.cancel(&token);
+            return Err(format!("cannot create HTML renderer window: {err}"));
+        }
+    };
+    let waited =
+        tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(60)))
+            .await;
+    let _ = window.close();
+    state.cancel(&token);
+    state.remove_doc(&token);
+    let waited = waited.map_err(|e| format!("HTML renderer task failed: {e}"))?;
+    let capture = match waited {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => return Err("HTML renderer timed out".into()),
+    };
+    Ok(HtmlRender {
+        png: capture.png,
+        width: capture.width,
+        height: capture.height,
+        css_width: capture.css_width,
+        css_height: capture.css_height,
+    })
+}
+
+#[tauri::command]
+async fn render_html_note(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HtmlPreviewState>,
+    dir: String,
+    path: String,
+    html: String,
+    mode: String,
+) -> Result<HtmlRender, String> {
+    require_main(&window)?;
+    // HTML notes always use Tauri's own webview in a hidden window. No
+    // external browser (Edge/Chrome/Chromium) is required or launched.
+    render_html_note_webview(app, state, dir, path, html, mode).await
 }
 
 // ---------------- Dev-only self-test helpers ----------------
@@ -1611,19 +2710,22 @@ fn path_for_ui(p: &Path) -> String {
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-fn selftest_config() -> Result<SelftestConfig, String> {
+fn selftest_config(window: tauri::WebviewWindow) -> Result<SelftestConfig, String> {
+    require_main(&window)?;
     Ok(selftest_config_impl())
 }
 
 #[cfg(not(debug_assertions))]
 #[tauri::command]
-fn selftest_config() -> Result<SelftestConfig, String> {
+fn selftest_config(window: tauri::WebviewWindow) -> Result<SelftestConfig, String> {
+    require_main(&window)?;
     Err("selftest is only available in dev builds".into())
 }
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-fn selftest_write(name: String, data: Vec<u8>) -> Result<(), String> {
+fn selftest_write(window: tauri::WebviewWindow, name: String, data: Vec<u8>) -> Result<(), String> {
+    require_main(&window)?;
     let root = std::env::var_os("RUSTMD_SELFTEST_OUT")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("rustmd-selftest"));
@@ -1634,13 +2736,23 @@ fn selftest_write(name: String, data: Vec<u8>) -> Result<(), String> {
 
 #[cfg(not(debug_assertions))]
 #[tauri::command]
-fn selftest_write(_name: String, _data: Vec<u8>) -> Result<(), String> {
+fn selftest_write(
+    window: tauri::WebviewWindow,
+    _name: String,
+    _data: Vec<u8>,
+) -> Result<(), String> {
+    require_main(&window)?;
     Err("selftest is only available in dev builds".into())
 }
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-fn selftest_finish(_app: tauri::AppHandle, ok: bool) -> Result<(), String> {
+fn selftest_finish(
+    window: tauri::WebviewWindow,
+    _app: tauri::AppHandle,
+    ok: bool,
+) -> Result<(), String> {
+    require_main(&window)?;
     // Let the command response reach the webview, then terminate hard: a
     // lingering debug process would keep CI jobs alive after the report is
     // written. This command only exists in debug builds.
@@ -1654,7 +2766,12 @@ fn selftest_finish(_app: tauri::AppHandle, ok: bool) -> Result<(), String> {
 
 #[cfg(not(debug_assertions))]
 #[tauri::command]
-fn selftest_finish(_app: tauri::AppHandle, _ok: bool) -> Result<(), String> {
+fn selftest_finish(
+    window: tauri::WebviewWindow,
+    _app: tauri::AppHandle,
+    _ok: bool,
+) -> Result<(), String> {
+    require_main(&window)?;
     Err("selftest is only available in dev builds".into())
 }
 
@@ -1662,6 +2779,7 @@ fn main() {
     use tauri::Manager;
     tauri::Builder::default()
         .manage(VaultState::new())
+        .manage(HtmlPreviewState::new())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         // Serve vault images to the webview (local image references). The
@@ -1673,6 +2791,12 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 responder.respond(serve_rmd(root, &cache, &request));
             });
+        })
+        // Built-in renderer: serve the generated document to a hidden
+        // Tauri webview when no external Chromium is installed.
+        .register_uri_scheme_protocol("rmdhtml", |ctx, request| {
+            let state = ctx.app_handle().state::<HtmlPreviewState>();
+            serve_html_preview(&state, &request)
         })
         .invoke_handler(tauri::generate_handler![
             list_notes,
@@ -1688,6 +2812,9 @@ fn main() {
             fetch_image_bytes,
             set_notes_root,
             read_local_image,
+            render_html_note,
+            html_preview_finish,
+            set_html_preview,
             selftest_config,
             selftest_write,
             selftest_finish
@@ -1715,6 +2842,192 @@ mod tests {
 
     fn cleanup(dir: &Path) {
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn html_to_text_skips_markup_scripts_and_styles() {
+        let html = r#"<!doctype html>
+<html><head><title>Hidden title</title><style>.x{color:red}</style></head>
+<body><!-- comment --><h1>Visible &amp; title</h1>
+<script>alert("nope")</script><p>First&nbsp;para</p><p>Second<br>line</p></body></html>"#;
+        let text = html_to_text(html);
+        assert!(text.contains("Visible & title"));
+        assert!(text.contains("First para"));
+        assert!(text.contains("Second line"));
+        assert!(!text.contains("Hidden title"));
+        assert!(!text.contains("alert"));
+        assert!(!text.contains("color:red"));
+        assert!(!text.contains("<!--"));
+    }
+
+    #[test]
+    fn html_to_text_keeps_literal_less_than() {
+        let text = html_to_text("<p>1 < 2</p><p>a <b>b</b></p>");
+        assert!(text.contains("1 < 2"), "got: {text}");
+        assert!(text.contains("a b"), "got: {text}");
+    }
+
+    #[test]
+    fn html_meta_prefers_title_then_h1_then_stem() {
+        let (title, snippet) = html_meta(
+            "<html><head><title>Page &amp; Title</title></head><body><h1>Heading</h1><p>Body text here.</p></body></html>",
+            "file",
+        );
+        assert_eq!(title, "Page & Title");
+        assert!(snippet.contains("Heading"));
+        assert!(snippet.contains("Body text here."));
+        let (title, _) = html_meta("<h1>Only heading</h1>", "file");
+        assert_eq!(title, "Only heading");
+        let (title, _) = html_meta("<p>No heading</p>", "file");
+        assert_eq!(title, "file");
+    }
+
+    #[test]
+    fn collect_notes_includes_html_and_htm() {
+        let dir = test_dir("html_scan");
+        fs::create_dir_all(dir.join("pages")).unwrap();
+        fs::write(dir.join("page.html"), "<title>Page</title><p>Hello</p>").unwrap();
+        fs::write(dir.join("pages/legacy.htm"), "<h1>Legacy</h1>").unwrap();
+        fs::write(dir.join("note.md"), "# Note\n").unwrap();
+        fs::write(dir.join("skip.txt"), "not a note").unwrap();
+        let notes = collect_notes(&dir).unwrap();
+        assert_eq!(notes.len(), 3);
+        let html = notes.iter().find(|n| n.path == "page.html").unwrap();
+        assert_eq!(html.kind, "html");
+        assert_eq!(html.title, "Page");
+        assert!(html.tags.is_empty());
+        let htm = notes.iter().find(|n| n.path == "pages/legacy.htm").unwrap();
+        assert_eq!(htm.kind, "html");
+        assert_eq!(htm.title, "Legacy");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn read_note_html_returns_raw_body_and_kind() {
+        let dir = test_dir("html_read");
+        let original = "\u{feff}<!doctype html>\r\n<title>T</title>\r\n<p>body</p>\r\n";
+        fs::write(dir.join("page.html"), original).unwrap();
+        let content = read_note_impl(&dir, "page.html").unwrap();
+        assert_eq!(content.kind, "html");
+        assert!(content.tags.is_empty());
+        assert_eq!(
+            content.body,
+            "<!doctype html>\n<title>T</title>\n<p>body</p>\n"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn save_note_html_keeps_content_and_restores_bom_crlf() {
+        let dir = test_dir("html_save");
+        let original = "\u{feff}<!doctype html>\r\n<title>T</title>\r\n<p>old</p>\r\n";
+        fs::write(dir.join("page.html"), original).unwrap();
+        let meta = save_note_impl(
+            &dir,
+            "page.html",
+            &["ignored".into()],
+            "<!doctype html>\n<title>T</title>\n<p>new</p>\n",
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(meta.kind, "html");
+        assert!(meta.tags.is_empty());
+        assert_eq!(
+            fs::read_to_string(dir.join("page.html")).unwrap(),
+            "\u{feff}<!doctype html>\r\n<title>T</title>\r\n<p>new</p>\r\n"
+        );
+        assert!(
+            !fs::read_to_string(dir.join("page.html"))
+                .unwrap()
+                .contains("---")
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn save_note_html_detects_external_change() {
+        let dir = test_dir("html_conflict");
+        let first =
+            save_note_impl(&dir, "page.html", &[], "<p>one</p>", None, None, false).unwrap();
+        fs::write(dir.join("page.html"), "<p>external</p>").unwrap();
+        let conflict = save_note_impl(
+            &dir,
+            "page.html",
+            &[],
+            "<p>two</p>",
+            Some(&first.hash),
+            Some(first.mtime),
+            false,
+        );
+        assert!(conflict.is_err());
+        let forced = save_note_impl(
+            &dir,
+            "page.html",
+            &[],
+            "<p>two</p>",
+            Some(&first.hash),
+            Some(first.mtime),
+            true,
+        )
+        .unwrap();
+        assert_eq!(forced.kind, "html");
+        assert_eq!(
+            fs::read_to_string(dir.join("page.html")).unwrap(),
+            "<p>two</p>"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn create_rename_and_move_keep_html_extension() {
+        let dir = test_dir("html_rename_move");
+        let created = create_note_impl(&dir, "", Some("html")).unwrap();
+        assert_eq!(created, "untitled.html");
+        let renamed = rename_note_impl(&dir, "untitled.html", "page.html").unwrap();
+        assert_eq!(renamed, "page.html");
+        fs::create_dir_all(dir.join("dest")).unwrap();
+        fs::write(dir.join("dest/page.html"), "<p>other</p>").unwrap();
+        let moved = move_note_impl(&dir, "page.html", "dest").unwrap();
+        assert_eq!(moved, "dest/page (1).html");
+        // `.htm` is a distinct HTML extension; renaming must keep it instead
+        // of silently converting the file to `.html`.
+        fs::write(dir.join("legacy.htm"), "<p>legacy</p>").unwrap();
+        let htm = rename_note_impl(&dir, "legacy.htm", "renamed").unwrap();
+        assert_eq!(htm, "renamed.htm");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn search_html_matches_visible_text_not_markup() {
+        let dir = test_dir("html_search");
+        fs::write(
+            dir.join("page.html"),
+            "<html><head><title>Page</title><style>.secret{}</style></head><body><p>Find me here</p></body></html>",
+        )
+        .unwrap();
+        let hits = search_notes_impl(&dir, "find me").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].snippet.contains("Find me here"));
+        let none = search_notes_impl(&dir, "secret").unwrap();
+        assert!(none.is_empty());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn non_utf8_html_is_visible_but_open_reports_encoding() {
+        let dir = test_dir("non_utf8_html");
+        fs::write(dir.join("legacy.html"), [0xff, 0xfe, b'<', b'p', b'>']).unwrap();
+        let notes = collect_notes(&dir).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].kind, "html");
+        let err = match read_note_impl(&dir, "legacy.html") {
+            Ok(_) => panic!("expected a UTF-8 error"),
+            Err(err) => err,
+        };
+        assert!(err.contains("UTF-8"), "unexpected error: {err}");
+        cleanup(&dir);
     }
 
     #[test]
@@ -1905,6 +3218,8 @@ Real text here
         assert_eq!(sanitize_filename("..."), "untitled");
         assert_eq!(sanitize_filename(""), "untitled");
         assert_eq!(sanitize_filename("my note"), "my note");
+        assert_eq!(sanitize_filename("CON"), "_CON");
+        assert_eq!(sanitize_filename("trail... "), "trail");
     }
 
     #[test]
@@ -2238,14 +3553,14 @@ plain body
 ",
         )
         .unwrap();
-        let by_title = search_notes(dir.to_string_lossy().to_string(), "alpha".into()).unwrap();
+        let by_title = search_notes_impl(&dir, "alpha").unwrap();
         assert_eq!(by_title.len(), 1);
         assert!(
             by_title[0].snippet.contains("标题"),
             "unexpected snippet: {}",
             by_title[0].snippet
         );
-        let by_tag = search_notes(dir.to_string_lossy().to_string(), "secret".into()).unwrap();
+        let by_tag = search_notes_impl(&dir, "secret").unwrap();
         assert_eq!(by_tag.len(), 1);
         assert!(by_tag[0].snippet.contains("标签"));
         // A heading hides the filename fallback title; the filename itself
@@ -2258,10 +3573,10 @@ plain
 ",
         )
         .unwrap();
-        let by_name = search_notes(dir.to_string_lossy().to_string(), "beta".into()).unwrap();
+        let by_name = search_notes_impl(&dir, "beta").unwrap();
         assert_eq!(by_name.len(), 1);
         assert!(by_name[0].snippet.contains("文件名"));
-        let none = search_notes(dir.to_string_lossy().to_string(), "missing".into()).unwrap();
+        let none = search_notes_impl(&dir, "missing").unwrap();
         assert!(none.is_empty());
         cleanup(&dir);
     }
@@ -2285,21 +3600,172 @@ plain
         fs::create_dir_all(dir.join("dest")).unwrap();
         fs::write(dir.join("note.md"), "# One\n").unwrap();
         fs::write(dir.join("dest/note.md"), "# Two\n").unwrap();
-        let moved = move_note(
-            dir.to_string_lossy().to_string(),
-            "note.md".into(),
-            "dest".into(),
-        )
-        .unwrap();
+        let moved = move_note_impl(&dir, "note.md", "dest").unwrap();
         assert_eq!(moved, "dest/note (1).md");
-        let renamed = rename_note(
-            dir.to_string_lossy().to_string(),
-            "dest/note.md".into(),
-            "note (1)".into(),
-        )
-        .unwrap();
+        let renamed = rename_note_impl(&dir, "dest/note.md", "note (1)").unwrap();
         assert_eq!(renamed, "dest/note (1) (1).md");
         cleanup(&dir);
+    }
+
+    fn tiny_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut out, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(rgba).unwrap();
+            writer.finish().unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn html_preview_base_href_keeps_separators() {
+        let base = html_preview_base_href(Path::new("C:/Notes/A B/#page"));
+        assert!(base.ends_with('/'));
+        assert!(!base.contains("%2F"));
+        assert!(base.contains("A%20B"));
+        assert!(base.contains("notes") || base.contains("Notes"));
+        #[cfg(windows)]
+        assert!(base.starts_with("http://rmd.localhost/"));
+        #[cfg(not(windows))]
+        assert!(base.starts_with("rmd://localhost/"));
+        let unix = html_preview_base_href(Path::new("/home/u/vault"));
+        // One extra slash is intentional: serve_rmd removes exactly one
+        // leading slash, leaving the absolute Unix path intact.
+        assert!(unix.contains("//home/u/vault/"), "got {unix}");
+    }
+
+    #[test]
+    fn html_injection_helpers_preserve_surrounding_document() {
+        let cleaned = strip_base_tags(
+            "<html><head><base href=\"x\"></head><body><basefont>text</body></html>",
+        );
+        assert!(!cleaned.contains("<base href"));
+        assert!(cleaned.contains("<basefont>text"));
+        let header = insert_after_head("<html><header>x</header></html>", "<script>1</script>");
+        assert!(header.starts_with("<script>1</script>"));
+        let injected = insert_after_head(
+            "<html><head><title>x</title></head><body>x</body></html>",
+            "<script>1</script>",
+        );
+        assert!(injected.contains(
+            "<head>
+<script>1</script>"
+        ));
+    }
+
+    #[test]
+    fn stitch_png_segments_stacks_and_validates_formats() {
+        let a = tiny_png(1, 1, &[255, 0, 0, 255]);
+        let b = tiny_png(1, 1, &[0, 255, 0, 255]);
+        let (png_bytes, width, height) = stitch_png_segments(&[a.clone(), b]).unwrap();
+        assert_eq!((width, height), (1, 2));
+        let decoded = png::Decoder::new(std::io::Cursor::new(png_bytes))
+            .read_info()
+            .unwrap()
+            .info()
+            .clone();
+        assert_eq!((decoded.width, decoded.height), (1, 2));
+
+        let wide = tiny_png(2, 1, &[0, 0, 255, 255, 0, 255, 0, 255]);
+        assert!(stitch_png_segments(&[a.clone(), wide]).is_err());
+        assert!(stitch_png_segments(&[]).is_err());
+    }
+
+    #[test]
+    fn serve_rmd_rejects_preview_origins() {
+        let dir = test_dir("rmd_origin");
+        fs::write(dir.join("pixel.png"), tiny_png(1, 1, &[0, 0, 0, 255])).unwrap();
+        let cache = VaultFileCache::new();
+        let abs = format!(
+            "{}/pixel.png",
+            dir.to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/")
+        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(&abs, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
+        let uri = format!("rmd://localhost/{encoded}");
+        let request = |origin: Option<&str>| {
+            let mut builder = tauri::http::Request::builder().method("GET").uri(&uri);
+            if let Some(origin) = origin {
+                builder = builder.header("origin", origin);
+            }
+            builder.body(Vec::new()).unwrap()
+        };
+        assert_eq!(
+            serve_rmd(Some(dir.clone()), &cache, &request(None)).status(),
+            200
+        );
+        assert_eq!(
+            serve_rmd(Some(dir.clone()), &cache, &request(Some("null"))).status(),
+            403
+        );
+        let font_request = tauri::http::Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("origin", "null")
+            .header("sec-fetch-dest", "font")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(Some(dir.clone()), &cache, &font_request).status(),
+            200
+        );
+        assert_eq!(
+            serve_rmd(
+                Some(dir.clone()),
+                &cache,
+                &request(Some("http://rmdhtml.localhost/p-x"))
+            )
+            .status(),
+            403
+        );
+        assert_eq!(
+            serve_rmd(
+                Some(dir.clone()),
+                &cache,
+                &request(Some("http://tauri.localhost")),
+            )
+            .status(),
+            200
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn serve_html_preview_checks_token_and_csp() {
+        let state = HtmlPreviewState::new();
+        state
+            .docs
+            .lock()
+            .unwrap()
+            .push(("p-test".into(), "<html>preview</html>".into()));
+        let get = |token: &str| {
+            tauri::http::Request::builder()
+                .method("GET")
+                .uri(format!("rmdhtml://localhost/{token}"))
+                .body(Vec::new())
+                .unwrap()
+        };
+        let response = serve_html_preview(&state, &get("p-test"));
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert!(
+            response
+                .headers()
+                .get("content-security-policy")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("object-src 'none'")
+        );
+        assert_eq!(serve_html_preview(&state, &get("missing")).status(), 404);
     }
 
     #[cfg(unix)]

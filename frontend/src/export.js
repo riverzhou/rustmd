@@ -13,18 +13,19 @@ import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 const CONTENT_WIDTH = 860; // matches .markdown-body max-width
 const PAD_TOP = 48; // .export-stage top padding (48px 44px 64px)
 const SCALE = 3; // 3 * 96 px/in ≈ 288 DPI
-const MAX_CANVAS_HEIGHT = 14000; // device-px cap: keeps canvas memory bounded
+const MAX_CANVAS_HEIGHT = 30000; // device-px cap; below WebView canvas limits
+const MIN_SCALE = 0.25; // very long notes stay usable instead of failing
 const PDF_PAGE_HEIGHT = 1340; // css px per PDF page (A4-ish aspect at 948 px wide)
 
 /// Export raster scale, reduced for very long notes to keep the canvas under
 /// MAX_CANVAS_HEIGHT device pixels.
 function exportScale(cssHeight) {
   return cssHeight * SCALE > MAX_CANVAS_HEIGHT
-    ? Math.max(1, MAX_CANVAS_HEIGHT / cssHeight)
+    ? Math.max(MIN_SCALE, MAX_CANVAS_HEIGHT / cssHeight)
     : SCALE;
 }
 
-function buildStage(markdownSource) {
+function buildStage(source, kind) {
   const stage = document.createElement('div');
   stage.className = 'export-stage';
   const article = document.createElement('article');
@@ -33,7 +34,7 @@ function buildStage(markdownSource) {
   document.body.appendChild(stage);
   // renderPreview is async (mermaid diagrams render in the background);
   // awaiting it before rasterizing guarantees the SVGs are in the DOM.
-  const ready = renderPreview(markdownSource, article);
+  const ready = renderPreview(source, article, kind);
   return { stage, ready };
 }
 
@@ -191,9 +192,9 @@ function waitImageLoad(img, timeoutMs = 20000) {
 
 // ---------------- Rasterization ----------------
 
-async function renderToCanvas(markdownSource) {
+async function renderToCanvas(source, kind = 'markdown') {
   const { default: html2canvas } = await import('html2canvas');
-  const { stage, ready } = buildStage(markdownSource);
+  const { stage, ready } = buildStage(source, kind);
   try {
     await ready;
     normalizeTaskCheckboxes(stage);
@@ -269,8 +270,8 @@ function computePageCuts(stage) {
 // ---------------- Exports ----------------
 
 /** @returns {Promise<{data: Uint8Array, ext: 'png', mime: string}>} */
-export async function exportPng(markdownSource) {
-  const { canvas } = await renderToCanvas(markdownSource);
+export async function exportPng(source, kind = 'markdown') {
+  const { canvas } = await renderToCanvas(source, kind);
   const blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), 'image/png')
   );
@@ -279,8 +280,8 @@ export async function exportPng(markdownSource) {
 }
 
 /** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
-export async function exportPdf(markdownSource) {
-  const { canvas, cssWidth, pageCuts } = await renderToCanvas(markdownSource);
+export async function exportPdf(source, kind = 'markdown') {
+  const { canvas, cssWidth, pageCuts } = await renderToCanvas(source, kind);
   const { jsPDF } = await import('jspdf');
   // CSS px -> PDF points (96 px/in, 72 pt/in).
   const wPt = cssWidth * 0.75;
@@ -319,6 +320,66 @@ export async function exportPdf(markdownSource) {
     if (i > 0) doc.addPage([wPt, hPt]);
     // PNG (not JPEG): no compression halo around text.
     doc.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, wPt, hPt);
+  }
+  const data = new Uint8Array(doc.output('arraybuffer'));
+  return { data, ext: 'pdf', mime: 'application/pdf' };
+}
+
+function loadDataUrlImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('could not decode captured HTML image'));
+    img.src = dataUrl;
+  });
+}
+
+/// Multi-page PDF from the full-page PNG captured in the sandboxed HTML
+/// renderer. The raster is already at a fixed CSS width (948 px), so pages
+/// are simple horizontal slices at the same A4-ish ratio as the DOM exporter.
+/** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
+export async function pdfFromPngDataUrl(dataUrl, cssWidth) {
+  const width = Number(cssWidth);
+  if (!dataUrl || !(width > 0)) {
+    throw new Error('invalid captured HTML image');
+  }
+  const img = await loadDataUrlImage(dataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context unavailable');
+  ctx.drawImage(img, 0, 0);
+  const pageCssHeight = width * (PDF_PAGE_HEIGHT / 948);
+  const pxPerCss = canvas.width / width;
+  const pagePx = Math.max(1, Math.round(pageCssHeight * pxPerCss));
+  const { jsPDF } = await import('jspdf');
+  const wPt = width * 0.75;
+  const doc = new jsPDF({
+    orientation: 'p',
+    unit: 'pt',
+    format: [wPt, pageCssHeight * 0.75],
+    compress: true,
+  });
+  let page = 0;
+  for (let y = 0; y < canvas.height; y += pagePx, page += 1) {
+    const height = Math.min(pagePx, canvas.height - y);
+    const slice = document.createElement('canvas');
+    slice.width = canvas.width;
+    slice.height = height;
+    const sliceCtx = slice.getContext('2d');
+    if (!sliceCtx) throw new Error('2D canvas context unavailable');
+    sliceCtx.drawImage(canvas, 0, y, canvas.width, height, 0, 0, canvas.width, height);
+    const hPt = (height / pxPerCss) * 0.75;
+    if (page > 0) doc.addPage([wPt, hPt]);
+    doc.addImage(
+      slice.toDataURL('image/png'),
+      'PNG',
+      0,
+      0,
+      wPt,
+      hPt
+    );
   }
   const data = new Uint8Array(doc.output('arraybuffer'));
   return { data, ext: 'pdf', mime: 'application/pdf' };
