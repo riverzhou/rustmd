@@ -281,7 +281,8 @@ If a new Tauri *plugin* is used:
   multi-row matrix regression).
 - **Selftest**: dev-only; requires examples/ and network for the remote image
   checks. HTML entries use the built-in WebView (native preview iframe +
-  hidden export window), check `--require-html`, and assert iframe readiness,
+  hidden export window); `check-repo` requires the fixture, and the report
+  checker supports `--require-html`. The selftest asserts iframe readiness,
   local-JS execution, PNG/PDF magic/dimensions and local-image inlining. No
   external browser is installed or required. Clear the output dir first; the
   checker rejects reports older than 24h. It restores the user’s notes root
