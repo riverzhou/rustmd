@@ -80,8 +80,8 @@
 | M-11 | 自测报告可复用旧报告、HTML 断言可跳过 | 报告要求 `startedAt` 24h 内、`--require-html` 至少一个 HTML 条目；HTML 条目断言 iframe/ready、本地 JS、PNG 尺寸/nonWhite、PDF `%PDF-`、本地图片内联 |
 | M-12 | HTML PDF 未走真实 `mode:'pdf'` | 自测分别调用 export/pdf；校验 PDF magic |
 | M-13 | Release 签名真实 PFX 无 `.cer` 时 CI 复制失败 | `.cer` 改为条件复制 |
-| M-14 | `docs/RELEASING.md` 说 release notes 可选，实际必需 | 改为必需并增加 workflow preflight |
-| M-15 | 发布前 `npm run selftest` 未被 workflow 强制执行 | 文档明确、本地发布检查必跑；CI 已加 `--require-html`；release verify 加 release-notes preflight |
+| M-14 | `docs/RELEASING.md` 说 release notes 可选，实际必需 | 改为必需；发布前本地运行 release-notes preflight |
+| M-15 | 发布前 `npm run selftest` 未被 workflow 强制执行 | 文档明确、本地发布检查必跑；报告检查器支持 `--require-html`；GitHub workflow 保持三端构建与发布（OAuth token 无 workflow scope，workflow 改动不进入本次推送） |
 | M-16 | mock 模式路径/搜索与 Rust 不一致 | mock 增加路径规范化（含反斜杠/父目录）、`create/move` folder 校验、搜索剥离 front matter、`.htm` 重命名保留 |
 
 ---
