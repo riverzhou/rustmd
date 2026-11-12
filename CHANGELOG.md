@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.1] - 2026-11-12
+
+### 修复（Fixed）
+
+- **WebKitGTK / WKWebView 的 HTML 本地资源**：Linux/macOS 的 WebKit 对跨域
+  classic `<script>` / `<link rel=stylesheet>` 会带 `Origin: null`，被 `rmd`
+  的严格 Origin 白名单拒绝。HTML 预览与隐藏导出现在先把笔记目录内的相对
+  CSS/JS 内联进文档，再渲染；本地图片继续 data URL 内联。所有平台行为一致。
+- **Linux/macOS Markdown 导出图片被裁切**：WebKitGTK 的 html2canvas 可能忽略
+  `<img>` 的 `max-width`，把宽图表按自然宽度绘制并在画布右缘裁切。导出前将
+  图片冻结为同尺寸 `<canvas>`，并显式设置 CSS 宽度；自测的 fig1 NCC 恢复通过。
+- **CI 发布门禁**：release `verify` 增加 `npm run selftest` + `--require-html`；
+  CI 的 selftest 同样强制 HTML 覆盖；apt 下载增加 IPv4 与超时，避免 runner
+  的网络等待导致发布卡住。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.4.1**；`package.json`、`Cargo.toml`、`tauri.conf.json`、
+  `Cargo.lock`、`package-lock.json`、README 中英文版同步。
+- 新增 `RELEASE_NOTES-1.4.1.md`；本轮修复来自 v1.4.0 发布后的 Linux CI
+  E2E 结果。
+
 ## [1.4.0] - 2026-11-11
 
 ### 新增（Added）

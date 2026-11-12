@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.4.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.4.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.4.1` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.4.1 >/dev/null` |
 | Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 

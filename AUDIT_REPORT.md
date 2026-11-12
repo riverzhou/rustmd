@@ -1,8 +1,27 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-11
-**审计对象**：`rustmd` v1.4.0（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计日期**：2026-11-12（v1.4.0 审计于 2026-11-11）
+**审计对象**：`rustmd` v1.4.1（Rust + Tauri 2，Markdown + HTML 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+---
+
+## 0. v1.4.1 增量（v1.4.0 发布后 Linux CI 发现）
+
+v1.4.0 发布后的 Linux Xvfb E2E 暴露了两个 WebKit 平台问题，已在 v1.4.1 修复：
+
+1. **HTML 本地 CSS/JS 在 WebKit 下不执行**：WebKit 对跨域 classic script/stylesheet
+   发送 `Origin: null`，被 `rmd` 严格 Origin 白名单拒绝。现在预览与导出的文档会先把
+   笔记目录内的相对 CSS/JS 内联（图片继续 data URL 内联），不再依赖跨域子资源请求；
+   `serve_rmd` 仅对 `Sec-Fetch-Dest: script/style/font` 放行预览源，`fetch`（空 dest）
+   仍 403。
+2. **Markdown 导出图片在 WebKitGTK 被裁切**：html2canvas 忽略 `<img>` 的 `max-width`
+   时，宽图表按自然宽度绘制并在画布右缘裁切（fig1 NCC 0.742）。导出前将图片冻结为
+   同尺寸 `<canvas>` 并显式设置 CSS 宽度后，Linux CI 的 fig1/fig2/fig3 NCC 全部通过。
+
+同时把 release `verify` 接入 Xvfb E2E + `--require-html` 报告校验 + release-notes
+preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布卡死。对应 CI run：
+`43159967569`（quality + 三端编译 + Linux E2E 全部通过）。
 
 ---
 
@@ -19,7 +38,7 @@
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.4.0 的 HTML 笔记、内置 WebView 预览/导出、全屏/折行/语法高亮和 1.4.0 发布链路已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；本轮重点修复了新 HTML 渲染路径引入的跨域读、base URL、并发、资源加载和发布检查问题。
+**结论**：v1.4.1 的 HTML 笔记、内置 WebView 预览/导出、全屏/折行/语法高亮和 1.4.0 发布链路已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；本轮重点修复了新 HTML 渲染路径引入的跨域读、base URL、并发、资源加载和发布检查问题。
 
 ---
 
@@ -134,4 +153,4 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 
 ## 7. 结论
 
-v1.4.0 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.4.1 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
