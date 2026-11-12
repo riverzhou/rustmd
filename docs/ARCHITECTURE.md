@@ -4,8 +4,9 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 ```
 ┌──────────────────────────── WebView（frontend/）────────────────────────────┐
-│ main.js  UI 状态 / DOM / 保存队列 / 文件夹树 / 搜索 / 导出菜单              │
+│ main.js  UI 状态 / DOM / 保存队列 / 文件夹树 / 搜索 / 导出 / 笔记库切换     │
 │   ├─ notelist.js   纯函数：排序、过滤、文件夹树                             │
+│   ├─ vaultlist.js  纯函数：最近目录去重 / MRU / 显示名                      │
 │   ├─ markdown.js   纯函数：代码段切分、数学公式保护                         │
 │   ├─ preview.js    Markdown → DOMPurify；HTML → sandbox iframe 原生渲染 / 隐藏 WebView 截图 │
 │   ├─ export.js     离屏舞台 → 图片内联 → html2canvas（PNG）/ WebView 打印（PDF）│
@@ -33,7 +34,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 ## 进程与数据流
 
-1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders` + `set_notes_root`，失败则回到引导页。扫描识别 `.md` / `.html` / `.htm`。
+1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders` + `set_notes_root`，失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 8 个），引导页和侧栏切换器都能一键重开。扫描识别 `.md` / `.html` / `.htm`。
 2. 选择笔记：`read_note` 返回 `{ tags, body, mtime, hash, kind }`；编辑器按 `kind` 切换 Markdown/HTML 语法，预览走对应渲染管线；`setImageContext(root, notePath)` 记录图片解析上下文。
 3. 编辑/标签变化：500 ms 防抖后进入保存队列；`save_note` 带 `baseHash`，后端比较磁盘内容 hash，不一致返回 `conflict:`，前端询问是否覆盖；写盘使用同目录临时文件 + rename。
 4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
@@ -44,10 +45,11 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 | 文件 | 职责 |
 | --- | --- |
-| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、新建/导出菜单、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
+| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`）、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
 | `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
 | `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
 | `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
+| `vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限、显示名；无 DOM，可单测 |
 | `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
 | `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；本地图片在导出前 data URL 内联 |
 | `export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；Markdown PDF 优先 `exportPdfVector`（WebView 打印，矢量文字），HTML 笔记 PDF 走 `print_html_note`，失败回退图片 PDF；长 Markdown 自适应 0.25–3× |
@@ -68,7 +70,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `delete_note` | `dir, path` | `()` | 直接删文件 |
 | `move_note` | `dir, path, destFolder` | `string` | 同目录 no-op；冲突自动后缀 |
 | `search_notes` | `dir, query` | `SearchHit[]` | 正文、标题、文件名、标签；HTML 只搜可见文本；最多 500 条 |
-| `render_html_note` | `dir, path, html, mode` | `{png, width, height, cssWidth, cssHeight}` | 内置隐藏 WebView 渲染 HTML 笔记；`mode` 为 `preview` / `export` / `pdf`；`export` 最高 3×并在超高时分段，`pdf` 短页 3×、较高页 2×；仅主窗口允许（`print` 为内部模式，不接受前端传入） |
+| `render_html_note` | `dir, path, html, mode` | `{png, width, height, cssWidth, cssHeight}` | 内置隐藏 WebView 渲染 HTML 笔记；`mode` 为 `preview` / `export` / `pdf`；`export` 最高 3×并在超高时分段，`pdf` 短页 3×、较高页 2×；仅主窗口允许（`print` 由 `print_html_note` 内部使用；普通预览/导出传 `preview` / `export` / `pdf`） |
 | `html_preview_finish` | `{ payload: { token, dataUrl?, segments?, error?, cssWidth?, cssHeight?, width?, height?, ready?, scrollWidth? } }` | `()` | 隐藏 WebView 回传 PNG/分段，或打印模式回报就绪与布局宽度；必须来自 `html-render-{token}` 窗口；失败也唤醒等待方 |
 | `set_html_preview` | `html` | `token` | 注册 sandbox iframe 预览文档（随机 `p-*`）；仅主窗口允许；最多保留 8 份 |
 | `save_export` | `defaultName, filterName, extensions, data` | `string?` | Rust 打开保存对话框并写文件 |
@@ -127,6 +129,6 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 ## 设计取舍
 
 - **单文件 Rust**：命令、路径安全、协议和单测在一屏内可审；规模变大时再按 `paths/`、`notes/`、`vault/` 拆分。
-- **无框架前端**：状态集中在一个对象里，纯逻辑拆到可单测模块（`notelist.js`、`markdown.js`）。
+- **无框架前端**：状态集中在一个对象里，纯逻辑拆到可单测模块（`notelist.js`、`vaultlist.js`、`markdown.js`）。
 - **浏览器 mock**：不需要 Rust 就能复现白屏/UI 问题；代价是必须持续与真实后端对齐。
 - **examples/ 兼作夹具**：示例笔记同时是渲染/导出回归样本。

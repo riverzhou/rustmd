@@ -22,9 +22,9 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.6.1` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.6.1 >/dev/null` |
-| Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.7.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.7.0 >/dev/null` |
+| Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
 
@@ -80,12 +80,15 @@ this file is the developer/agent contract.
 - `frontend/src/main.js` — UI state and DOM wiring (no framework/state lib).
   Save queue, conflict retry, unsaved guard, folder tree, sorting, note
   selection/search race guards, export menu, wrap persistence, fullscreen
-  button + `F11`, and the format badges (`MD` green / `HTML` blue) shown in
-  both the note list and the topbar.
+  button + `F11`, the recent-vault switcher (`rustmd-recent-dirs`, MRU max 8),
+  and the format badges (`MD` green / `HTML` blue) shown in both the note list
+  and the topbar.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers
   (covered by `node --test`).
+- `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
+  MRU cap, display name; covered by `node --test`).
 - `frontend/src/markdown.js` — pure math protection + code-segment helpers
   (covered by `node --test`).
 - `frontend/src/preview.js` — Markdown via marked + DOMPurify + highlight.js
@@ -181,8 +184,8 @@ macOS/Linux print without browser chrome and then `stamp_page_numbers` appends
 a centered "N / M" footer (base-14 Helvetica, wrapped in `q`/`Q` so a
 page-wide `cm` cannot move it) — a stamping failure returns the PDF untouched.
 On unsupported platforms (and WebView2 runtimes older than 1.0.1518) both
-commands return an `unsupported:` error and the frontend falls back to the
-html2canvas PDF. macOS uses the `objc2` crates; the print runs through
+commands return an unsupported/too-old runtime error and the frontend falls
+back to the html2canvas PDF. macOS uses the `objc2` crates; the print runs through
 `runOperationModalForWindow:` with `canSpawnSeparateThread`, so AppKit detaches
 a print thread and the UI is not blocked — the command then polls for the
 finished PDF (`wait_for_printed_pdf`, 45 s) before stamping. Linux only needs
@@ -300,7 +303,9 @@ If a new Tauri *plugin* is used:
 - **Sidebar**: `notelist.js` owns sorting/tree/filtering; `main.js` only
   renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync.
   Expanded paths are stored in `rustmd-expanded-folders`; an empty set is the
-  default, so every folder starts collapsed. Sort state is `rustmd-sort-key` +
+  default, so every folder starts collapsed. Recent vaults live MRU-first (max
+  8) in `rustmd-recent-dirs`; `#btn-change-dir` opens the quick switcher and
+  the onboarding page reuses the same list. Sort state is `rustmd-sort-key` +
   `rustmd-sort-dir` (`mtime` defaults to desc, `name` to asc). `#btn-refresh`
   rescans the vault through `loadNotes` (there is no file watcher): it flushes
   pending saves first, reloads a clean note whose hash changed, closes a clean
@@ -308,8 +313,8 @@ If a new Tauri *plugin* is used:
   filters.
 - **Release**: bump `package.json`, `Cargo.toml`, `tauri.conf.json`,
   `Cargo.lock`, `package-lock.json`; update README version banners; add a
-  `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the release
-  preflight requires one of them); run `npm run check` + a clean
+  `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the preflight
+  accepts either, but ship both); run `npm run check` + a clean
   `npm run selftest`; commit, tag `v<version>`, and push the commit + tag to
   **both** remotes (`github` and `origin`/GitLab). GitHub tag triggers the
   three-platform release; GitLab is a mirror with no CI.
@@ -358,8 +363,10 @@ If a new Tauri *plugin* is used:
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
   `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
-  script captures 1440×900 zh/en light/dark plus the 300 px sidebar. Update
-  it when the UI layout or the mock notes change so the images do not drift.
+  script captures 1440×900 zh/en light/dark, the 300 px sidebar and a 640×460
+  recent-vault switcher crop; it seeds `rustmd-recent-dirs` with three demo
+  folders (Windows-style paths) before taking the switcher shots. Update it
+  when the UI layout or the mock notes change so the images do not drift.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.

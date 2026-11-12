@@ -34,6 +34,16 @@ if (Test-Path (Join-Path $root 'LICENSE')) {
 if (Test-Path (Join-Path $root 'docs/SECURITY.md')) {
   Copy-Item (Join-Path $root 'docs/SECURITY.md') (Join-Path $green 'SECURITY.md')
 }
+# README.md links to CHANGELOG.md, docs/*.md and docs/screenshots/*.png.
+# Ship those files so the offline README does not contain dead links.
+foreach ($doc in @('README.en.md', 'CHANGELOG.md', 'AUDIT_REPORT.md', 'AGENTS.md', 'LINUX_BUILD.md')) {
+  $path = Join-Path $root $doc
+  if (Test-Path $path) { Copy-Item $path (Join-Path $green $doc) }
+}
+$docs = Join-Path $root 'docs'
+if (Test-Path $docs) {
+  Copy-Item $docs (Join-Path $green 'docs') -Recurse
+}
 
 $cert = Join-Path $release 'rustmd-selfsigned.cer'
 if (Test-Path $cert) {
@@ -55,7 +65,8 @@ try {
 }
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-"$hash  $(Split-Path $zip -Leaf)" | Out-File -FilePath "$zip.sha256" -Encoding ascii
+# LF, not CRLF: sha256sum -c treats a trailing CR as part of the filename.
+[IO.File]::WriteAllText("$zip.sha256", "$hash  $(Split-Path $zip -Leaf)`n", [Text.Encoding]::ASCII)
 
 $item = Get-Item $zip
 Write-Host "zip: $($item.FullName)"

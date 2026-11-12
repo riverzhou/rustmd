@@ -8,15 +8,18 @@
 //        --window-size=1440,900 http://127.0.0.1:5173/
 //   3) node scripts/capture-screenshots.mjs
 //
-// Outputs docs/screenshots/{overview,dark,sidebar}.png and the .en variants.
-// The script drives the mock vault that ships in frontend/src/api.js, so it
-// works without the Rust backend. CDP/APP can be overridden with env vars.
+// Outputs docs/screenshots/{overview,dark,sidebar,vault-switcher}.png and the
+// .en variants. The script drives the mock vault that ships in
+// frontend/src/api.js, so it works without the Rust backend. CDP/APP can be
+// overridden with env vars.
 import { writeFileSync } from 'node:fs';
 
 const CDP = process.env.CDP || 'http://127.0.0.1:9333';
 const APP = process.env.APP || 'http://127.0.0.1:5173/';
 const OUT = 'docs/screenshots';
 const NOTE = 'work/数学与图表.md';
+const VAULT = 'D:\\Notes';
+const RECENT_VAULTS = [VAULT, 'D:\\Knowledge', 'D:\\Writing'];
 
 const targets = await (await fetch(`${CDP}/json/list`)).json();
 const target = targets.find((t) => t.type === 'page' && t.url.startsWith(APP));
@@ -124,11 +127,24 @@ await send('Emulation.setDeviceMetricsOverride', {
   mobile: false,
 });
 
+// Seed the recent-vault list (the mock vault is D:/Notes) so the switcher
+// screenshot shows multiple folders, then reboot into onboarding.
+await js(`localStorage.setItem(
+  'rustmd-recent-dirs',
+  ${JSON.stringify(JSON.stringify(RECENT_VAULTS))}
+); localStorage.removeItem('rustmd-dir'); true`);
+await send('Page.reload');
+await sleep(400);
+await waitFor(
+  "!document.getElementById('onboarding').classList.contains('hidden')",
+  30000
+);
+
 // Boot → open the mock vault → expand work/ → open the math + Mermaid note.
 await waitFor("document.querySelector('#open-dir-btn')", 30000);
 await js(`(async () => {
   const input = document.querySelector('#dir-input');
-  input.value = 'D:/Notes';
+  input.value = ${JSON.stringify(VAULT)};
   input.dispatchEvent(new Event('input', { bubbles: true }));
   document.querySelector('#open-dir-btn').click();
   await new Promise((r) => setTimeout(r, 500));
@@ -163,6 +179,26 @@ await capture('overview.en', null);
 await capture('sidebar.en', { x: 0, y: 0, width: 300, height: 900 });
 await setTheme('dark');
 await capture('dark.en', null);
+
+// Recent-vault switcher (640×460 crop keeps the popover readable in the
+// README without another full-window screenshot).
+async function captureVaultSwitcher(name) {
+  await js("document.getElementById('btn-change-dir').click(); true");
+  await waitFor("!!document.querySelector('.vault-menu')");
+  await js('document.activeElement?.blur(); true');
+  await sleep(250);
+  await capture(name, { x: 0, y: 0, width: 640, height: 460 });
+  await js(`window.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+  ); true`);
+  await sleep(100);
+}
+
+await setTheme('light');
+await setLang('zh-CN');
+await captureVaultSwitcher('vault-switcher');
+await setLang('en');
+await captureVaultSwitcher('vault-switcher.en');
 
 ws.close();
 console.log('done');

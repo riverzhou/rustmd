@@ -20,6 +20,14 @@ export const MESSAGES = {
     'onboarding.browseFailed': 'Could not choose folder: {msg}',
     'onboarding.dirDialogTitle': 'Select notes folder',
 
+    'vault.switchTitle': 'Switch notes folder',
+    'vault.recent': 'Recent folders',
+    'vault.noRecent': 'No recent folders yet. Browse to pick one.',
+    'vault.current': 'Current',
+    'vault.remove': 'Remove from recent folders',
+    'vault.browse': 'Browse other folder…',
+    'vault.switchFailed': 'Could not switch folder: {msg}',
+
     'sidebar.newNote': 'New note',
     'sidebar.refresh': 'Refresh notes from disk',
     'sidebar.changeDir': 'Change notes folder',
@@ -175,6 +183,14 @@ export const MESSAGES = {
     'onboarding.chooseError': '请选择或输入笔记目录',
     'onboarding.browseFailed': '选择目录失败：{msg}',
     'onboarding.dirDialogTitle': '选择笔记目录',
+
+    'vault.switchTitle': '切换笔记库',
+    'vault.recent': '最近打开',
+    'vault.noRecent': '还没有最近目录，先浏览选择一个。',
+    'vault.current': '当前',
+    'vault.remove': '从最近列表移除',
+    'vault.browse': '浏览其他目录…',
+    'vault.switchFailed': '无法切换笔记库：{msg}',
 
     'sidebar.newNote': '新建笔记',
     'sidebar.refresh': '从磁盘刷新笔记列表',

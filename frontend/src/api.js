@@ -29,10 +29,15 @@ if (isTauri) {
   invoke = mockInvoke;
 }
 
-async function pickDirectory(title = 'Select notes folder') {
+async function pickDirectory(title = 'Select notes folder', defaultPath = undefined) {
   if (!isTauri) return null;
   const { open } = await import('@tauri-apps/plugin-dialog');
-  return open({ directory: true, multiple: false, title });
+  return open({
+    directory: true,
+    multiple: false,
+    title,
+    defaultPath: defaultPath || undefined,
+  });
 }
 
 async function openExternal(url) {

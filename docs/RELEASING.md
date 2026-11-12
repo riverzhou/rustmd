@@ -16,34 +16,37 @@
 - `Cargo.lock` 与 `package-lock.json` 的根包版本
 - git tag：`v<version>`
 
-`npm run check:version` 会校验前三个用户可见版本；`Cargo.lock`/`package-lock.json`
-由 `npm version` 与 `cargo check/build` 自动同步，提交前用 `git diff` 确认。
-release workflow 会再校验 tag。
+`npm run check:version` 会校验前三个用户可见版本。建议用
+`npm version <version> --no-git-tag-version` 同步 `package.json` /
+`package-lock.json`，手动改 `Cargo.toml` / `tauri.conf.json`，再在
+`cargo check` / `cargo build` 时确认 `Cargo.lock` 的根包版本；提交前用
+`git diff` 复核。release workflow 会再校验 tag。
 
-**Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，或在 `CHANGELOG.md`
-中提供对应小节；`scripts/release-notes.mjs` 找不到两者会直接失败。发布前先跑：
+**Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，并在
+`CHANGELOG.md` 中补对应小节（项目实践两者都写；`scripts/release-notes.mjs`
+接受任一，找不到才失败）。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.6.1
-node scripts/release-notes.mjs v1.6.1 >/dev/null
+node scripts/check-version.mjs v1.7.0
+node scripts/release-notes.mjs v1.7.0 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.6.1"
-git tag v1.6.1
+git commit -m "release: v1.7.0"
+git tag v1.7.0
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.6.1
+git push github v1.7.0
 git push origin master
-git push origin v1.6.1
+git push origin v1.7.0
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.6.1`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.7.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
@@ -62,43 +65,48 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、`README.md`、`SECURITY.md`、`LICENSE`；自签名构建还含 `rustmd-selfsigned.cer` |
+| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`SECURITY.md`、`LICENSE`；自签名构建还含 `rustmd-selfsigned.cer` |
 | Linux | `rustmd_<version>_amd64.deb` | Debian/Ubuntu 安装包 |
 | Linux | `rustmd_<version>_amd64.AppImage` | 便携包（需要 FUSE，或 `--appimage-extract-and-run`） |
 | macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
-| 全部 | `SHA256SUMS.txt`、各平台 `*.sha256` / `SHA256SUMS-linux.txt` | 完整性校验 |
+| 全部 | `SHA256SUMS.txt`；Windows/macOS 另有同名 `.sha256`，Linux 另有 `SHA256SUMS-linux.txt` | 完整性校验 |
 
 所有 bundle（deb / AppImage / DMG）通过 `bundle.licenseFile` 随附 `LICENSE`；
-Windows 绿色 zip 由脚本复制 `LICENSE` 与 `SECURITY.md`。
+Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、README/CHANGELOG 及 `docs/`（含截图）。
 
 Windows zip 的目录结构：
 
 ```
-rustmd-1.6.1-win-x64/
+rustmd-1.7.0-win-x64/
 ├── rustmd.exe
-├── README.md
+├── README.md / README.en.md
+├── CHANGELOG.md
+├── AUDIT_REPORT.md / AGENTS.md / LINUX_BUILD.md
 ├── SECURITY.md
 ├── LICENSE
-└── rustmd-selfsigned.cer
+├── rustmd-selfsigned.cer
+└── docs/
+    ├── ARCHITECTURE.md / TESTING.md / RELEASING.md / SECURITY.md / ...
+    └── screenshots/*.png
 ```
 
 ## 4. Windows 签名
 
 `scripts/sign-win.ps1`：
 
-1. 构建 `target/release/rustmd.exe`；
+1. 前提：先运行 `npx tauri build --no-bundle` 生成 `target/release/rustmd.exe`（脚本只签名，不构建）；
 2. 如果设置了 `RUSTMD_WIN_CERT_BASE64` / `RUSTMD_WIN_CERT_PASSWORD`，导入真实 PFX 并带时间戳签名；
 3. 否则查找/创建 10 年有效的自签名代码签名证书（`CN=rustmd Self-Signed (integrity only)`），导出公钥 `.cer`；
 4. `Set-AuthenticodeSignature`，拒绝 `HashMismatch` / `NotSigned`；
 5. 再次 `Get-AuthenticodeSignature` 校验。
 
-`scripts/build-win-zip.ps1` 复制签名后的 exe、README、LICENSE、证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
+`scripts/build-win-zip.ps1` 复制签名后的 exe、README、CHANGELOG/文档与截图、SECURITY.md、LICENSE、证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
 
 ### 边界
 
 - 自签名**只证明文件在签名后未被改动**，不能消除 SmartScreen 的“未知发布者”。每个 runner 生成的自签名证书也不同；跨版本比对请用 SHA256。
 - 想消除 SmartScreen 需要真实 Authenticode 证书。把 `.pfx` 转成 base64 放入 `RUSTMD_WIN_CERT_BASE64`，密码放入 `RUSTMD_WIN_CERT_PASSWORD` 即可；脚本会走真实证书 + DigiCert 时间戳。
-- 若要给 NSIS 安装包签名，需要让 Tauri 在打包前调用签名（`bundle.windows.signCommand`），或改成本项目一样的“绿色 zip”交付；当前 Release 只提供绿色版，避免“安装包内 exe 未签名”的假签名。
+- 若要给 NSIS 安装包签名，需要让 Tauri 在打包前调用签名（`bundle.windows.signCommand`），或改成本项目一样的“绿色 zip”交付；Windows 当前只提供绿色版，避免“安装包内 exe 未签名”的假签名。
 
 ## 5. macOS 签名
 
@@ -150,17 +158,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.6.1-macos-universal.dmg.sha256
+shasum -a 256 -c rustmd-1.7.0-macos-universal.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.6.1-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.6.1-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.7.0-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.7.0-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.6.1-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.7.0-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：
@@ -185,6 +193,7 @@ npx tauri build --bundles deb,appimage
 Windows 绿色包：
 
 ```powershell
+npx tauri build --no-bundle
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-win.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-zip.ps1
 ```

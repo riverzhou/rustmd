@@ -187,7 +187,7 @@ Tauri 2 / wry 的 GTK4 + WebKitGTK 6.0 迁移仍在进行中（wry issue #1474�
 | 运行时 `libwebkit2gtk-4.1.so.0: cannot open ...` | 目标机缺运行库：`libwebkit2gtk-4.1-0` |
 | `Rollup failed to resolve import "katex"` | mermaid 12 的可选动态 import；本项目已用 `frontend/shims/katex.js` alias 到 204 B stub，数学公式仍由 MathJax 渲染。删掉 alias 会让构建失败 |
 | 启动后白窗口 | 前端模块初始化抛错；用 `npm run dev` 在浏览器里看 console |
-| `.AppImage` 运行报 FUSE 错误 | 本项目不产 AppImage；如确实需要，装 `libfuse2`（24.04+ 为 `libfuse2t64`）或加 `--appimage-extract-and-run` |
+| `.AppImage` 运行报 FUSE 错误 | 安装 `libfuse2`（24.04+ 为 `libfuse2t64`），或加 `--appimage-extract-and-run` |
 | 旧系统报 `GLIBC_2.39 not found` | 在旧系统上重新构建（glibc 向下不兼容） |
 
 ## 10. 无头冒烟测试

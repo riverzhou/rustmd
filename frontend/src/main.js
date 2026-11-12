@@ -39,6 +39,14 @@ import {
   noteStemOf,
   sortNotes,
 } from './notelist.js';
+import {
+  RECENT_DIRS_MAX,
+  addRecentDir,
+  dirDisplayName,
+  parseRecentDirs,
+  removeRecentDir,
+  sameDir,
+} from './vaultlist.js';
 
 // ---------------- State ----------------
 
@@ -92,6 +100,13 @@ const state = {
   docRevision: 0,
 };
 
+// Windows paths are case-insensitive and accept either separator; the
+// recent-vault helpers need to know that when deduping.
+const WINDOWS_PATHS = /windows/i.test(navigator.userAgent || '');
+const RECENT_DIRS_KEY = 'rustmd-recent-dirs';
+
+let recentDirs = loadRecentDirs();
+
 let editor = null;
 // True while we dispatch a programmatic document replacement (loading a
 // note, clearing after delete). CodeMirror fires its update listener
@@ -106,6 +121,9 @@ const onboardingEl = $('onboarding');
 const mainEl = $('main');
 const dirInput = $('dir-input');
 const onboardingError = $('onboarding-error');
+const recentDirsEl = $('recent-dirs');
+const recentListEl = $('recent-list');
+const changeDirBtn = $('btn-change-dir');
 const searchInput = $('search-input');
 const refreshBtn = $('btn-refresh');
 const folderList = $('folder-list');
@@ -430,67 +448,303 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ---------------- Recent vaults / switcher ----------------
+
+function loadRecentDirs() {
+  return parseRecentDirs(localStorage.getItem(RECENT_DIRS_KEY), {
+    max: RECENT_DIRS_MAX,
+    windows: WINDOWS_PATHS,
+  });
+}
+
+function rememberRecentDir(dir) {
+  recentDirs = addRecentDir(recentDirs, dir, {
+    max: RECENT_DIRS_MAX,
+    windows: WINDOWS_PATHS,
+  });
+  localStorage.setItem(RECENT_DIRS_KEY, JSON.stringify(recentDirs));
+  renderOnboardingRecents();
+}
+
+function forgetRecentDir(dir) {
+  recentDirs = removeRecentDir(recentDirs, dir, { windows: WINDOWS_PATHS });
+  localStorage.setItem(RECENT_DIRS_KEY, JSON.stringify(recentDirs));
+  renderOnboardingRecents();
+  renderVaultMenu();
+}
+
+/** One row in the switcher / onboarding recent list. */
+function recentDirRow(dir, { current = false, onPick }) {
+  const row = document.createElement('div');
+  row.className = current ? 'vault-item current' : 'vault-item';
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'vault-open';
+  open.title = dir;
+
+  const nameRow = document.createElement('span');
+  nameRow.className = 'vault-name-row';
+  const name = document.createElement('span');
+  name.className = 'vault-name';
+  name.textContent = dirDisplayName(dir);
+  nameRow.appendChild(name);
+  if (current) {
+    const badge = document.createElement('span');
+    badge.className = 'vault-badge';
+    badge.textContent = t('vault.current');
+    nameRow.appendChild(badge);
+  }
+
+  const path = document.createElement('span');
+  path.className = 'vault-path';
+  path.textContent = dir;
+
+  open.append(nameRow, path);
+  open.addEventListener('click', () => onPick(dir));
+  row.appendChild(open);
+
+  if (!current) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'vault-remove';
+    remove.textContent = '×';
+    remove.title = t('vault.remove');
+    remove.setAttribute('aria-label', t('vault.remove'));
+    remove.addEventListener('click', () => forgetRecentDir(dir));
+    row.appendChild(remove);
+  }
+  return row;
+}
+
+function renderOnboardingRecents() {
+  if (!recentDirsEl || !recentListEl) return;
+  recentDirsEl.classList.toggle('hidden', recentDirs.length === 0);
+  recentListEl.replaceChildren();
+  for (const dir of recentDirs) {
+    recentListEl.appendChild(
+      recentDirRow(dir, {
+        current: sameDir(dir, state.dir, WINDOWS_PATHS),
+        onPick: (value) => {
+          dirInput.value = value;
+          void enterDir(value);
+        },
+      })
+    );
+  }
+}
+
+let vaultMenu = null;
+
+function onVaultOutside(e) {
+  if (
+    vaultMenu &&
+    !vaultMenu.contains(e.target) &&
+    !e.target.closest('#btn-change-dir')
+  ) {
+    closeVaultMenu();
+  }
+}
+
+function onVaultEsc(e) {
+  if (e.key === 'Escape') closeVaultMenu();
+}
+
+function closeVaultMenu() {
+  if (!vaultMenu) return;
+  const hadFocus = vaultMenu.contains(document.activeElement);
+  vaultMenu.remove();
+  vaultMenu = null;
+  window.removeEventListener('mousedown', onVaultOutside, true);
+  window.removeEventListener('keydown', onVaultEsc, true);
+  if (hadFocus) changeDirBtn.focus({ preventScroll: true });
+}
+
+function renderVaultMenu() {
+  if (!vaultMenu) return;
+  vaultMenu.replaceChildren();
+
+  const title = document.createElement('div');
+  title.className = 'vault-menu-title';
+  title.textContent = t('vault.switchTitle');
+  vaultMenu.appendChild(title);
+
+  if (recentDirs.length) {
+    const list = document.createElement('div');
+    list.className = 'vault-list';
+    for (const dir of recentDirs) {
+      const current = sameDir(dir, state.dir, WINDOWS_PATHS);
+      list.appendChild(
+        recentDirRow(dir, {
+          current,
+          onPick: () => {
+            if (current) closeVaultMenu();
+            else void switchVault(dir);
+          },
+        })
+      );
+    }
+    vaultMenu.appendChild(list);
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'vault-empty';
+    empty.textContent = t('vault.noRecent');
+    vaultMenu.appendChild(empty);
+  }
+
+  const sep = document.createElement('div');
+  sep.className = 'vault-menu-sep';
+  vaultMenu.appendChild(sep);
+
+  const browse = document.createElement('button');
+  browse.type = 'button';
+  browse.className = 'vault-action';
+  browse.textContent = t('vault.browse');
+  browse.addEventListener('click', () => void browseVault());
+  vaultMenu.appendChild(browse);
+}
+
+async function confirmVaultChange() {
+  const ok = await flushSave();
+  return ok || confirm(t('dialog.changeDir'));
+}
+
+async function switchVault(dir) {
+  closeVaultMenu();
+  if (sameDir(dir, state.dir, WINDOWS_PATHS)) return;
+  if (!(await confirmVaultChange())) return;
+  await enterDir(dir, { toastErrors: true });
+}
+
+async function browseVault() {
+  closeVaultMenu();
+  if (!(await confirmVaultChange())) return;
+  let dir;
+  try {
+    dir = await api.pickDirectory(
+      t('onboarding.dirDialogTitle'),
+      state.dir || undefined
+    );
+  } catch (err) {
+    toast(t('onboarding.browseFailed', { msg: err.message || err }), true);
+    return;
+  }
+  if (!dir || sameDir(dir, state.dir, WINDOWS_PATHS)) return;
+  await enterDir(dir, { toastErrors: true });
+}
+
+function openVaultMenu() {
+  if (!state.dir) return;
+  closeVaultMenu();
+  const menu = document.createElement('div');
+  menu.className = 'vault-menu';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', t('vault.switchTitle'));
+  document.body.appendChild(menu);
+  vaultMenu = menu;
+  renderVaultMenu();
+
+  const rect = changeDirBtn.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  const left = Math.max(
+    8,
+    Math.min(rect.left, window.innerWidth - width - 8)
+  );
+  menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+  menu.style.left = `${Math.round(left)}px`;
+
+  window.addEventListener('mousedown', onVaultOutside, true);
+  window.addEventListener('keydown', onVaultEsc, true);
+  const focusTarget =
+    menu.querySelector('.vault-item:not(.current) .vault-open') ||
+    menu.querySelector('.vault-action');
+  focusTarget?.focus({ preventScroll: true });
+}
+
+changeDirBtn.addEventListener('click', () => {
+  if (vaultMenu) closeVaultMenu();
+  else openVaultMenu();
+});
+
 // ---------------- Onboarding / dir ----------------
 
-async function enterDir(dir) {
-  let notes;
+let vaultSwitchBusy = false;
+
+async function enterDir(dir, { toastErrors = false } = {}) {
+  if (vaultSwitchBusy) return false;
+  vaultSwitchBusy = true;
   try {
-    notes = await api.listNotes(dir);
-    // The `rmd` image protocol serves from this root (local images in notes).
-    await api.setNotesRoot(dir);
-  } catch (err) {
-    onboardingError.textContent = t('onboarding.openError', {
-      msg: err.message || err,
-    });
-    onboardingError.classList.remove('hidden');
-    return false;
+    let notes;
+    try {
+      notes = await api.listNotes(dir);
+      // The `rmd` image protocol serves from this root (local images in notes).
+      await api.setNotesRoot(dir);
+    } catch (err) {
+      const msg = err.message || err;
+      if (toastErrors) {
+        toast(t('vault.switchFailed', { msg }), true);
+      } else {
+        onboardingError.textContent = t('onboarding.openError', { msg });
+        onboardingError.classList.remove('hidden');
+      }
+      return false;
+    }
+    onboardingError.classList.add('hidden');
+    // Let an in-flight save finish before the old vault's state is discarded.
+    await saveQueue.catch(() => false);
+    state.dir = dir;
+    noteSelectSeq += 1;
+    searchSeq += 1;
+    clearTimeout(searchTimer);
+    localStorage.setItem('rustmd-dir', dir);
+    rememberRecentDir(dir);
+    // A new vault must not inherit the previous vault's selection/filter,
+    // editor contents or stale conflict token.
+    state.filter = { folder: null, tag: null, query: '' };
+    state.searchHits = null;
+    state.current = null;
+    state.currentKind = 'markdown';
+    state.currentHash = '';
+    state.currentMtime = 0;
+    state.tagsOfCurrent = [];
+    clearTimeout(state.saveTimer);
+    clearTimeout(state.previewTimer);
+    state.pendingSave = false;
+    state.saveFailed = false;
+    searchInput.value = '';
+    noteTitle.value = '';
+    statusPath.textContent = '';
+    suppressChange = true;
+    editor.setLanguage('markdown');
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '' } });
+    suppressChange = false;
+    renderPreview('', previewEl, 'markdown');
+    renderTagEditor();
+    updateCounts();
+    updateKindBadge('markdown');
+    setSaveStatus('saved');
+    editorPane.classList.remove('visible');
+    emptyState.classList.remove('hidden');
+    onboardingEl.classList.add('hidden');
+    mainEl.classList.remove('hidden');
+    state.notes = notes;
+    await loadNotes();
+    return true;
+  } finally {
+    vaultSwitchBusy = false;
   }
-  onboardingError.classList.add('hidden');
-  // Let an in-flight save finish before the old vault's state is discarded.
-  await saveQueue.catch(() => false);
-  state.dir = dir;
-  noteSelectSeq += 1;
-  searchSeq += 1;
-  clearTimeout(searchTimer);
-  localStorage.setItem('rustmd-dir', dir);
-  // A new vault must not inherit the previous vault's selection/filter,
-  // editor contents or stale conflict token.
-  state.filter = { folder: null, tag: null, query: '' };
-  state.searchHits = null;
-  state.current = null;
-  state.currentKind = 'markdown';
-  state.currentHash = '';
-  state.currentMtime = 0;
-  state.tagsOfCurrent = [];
-  clearTimeout(state.saveTimer);
-  clearTimeout(state.previewTimer);
-  state.pendingSave = false;
-  state.saveFailed = false;
-  searchInput.value = '';
-  noteTitle.value = '';
-  statusPath.textContent = '';
-  suppressChange = true;
-  editor.setLanguage('markdown');
-  editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '' } });
-  suppressChange = false;
-  renderPreview('', previewEl, 'markdown');
-  renderTagEditor();
-  updateCounts();
-  updateKindBadge('markdown');
-  setSaveStatus('saved');
-  editorPane.classList.remove('visible');
-  emptyState.classList.remove('hidden');
-  onboardingEl.classList.add('hidden');
-  mainEl.classList.remove('hidden');
-  state.notes = notes;
-  await loadNotes();
-  return true;
 }
 
 $('pick-dir-btn').addEventListener('click', async () => {
   try {
-    const dir = await api.pickDirectory(t('onboarding.dirDialogTitle'));
-    if (dir) dirInput.value = dir;
+    const dir = await api.pickDirectory(
+      t('onboarding.dirDialogTitle'),
+      state.dir || dirInput.value.trim() || undefined
+    );
+    if (dir) {
+      dirInput.value = dir;
+      void enterDir(dir);
+    }
   } catch (err) {
     toast(t('onboarding.browseFailed', { msg: err.message || err }), true);
   }
@@ -508,16 +762,6 @@ $('open-dir-btn').addEventListener('click', () => {
 
 dirInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('open-dir-btn').click();
-});
-
-$('btn-change-dir').addEventListener('click', async () => {
-  const ok = await flushSave();
-  if (!ok && !confirm(t('dialog.changeDir'))) {
-    return;
-  }
-  mainEl.classList.add('hidden');
-  onboardingEl.classList.remove('hidden');
-  dirInput.value = state.dir || '';
 });
 
 // ---------------- Notes loading ----------------
@@ -1826,6 +2070,8 @@ onLanguageChange(() => {
   applySidebar(isSidebarCollapsed());
   closeExportMenu();
   closeNewNoteMenu();
+  closeVaultMenu();
+  renderOnboardingRecents();
   for (const el of document.querySelectorAll('.modal-backdrop')) el.remove();
 });
 
@@ -1843,6 +2089,7 @@ async function boot() {
   applySidebar(localStorage.getItem('rustmd-sidebar') === 'closed');
   renderSortControls();
   renderTagEditor();
+  renderOnboardingRecents();
 
   if (!state.dir) {
     onboardingEl.classList.remove('hidden');

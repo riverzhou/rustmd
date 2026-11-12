@@ -1,8 +1,28 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-12（v1.4.0 审计于 2026-11-11）
-**审计对象**：`rustmd` v1.6.1（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计日期**：2026-11-12（v1.7.0 复核；v1.4.0 审计于 2026-11-11）
+**审计对象**：`rustmd` v1.7.0（Rust + Tauri 2，Markdown + HTML 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS 目标交叉 `cargo check`；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.7.0 最近笔记库快速切换（UI 功能）
+
+本版解决频繁切换笔记库时反复在系统目录树里找路径的问题，改动集中在前端：
+
+- 侧栏 `#btn-change-dir` 改为弹出最近笔记库切换器：当前目录标记、一键切换、
+  单条移除、ESC/点击外部关闭；按 Esc 关闭时焦点回到触发按钮；引导页复用同一列表。
+- 最近目录按 MRU 最多保留 8 条，存于 `localStorage.rustmd-recent-dirs`；
+  Windows 路径按大小写与 `/`、`\` 归一化去重。目录名/路径使用 `textContent`
+  渲染，不拼进 `innerHTML`。
+- “浏览其他目录…”沿用原生目录对话框，并传入当前笔记库作为 `defaultPath`；
+  选择后直接打开，减少一次确认点击。
+- 切换仍走 `enterDir`：先 `listNotes` + `setNotesRoot`，成功后才清空旧库状态；
+  保存失败仍弹确认，`vaultSwitchBusy` 防止并发切换交错。
+- 纯前端改动：无新增 IPC，无 Rust/权限/CSP/路径封闭/HTML 隔离边界变化。
+  `vaultlist.js` 新增 6 个 Node 单测（路径规范化、Windows 去重、MRU 上限、
+  移除、损坏存储容错）；浏览器 mock 覆盖切换、移除、ESC/焦点、语言切换和
+  900×560 最小窗口布局。
+- `scripts/capture-screenshots.mjs` 新增中英文 `vault-switcher` 截图；README、
+  AGENTS、架构、测试、发布、安全与 GitHub 文案同步更新。
 
 ### v1.6.0 格式徽标（UI 补丁）
 
@@ -78,15 +98,16 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 | 未修复高危缺陷 | **0 个已知** |
 | 未修复中危缺陷 | **0 个已知**（少数产品边界见 §6） |
 | Rust 测试 | **58 个**：57 通过 + 1 个网络测试默认 `#[ignore]`（含页脚戳记单测与真实 PDF 回归） |
-| 前端单测 | **20 个**，全部通过 |
+| 前端单测 | **26 个**，全部通过 |
 | 静态检查 | ESLint 0 error；`cargo fmt --check`；clippy `-D warnings`；`npm run check` 全绿 |
-| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）通过；Markdown/HTML PDF 均断言内嵌字体（矢量文字），HTML iframe ready、本地 JS/图片内联、长页分段均有断言 |
+| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）通过；走矢量打印路径的 PDF 断言内嵌字体（矢量文字），HTML iframe ready、本地 JS/图片内联、长页分段均有断言 |
+| UI 交互 | 浏览器 mock：最近笔记库切换/移除/ESC/焦点/语言切换/900×560 最小窗口通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
 | macOS 编译 | 最终 ObjC 打印代码以 `cargo check --target x86_64-apple-darwin` 交叉编译通过（运行时需在 Mac 上自测） |
-| Linux 编译 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析，代码在所有宿主上参与编译（运行时需在 Linux 上自测） |
+| Linux 运行 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析；发布 workflow 在 Ubuntu + Xvfb 跑完整 selftest（含矢量 PDF `/Font` 断言） |
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.5.0 的矢量 PDF 打印链路（Windows 真机 + macOS 交叉编译 + Linux 编译）、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；v1.5.0 的重点是打印管线替换、页码戳记与跨平台导出，未放宽任何安全不变量。
+**结论**：v1.7.0 的最近笔记库切换是纯前端 UI 功能，未新增 IPC、未触碰 Rust、权限、CSP、路径封闭或 HTML 隔离边界。v1.5.0 的矢量 PDF 打印链路、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程继续通过审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
 
 ---
 
@@ -158,7 +179,7 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 本机（Windows 11，WebView2）执行：
 
 ```text
-npm run check  → ESLint、20 前端单测、repo、version、fmt、clippy -D warnings、56 Rust 测试、Vite build 全通过
+npm run check  → ESLint、26 前端单测、repo、version、fmt、clippy -D warnings、58 Rust 测试、Vite build 全通过
 npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
 ```
 
@@ -168,6 +189,7 @@ npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
 - HTML：sandbox iframe ready、本地相对 CSS/JS 执行、本地图片内联到导出源、PNG 非空/尺寸、PDF magic/尺寸、真实 `mode:'pdf'`；
 - 超长 HTML：32k CSS px 报告导出 PNG 约 1,768×48,000，分段拼接完整；688499 报告 PNG 约 3,037×30,000（约 2.56×）；
 - 手动安全：sandbox iframe 调 `read_note` 返回 `Origin header is not a valid URL`；`rmd` 对 null+fetch 返回 403，对 null+script/font 子资源放行；主 webview 本地图片正常。
+- 最近笔记库切换：一库/多库切换、MRU 更新、单条移除、ESC/外部点击关闭、ESC 关闭后焦点返回、中英文动态文案、900×560 最小窗口布局；最近目录只写 `localStorage`，不进入笔记库或网络。
 
 CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
 
@@ -193,14 +215,15 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 | Markdown 超长 PNG | 0.25× 下限；更长内容仍可能受 canvas 限制 | 建议 PDF；文档记录 |
 | DNS rebinding | 校验与连接解析之间无地址钉扎 | 记录；高保证环境用出口过滤 |
 | 无 macOS 运行时 CI | 只有编译 + 本地 Windows/Linux E2E | 记录；后续可加 macOS runner E2E |
-| macOS/Linux 打印运行时 | v1.5.0 的打印代码在 macOS 只做了交叉编译、Linux 只做了编译；真机运行未验证 | 发布前在对应系统跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
+| macOS 打印运行时 | macOS 只做了交叉编译，尚未在真机跑打印；Linux 已由 Ubuntu Xvfb E2E 覆盖 | 发布前在 Mac 上跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
 | Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
-| 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言 | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
+| 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言（最近笔记库切换已做浏览器 mock 脚本检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
+| 最近目录历史 | 最多 8 个本机笔记库路径存于 WebView `localStorage`，不加密 | 仅本机使用、不上传；清除应用数据即可删除 |
 | 导出 HTML 原文 | HTML 笔记导出保留脚本/样式；用户分享需自行审查 | 安全文档明示 |
 
 ---
 
 ## 7. 结论
 
-v1.6.1 可以发布。v1.5.0 引入的打印链路已通过 Windows 真机 E2E、Linux CI Xvfb E2E 和 macOS 交叉编译；v1.6.x 只改了格式徽标的显示层与自测的远程图片容错，未触及安全边界，回归覆盖保持完整。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.7.0 可以发布。最近笔记库切换是独立的前端功能，`npm run check`、完整自测和浏览器 mock 交互检查覆盖了新增路径；v1.5.0 的矢量打印链路、v1.6.x 的格式徽标与自测容错保持有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

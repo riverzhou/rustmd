@@ -11,7 +11,7 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、过滤、笔记格式识别、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、过滤、笔记格式识别、最近笔记库路径去重/MRU、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
@@ -43,6 +43,7 @@ npm run check
 
 - `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名）、文件夹子树过滤、树计数、折叠扁平化、祖先；
 - `frontend/src/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码；
+- `frontend/src/vaultlist.test.js`：路径规范化、Windows 大小写/分隔符去重、MRU 上限、移除、损坏 localStorage 容错；
 - `frontend/src/i18n.test.js`：中英词典完整性、插值、系统语言选择。
 
 ## 端到端自测
@@ -56,12 +57,12 @@ npm run selftest
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
 2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；导出前本地图片必须被内联为 data URL；
 3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；PDF 统一走平台打印管线（Markdown `print_note_pdf`、HTML `print_html_note`，均为矢量文字、A4 分页；Windows WebView2 / macOS WKWebView / Linux WebKitGTK），不支持时回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源走 `rmd` base；超长页面分段拼接）；
-4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；Markdown 与 HTML 的 PDF 都要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
+4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；走矢量打印路径的 PDF 条目要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；回退图片 PDF 不要求；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
 5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色
    （html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；
 6. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。
 
-`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML 覆盖、PNG/PDF 尺寸与 magic、本地图片存在性、24 小时新鲜度检查；报告校验：
+`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML 覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、24 小时新鲜度检查；报告校验：
 
 ```bash
 RUSTMD_SELFTEST_OUT=/path/to/rustmd-selftest npm run selftest:check
@@ -71,7 +72,7 @@ node scripts/check-selftest-report.mjs "<out>/report.json" --require-html
 RUSTMD_SELFTEST_MAX_AGE_HOURS=168 node scripts/check-selftest-report.mjs "<out>/report.json"
 ```
 
-网络不可用时自测会**失败**（远程图片拉取计入 `errors`），这是有意的：离线时“图片是否出现在导出中”无法被证明。HTML 笔记的 CDN 图表脚本同样需要网络。
+远程图片探测失败会记为 `report.warnings` 并跳过该图的导出断言，不会阻塞发布；报告校验脚本会打印这些警告。本地图片、HTML iframe/本地脚本和矢量 PDF 断言仍然严格。HTML 笔记的 CDN 图表脚本需要网络，离线时相关 HTML 示例可能无法通过渲染断言。
 
 可用真实报告库验证 HTML 图表导出与超长分段拼接（不需要外部浏览器）：
 
@@ -79,7 +80,7 @@ RUSTMD_SELFTEST_MAX_AGE_HOURS=168 node scripts/check-selftest-report.mjs "<out>/
 RUSTMD_SELFTEST_EXAMPLES="<你的报告库>" npm run selftest
 ```
 
-2026-11-10/11 的 ECharts 报告在该路径下均通过（最高约 32,000 CSS px；导出 PNG 约 1,768×48,000，PDF 多页切片）。
+2026-11-10/11 的 ECharts 报告在该路径下均通过（最高约 32,000 CSS px；导出 PNG 约 1,768×48,000，PDF 为矢量文字、多页）。
 
 ### 输出与故障排查
 
@@ -122,7 +123,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libssl-dev li
 
 ## 加测试的原则
 
-- 纯逻辑放 `notelist.js` / `markdown.js`，用 `node --test`；不要为了测试把 DOM 逻辑塞进去。
+- 纯逻辑放 `notelist.js` / `vaultlist.js` / `markdown.js`，用 `node --test`；不要为了测试把 DOM 逻辑塞进去。
 - 每个修过的 bug 至少补一个回归测试（多行公式、junction 逃逸、hash 冲突、`file:///` 等）。
 - 不要放宽 `resolve_in_root` / `resolve_vault_file` / SSRF 检查来让测试通过。
 - 网络测试默认 `#[ignore]`；E2E 才承担真实网络链路验证。

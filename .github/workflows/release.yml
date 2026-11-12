@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build and publish (e.g. v1.6.1)'
+        description: 'Existing tag to build and publish (e.g. v1.7.0)'
         required: true
 
 permissions:
@@ -201,7 +201,8 @@ jobs:
           mkdir -p release
           hdiutil create -volname "rustmd" -srcfolder "$APP" -ov -format UDZO "$DMG"
           hdiutil verify "$DMG"
-          shasum -a 256 "$DMG" | tee "$DMG.sha256"
+          HASH=$(shasum -a 256 "$DMG" | awk '{print $1}')
+          echo "$HASH  $(basename "$DMG")" | tee "$DMG.sha256"
 
       - uses: actions/upload-artifact@v7
         with:

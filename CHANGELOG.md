@@ -5,6 +5,40 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.0] - 2026-11-12
+
+### 新增（Added）
+
+- **最近笔记库快速切换**：侧栏“切换笔记目录”按钮现在直接弹出最近打开的
+  笔记库列表——当前目录带标记，点一下即可切换，非当前项可用 `×` 从列表移除；
+  支持 `Esc` / 点击外部关闭；按 `Esc` 关闭时焦点回到触发按钮。最多保留 8 个目录，
+  按最近使用排序，重启后仍在（`localStorage.rustmd-recent-dirs`）。Windows
+  路径在去重时忽略大小写与 `/`、`\` 差异。
+- **引导页最近目录**：首次启动/上次目录打不开时，目录选择页也会列出最近
+  笔记库，一键进入，不必重新浏览系统目录树。
+- **浏览从当前目录开始**：切换器里的“浏览其他目录…”把当前笔记库作为原生
+  目录对话框的 `defaultPath`，选择后直接打开，少一次确认。
+- **切换保护不变**：切换前仍先 flush 未保存内容；保存失败照旧弹确认，
+  `vaultSwitchBusy` 防止快速连点导致两个目录的异步结果交错。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.7.0**；新增 `vaultlist.js` 及其 6 个 Node 单测，最近目录
+  只做本地持久化，不新增 IPC、不改变 Rust/权限/CSP/路径封闭/HTML 隔离边界。
+- README 中英文版、AGENTS、架构/测试/发布/安全/审计文档与 GitHub 项目文案
+  同步更新；`scripts/capture-screenshots.mjs` 新增中英文 `vault-switcher`
+  截图并重新生成全部 README 截图。
+- Windows 绿色 zip 现在随附 README/CHANGELOG/`docs/`（含截图）与 SECURITY，
+  离线阅读 README 时截图和文档链接不再缺失。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、26 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、58 个 Rust 测试、Vite build 全部通过。
+- `npm run selftest`：6 篇示例（含 HTML）通过。
+- 浏览器 mock 交互检查：一库/多库切换、MRU 更新、移除、ESC/焦点返回、
+  中英文文案和 900×560 最小窗口布局。
+
 ## [1.6.1] - 2026-11-12
 
 ### 修复（Fixed）

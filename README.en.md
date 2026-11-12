@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.6.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.7.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -26,6 +26,10 @@ Dark theme and sidebar details:
 <img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MD/HTML format badges, MathJax math and Mermaid preview" width="880">
 
 <img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with folders, sort buttons, MD/HTML format badges, filenames and tags" width="300">
+
+One-click recent-vault switching:
+
+<img src="docs/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher listing three recent folders, the current one marked, with one-click switch and remove controls" width="560">
 
 ## Multilingual UI
 
@@ -40,7 +44,7 @@ Chinese interface example:
 If you want a Markdown tool that keeps your notes as **plain files** instead of a database:
 
 - **Plain-text storage** — a note is a `.md` or `.html` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
-- **Offline by default** — editing, search, preview and export work without a network; only remote images and update checks need one.
+- **Offline by default** — editing, search, preview and export work without a network; only remote images and remote scripts/styles/fonts embedded in HTML notes need one.
 - **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
 - **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML format badges, Markdown and HTML notes, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
 - **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
@@ -58,6 +62,9 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 
 ### Navigation
 
+- **Quick vault switching** — the sidebar switch button lists recently opened
+  folders (most recent first, up to 8, current one marked) for one-click
+  switching; “Browse other folder…” opens the picker at the current folder.
 - **Manual refresh** — the sidebar refresh button rescans the vault from disk
   (notes, folders, tags, search and counts) without a restart; an open note
   changed on disk is reloaded when clean, and a deleted note is closed safely
@@ -112,7 +119,7 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 
 ### Security
 
-- Markdown-rendered HTML is sanitized with DOMPurify before `innerHTML`; scripts, event handlers, `javascript:` URLs, `<style>`, `<iframe>` etc. are stripped. HTML-note preview runs in a sandboxed iframe (null origin), and export runs in a hidden WebView window; neither can call app commands.
+- Markdown-rendered HTML is sanitized with DOMPurify before `innerHTML`; scripts, event handlers, `javascript:` URLs, `<style>`, `<iframe>` etc. are stripped. HTML-note preview runs in a sandboxed iframe (null origin), and export runs in a hidden WebView window; the preview iframe cannot call app commands, while the export window can only return a screenshot or a print-ready signal.
 - MathJax/Mermaid run after sanitization, then a narrow post-pass removes `on*`, dangerous links and external CSS URLs.
 - CSP is enabled; external links open in the system browser. HTML preview/export run in isolated WebViews; the export window can only return a screenshot or a print-ready signal.
 - `resolve_in_root` contains notes and images inside the vault, rejects `..`, and blocks junction/symlink write escapes; the scanner skips symlinks.
@@ -131,7 +138,7 @@ Get the latest from [GitHub Releases](https://github.com/riverzhou/rustmd/releas
 | Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu package / portable AppImage |
 | macOS | `rustmd-<version>-macos-universal.dmg` | Universal (Apple Silicon + Intel) |
 
-Each asset has a `.sha256`; releases also include a combined `SHA256SUMS.txt`.
+Windows and macOS assets have a `.sha256`; Linux ships `SHA256SUMS-linux.txt`; releases also include a combined `SHA256SUMS.txt` (it requires all release assets in one folder). For a single-platform download, use that platform’s checksum file.
 
 ### Windows
 
@@ -163,7 +170,7 @@ Removing the warning completely requires Developer ID + notarization; see [docs/
 
 ## Quick start
 
-1. Launch the app and choose or type a notes folder.
+1. Launch the app and choose or type a notes folder. Later launches reopen the last vault, and the sidebar switch button brings back recent folders in one click.
 2. Click `＋` to create a note; click folders to filter; click the arrow to expand subfolders.
 3. Rename from the title field; tags, move, delete and export are in the top bar.
 4. `Ctrl+B` toggles the sidebar.
@@ -197,7 +204,7 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests for sorting, folder tree, math protection, code segments and i18n
+2. Node tests for sorting, folder tree, recent vaults, math protection, code segments and i18n
 3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
 4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json`)
 5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
@@ -266,4 +273,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, recent-folder switcher, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

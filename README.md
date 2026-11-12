@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.6.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.7.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -28,6 +28,10 @@
 <img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MD/HTML 格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
 
 <img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名、标签和搜索" width="300">
+
+最近笔记库一键切换：
+
+<img src="docs/screenshots/vault-switcher.png" alt="rustmd 最近笔记库切换：列出最近打开的三个目录，当前目录标记为“当前”，可一键切换或移除记录" width="560">
 
 ## 多语言界面
 
@@ -62,6 +66,8 @@
 
 ### 文件导航
 
+- **快速切换笔记库**：侧栏切换按钮直接列出最近打开的目录（按最近使用排序，最多 8 个，
+  当前目录带标记），点一下即可切换；需要新目录时“浏览其他目录…”会从当前目录开始。
 - **手动刷新**：侧栏顶部的刷新按钮从磁盘重新扫描整个笔记库（笔记、文件夹、标签、
   搜索与计数），无需重启；打开中的笔记被外部修改且没有未保存内容时会自动重新
   载入，被删除时安全关闭或保留未保存内容。
@@ -114,7 +120,7 @@
 
 ### 安全
 
-- Markdown 渲染出的 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。HTML 笔记预览在 sandbox iframe（null origin）中运行，导出在隐藏 WebView 中运行，二者都无法调用应用命令。
+- Markdown 渲染出的 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。HTML 笔记预览在 sandbox iframe（null origin）中运行，导出在隐藏 WebView 中运行；预览 iframe 无法调用应用命令，导出窗口只能回传截图或打印就绪信号。
 - MathJax / Mermaid 在消毒之后生成 DOM，再做一次窄范围清理（`on*`、危险链接、外部 CSS URL）。
 - Tauri CSP 默认启用；外部链接交给系统浏览器打开。HTML 预览/导出在隔离的 WebView 中运行，导出窗口只能回传截图或打印就绪信号。
 - `resolve_in_root` 对笔记与图片做路径封闭，阻止 `..`、junction/symlink 写逃逸；扫描时跳过符号链接。
@@ -133,7 +139,7 @@
 | Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu 安装包 / 便携 AppImage |
 | macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
 
-每个产物都有 `.sha256`，Release 里还有合并的 `SHA256SUMS.txt`。
+Windows / macOS 资产旁提供 `.sha256`；Linux 提供 `SHA256SUMS-linux.txt`；Release 里还有合并的 `SHA256SUMS.txt`（需要全部资产在同一目录才能校验）。只下载单平台时请用对应平台的校验文件。
 
 ### Windows
 
@@ -167,13 +173,14 @@ DMG 内的 `.app` 使用 **ad-hoc 签名**（没有 Apple Developer ID，未公�
 ### 校验下载
 
 ```bash
+# 合并文件需要先把全部 Release 资产下载到同一目录：
 sha256sum -c SHA256SUMS.txt
-# 或使用每个资产旁对应的 .sha256 文件
+# 只下载单平台时用同名 .sha256（Windows/macOS）或 SHA256SUMS-linux.txt（Linux）
 ```
 
 ## 快速开始
 
-1. 启动应用，选择或输入笔记目录；也可以直接打开已有的 Markdown 文件夹。
+1. 启动应用，选择或输入笔记目录；也可以直接打开已有的 Markdown 文件夹。再次启动会打开上次的笔记库，侧栏切换按钮可一键回到最近目录。
 2. 左侧 `＋` 新建笔记；点击文件夹筛选，点击箭头展开子文件夹。
 3. 标题输入框可重命名文件；标签、移动、删除、导出在顶栏。
 4. 顶栏按钮或 `Ctrl+B` 隐藏/显示侧栏。
@@ -219,7 +226,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 `npm run check` 依次执行：
 
 1. ESLint 10
-2. Node 前端单测（排序、文件夹树、数学保护、代码段、多语言）
+2. Node 前端单测（排序、文件夹树、最近笔记库、数学保护、代码段、多语言）
 3. 仓库检查（文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
 4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 一致）
 5. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
@@ -243,7 +250,7 @@ dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF。M
 │   ├── index.html
 │   ├── public/               # 图标、highlight.js 主题
 │   └── src/                  # main.js / api.js / editor.js / preview.js / export.js
-│                             #   notelist.js / markdown.js / imgutil.js / selftest.js / style.css
+│                             #   notelist.js / vaultlist.js / markdown.js / imgutil.js / selftest.js / style.css
 ├── scripts/                  # 开发服务器、图标、检查、自测、签名与 Windows 绿色包
 ├── examples/                 # 示例笔记库，同时是自测夹具
 ├── capabilities/             # Tauri 权限
@@ -309,4 +316,4 @@ rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
 
 如果 rustmd 对你有帮助，给一个 ⭐ 是最直接的鼓励；也欢迎分享给需要本地 Markdown 笔记的朋友。
 
-**关键词**：Markdown 笔记、HTML 笔记、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
+**关键词**：Markdown 笔记、HTML 笔记、本地笔记、离线笔记、Markdown 编辑器、最近笔记库切换、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
