@@ -80,8 +80,8 @@
 | M-11 | 自测报告可复用旧报告、HTML 断言可跳过 | 报告要求 `startedAt` 24h 内、`--require-html` 至少一个 HTML 条目；HTML 条目断言 iframe/ready、本地 JS、PNG 尺寸/nonWhite、PDF `%PDF-`、本地图片内联 |
 | M-12 | HTML PDF 未走真实 `mode:'pdf'` | 自测分别调用 export/pdf；校验 PDF magic |
 | M-13 | Release 签名真实 PFX 无 `.cer` 时 CI 复制失败 | `.cer` 改为条件复制 |
-| M-14 | `docs/RELEASING.md` 说 release notes 可选，实际必需 | 改为必需；发布前本地运行 release-notes preflight |
-| M-15 | 发布前 `npm run selftest` 未被 workflow 强制执行 | 文档明确、本地发布检查必跑；报告检查器支持 `--require-html`；GitHub workflow 仍只做三端构建与发布 |
+| M-14 | `docs/RELEASING.md` 说 release notes 可选，实际必需 | 改为必需并增加 workflow preflight |
+| M-15 | 发布前 `npm run selftest` 未被 workflow 强制执行 | 文档明确、本地发布检查必跑；CI 已加 `--require-html`；release verify 加 release-notes preflight |
 | M-16 | mock 模式路径/搜索与 Rust 不一致 | mock 增加路径规范化（含反斜杠/父目录）、`create/move` folder 校验、搜索剥离 front matter、`.htm` 重命名保留 |
 
 ---
@@ -102,7 +102,7 @@ npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
 - 超长 HTML：32k CSS px 报告导出 PNG 约 1,768×48,000，分段拼接完整；688499 报告 PNG 约 3,037×30,000（约 2.56×）；
 - 手动安全：sandbox iframe 调 `read_note` 返回 `Origin header is not a valid URL`；`rmd` null/rmdhtml Origin 返回 403；主 webview 本地图片正常。
 
-CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check`；本地发布前另跑 E2E），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
+CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
 
 ---
 

@@ -28,8 +28,8 @@ jobs:
 
       - name: Install Linux system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             libssl-dev \
@@ -75,8 +75,8 @@ jobs:
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-22.04'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             libssl-dev \
@@ -121,8 +121,8 @@ jobs:
 
       - name: Install Linux system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             libssl-dev \
@@ -156,7 +156,7 @@ jobs:
         run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
 
       - name: Verify self-test report
-        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json"
+        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html
 
       - name: Upload self-test artifacts
         if: always()

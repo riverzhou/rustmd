@@ -118,7 +118,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libssl-dev li
   patchelf libxdo-dev build-essential curl file xdg-utils xvfb fonts-noto-cjk
 ```
 
-发布 workflow 前的本地检查应运行 `npm run selftest`；workflow 本身只做三端构建与发布，详见 [RELEASING.md](RELEASING.md)。
+发布 workflow 的 `verify` job 也会在 Ubuntu + Xvfb 跑 `npm run selftest` 并用 `--require-html` 校验报告；详见 [RELEASING.md](RELEASING.md)。
 
 ## 加测试的原则
 

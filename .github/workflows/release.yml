@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build and publish (e.g. v1.3.0)'
+        description: 'Existing tag to build and publish (e.g. v1.4.0)'
         required: true
 
 permissions:
@@ -36,8 +36,8 @@ jobs:
 
       - name: Install Linux system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             libssl-dev \
@@ -47,7 +47,9 @@ jobs:
             build-essential \
             curl \
             file \
-            xdg-utils
+            xdg-utils \
+            xvfb \
+            fonts-noto-cjk
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -62,8 +64,25 @@ jobs:
       - name: Check the tag matches every version file
         run: node scripts/check-version.mjs "$RELEASE_TAG"
 
+      - name: Verify release notes and tag/version
+        run: node scripts/release-notes.mjs "$RELEASE_TAG" >/dev/null
+
       - name: Lint, unit tests, repo checks, Rust tests, build
         run: npm run check
+
+      - name: Run end-to-end self-test
+        env:
+          RUSTMD_SELFTEST: '1'
+          RUSTMD_SELFTEST_EXAMPLES: ${{ github.workspace }}/examples
+          RUSTMD_SELFTEST_OUT: ${{ github.workspace }}/selftest-artifacts
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
+
+      - name: Verify self-test report
+        env:
+          RUSTMD_SELFTEST_OUT: ${{ github.workspace }}/selftest-artifacts
+        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html
 
   windows:
     name: windows portable zip
@@ -122,7 +141,8 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Copy-Item release/*/*.zip artifacts/
           Copy-Item release/*/*.zip.sha256 artifacts/
-          Copy-Item release/*/*.cer artifacts/
+          $cer = Get-ChildItem release -Recurse -Filter *.cer -ErrorAction SilentlyContinue
+          if ($cer) { $cer | Copy-Item -Destination artifacts/ }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -209,8 +229,8 @@ jobs:
 
       - name: Install Linux system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             libssl-dev \

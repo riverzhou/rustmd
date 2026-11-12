@@ -48,15 +48,15 @@ git push origin v1.4.0
 ## 2. Workflow 结构
 
 ```
-verify (Ubuntu, npm run check + tag/version)
+verify (Ubuntu, npm run check + Xvfb E2E + tag/version/release notes)
   ├─ windows  → target/release/rustmd.exe → 签名 → green zip → artifacts
   ├─ macos    → universal .app → ad-hoc 签名 → dmg → artifacts
   └─ linux    → deb + AppImage → SHA256SUMS-linux.txt → artifacts
 publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
 
-只有 `publish` 需要 `contents: write`；build job 都是只读。发布前请在本地运行
-`npm run selftest`；GitHub workflow 只负责三端构建与发布。
+只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会运行
+`npm run selftest` 并用 `--require-html` 校验报告；HTML/隐藏 WebView 路径回归会阻止发布。
 
 ## 3. 产物
 
