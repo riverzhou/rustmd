@@ -1,0 +1,168 @@
+// Regenerate the README screenshots from the browser mock UI.
+//
+// Usage (Windows, Edge WebView2 runtime installed):
+//   1) npm run dev                       # http://127.0.0.1:5173
+//   2) start Edge headless with CDP:
+//      msedge --headless=new --disable-gpu --hide-scrollbars \
+//        --remote-debugging-port=9333 --user-data-dir=<temp dir> \
+//        --window-size=1440,900 http://127.0.0.1:5173/
+//   3) node scripts/capture-screenshots.mjs
+//
+// Outputs docs/screenshots/{overview,dark,sidebar}.png and the .en variants.
+// The script drives the mock vault that ships in frontend/src/api.js, so it
+// works without the Rust backend. CDP/APP can be overridden with env vars.
+import { writeFileSync } from 'node:fs';
+
+const CDP = process.env.CDP || 'http://127.0.0.1:9333';
+const APP = process.env.APP || 'http://127.0.0.1:5173/';
+const OUT = 'docs/screenshots';
+const NOTE = 'work/数学与图表.md';
+
+const targets = await (await fetch(`${CDP}/json/list`)).json();
+const target = targets.find((t) => t.type === 'page' && t.url.startsWith(APP));
+if (!target) {
+  throw new Error(
+    `no page target for ${APP}: ${targets.map((t) => t.url).join(', ')}`
+  );
+}
+
+const ws = new globalThis.WebSocket(target.webSocketDebuggerUrl);
+await new Promise((resolve, reject) => {
+  ws.onopen = resolve;
+  ws.onerror = reject;
+});
+
+let seq = 0;
+const pending = new Map();
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.id && pending.has(msg.id)) {
+    const { resolve, reject } = pending.get(msg.id);
+    pending.delete(msg.id);
+    if (msg.error) reject(new Error(JSON.stringify(msg.error)));
+    else resolve(msg.result);
+  }
+};
+
+function send(method, params = {}) {
+  const id = ++seq;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+}
+
+async function js(expression) {
+  const res = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (res.exceptionDetails) {
+    throw new Error(`page error: ${JSON.stringify(res.exceptionDetails)}`);
+  }
+  return res.result?.value;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function waitFor(expression, timeout = 20000) {
+  const ok = await js(`new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      try { if (${expression}) return resolve(true); } catch (e) {}
+      if (Date.now() - started > ${timeout}) return resolve(false);
+      setTimeout(tick, 100);
+    };
+    tick();
+  })`);
+  if (!ok) throw new Error(`timeout waiting for: ${expression}`);
+}
+
+async function setTheme(theme) {
+  await js(`(async () => {
+    if (document.body.dataset.theme !== '${theme}') {
+      document.querySelector('#btn-theme').click();
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return document.body.dataset.theme;
+  })()`);
+}
+
+async function setLang(lang) {
+  await js(`(async () => {
+    const sel = document.querySelector('#language-select');
+    if (sel && sel.value !== '${lang}') {
+      sel.value = '${lang}';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return sel ? sel.value : 'x';
+  })()`);
+}
+
+async function capture(name, clip) {
+  await sleep(700);
+  const params = {
+    format: 'png',
+    fromSurface: true,
+    captureBeyondViewport: false,
+  };
+  if (clip) params.clip = { ...clip, scale: 1 };
+  const { data } = await send('Page.captureScreenshot', params);
+  const path = `${OUT}/${name}.png`;
+  writeFileSync(path, Buffer.from(data, 'base64'));
+  console.log('wrote', path);
+}
+
+await send('Page.enable');
+await send('Runtime.enable');
+await send('Emulation.setDeviceMetricsOverride', {
+  width: 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+
+// Boot → open the mock vault → expand work/ → open the math + Mermaid note.
+await waitFor("document.querySelector('#open-dir-btn')", 30000);
+await js(`(async () => {
+  const input = document.querySelector('#dir-input');
+  input.value = 'D:/Notes';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector('#open-dir-btn').click();
+  await new Promise((r) => setTimeout(r, 500));
+})()`);
+await waitFor("document.querySelectorAll('.note-item').length >= 5", 20000);
+await js(`(async () => {
+  const rows = [...document.querySelectorAll('.sidebar .nav-item')];
+  const work = rows.find((row) => row.querySelector('.nav-label')?.textContent === 'work');
+  const toggle = work?.querySelector('.nav-toggle');
+  if (toggle && toggle.classList.contains('collapsed')) toggle.click();
+  await new Promise((r) => setTimeout(r, 300));
+  const item = [...document.querySelectorAll('.note-item')].find(
+    (el) => el.dataset.path === '${NOTE}'
+  );
+  item?.click();
+  await new Promise((r) => setTimeout(r, 500));
+})()`);
+await waitFor("document.querySelectorAll('.mermaid-diagram svg').length > 0", 20000);
+await waitFor("document.querySelectorAll('mjx-container').length > 0", 20000);
+await sleep(800);
+
+await setLang('zh-CN');
+await setTheme('light');
+await capture('overview', null);
+await capture('sidebar', { x: 0, y: 0, width: 300, height: 900 });
+await setTheme('dark');
+await capture('dark', null);
+
+await setTheme('light');
+await setLang('en');
+await capture('overview.en', null);
+await capture('sidebar.en', { x: 0, y: 0, width: 300, height: 900 });
+await setTheme('dark');
+await capture('dark.en', null);
+
+ws.close();
+console.log('done');

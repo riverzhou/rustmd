@@ -17,15 +17,15 @@ Current version **1.6.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [L
 
 ## Screenshots
 
-Folder tree, filename cards, sort direction, MathJax math and Mermaid diagrams:
+Folder tree, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with folder tree, filename cards, editor and live preview" width="880">
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
 
 Dark theme and sidebar details:
 
-<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MathJax and Mermaid preview" width="880">
+<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MD/HTML format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with folders, sort buttons, filenames and tags" width="300">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with folders, sort buttons, MD/HTML format badges, filenames and tags" width="300">
 
 ## Multilingual UI
 
@@ -42,7 +42,7 @@ If you want a Markdown tool that keeps your notes as **plain files** instead of 
 - **Plain-text storage** — a note is a `.md` or `.html` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
 - **Offline by default** — editing, search, preview and export work without a network; only remote images and update checks need one.
 - **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
-- **More than an editor** — folder tree, full-text search, front matter tags, Markdown and HTML notes, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
+- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML format badges, Markdown and HTML notes, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
 - **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
 - **Easy to migrate to** — open an existing Obsidian/Typora/VS Code Markdown or HTML folder; unknown front matter fields (`title:`, `date:`, …) are preserved on save.
 

@@ -19,15 +19,15 @@
 
 ## 截图
 
-主界面：文件夹树、文件名卡片、排序方向、MathJax 公式与 Mermaid 图表。
+主界面：文件夹树、文件名卡片、排序方向、**MD / HTML 格式徽标**、MathJax 公式与 Mermaid 图表。
 
-<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧文件夹树与文件名卡片，右侧 CodeMirror 编辑器和实时预览" width="880">
+<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧文件夹树与带 MD/HTML 格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
 
 深色主题与侧栏细节：
 
-<img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MathJax 公式、Mermaid 图表和实时预览" width="880">
+<img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MD/HTML 格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
 
-<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、文件名、标签和搜索" width="300">
+<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名、标签和搜索" width="300">
 
 ## 多语言界面
 
@@ -44,7 +44,7 @@
 - **纯文件存储**：笔记就是 `.md` 或 `.html`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
 - **本地优先**：核心编辑、预览、搜索、导出全部离线可用；拉取远程图片、加载 HTML 报告里的 CDN 脚本等场景才需要网络。
 - **轻量跨平台**：Rust + Tauri 2，Windows / macOS / Linux 三端；Windows 提供解压即用的绿色 zip。
-- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
+- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、**MD / HTML 格式徽标**、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
 - **安全边界认真做**：Markdown HTML 消毒、HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
 - **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` / `.html` 文件夹即可；front matter 中的 `title:`、`date:` 等字段保存时原样保留。
 

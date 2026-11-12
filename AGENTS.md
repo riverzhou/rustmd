@@ -26,6 +26,7 @@ this file is the developer/agent contract.
 | Release notes preflight | `node scripts/release-notes.mjs v1.6.1 >/dev/null` |
 | Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
+| Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
 
 - `cargo`/`rustup` are often not on this shell's PATH. Use
   `node scripts/cargo.mjs …` (it probes `$CARGO`, `~/.cargo/bin/cargo`, PATH)
@@ -342,14 +343,23 @@ If a new Tauri *plugin* is used:
   to avoid collisions. `DISPLAY_MATH_RE` must keep its `g` flag (the
   multi-row matrix regression).
 - **Selftest**: dev-only; requires examples/ and network for the remote image
-  checks. HTML entries use the built-in WebView (native preview iframe +
-  hidden export window), check `--require-html`, and assert iframe readiness,
-  local-JS execution, PNG/PDF magic/dimensions and local CSS/JS/image inlining.
-  Markdown and HTML PDF entries assert the vector path really produced text
-  (`/Font` in the PDF, not just image slices) on every desktop platform. No
-  external browser is installed or required. Clear the output dir first; the
-  checker rejects reports older than 24h. It restores the user’s notes root
-  afterwards and exits with 0/1.
+  checks. Remote images are best-effort: a fetch failure is recorded in
+  `report.warnings` (and the remaining remote URLs are skipped for the run),
+  never in `report.errors`, so an unreachable image host cannot block a
+  release; local images stay strict. HTML entries use the built-in WebView
+  (native preview iframe + hidden export window), check `--require-html`, and
+  assert iframe readiness, local-JS execution, PNG/PDF magic/dimensions and
+  local CSS/JS/image inlining. Markdown and HTML PDF entries assert the vector
+  path really produced text (`/Font` in the PDF, not just image slices) on
+  every desktop platform. No external browser is installed or required. Clear
+  the output dir first; the checker rejects reports older than 24h and prints
+  warnings. It restores the user’s notes root afterwards and exits with 0/1.
+- **README screenshots** (`docs/screenshots/*.png`) are generated from the
+  browser mock vault, not the real examples folder: run `npm run dev`, start
+  Edge headless with `--remote-debugging-port=9333` on
+  `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
+  script captures 1440×900 zh/en light/dark plus the 300 px sidebar. Update
+  it when the UI layout or the mock notes change so the images do not drift.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.
@@ -367,5 +377,6 @@ If a new Tauri *plugin* is used:
 - `docs/RELEASING.md` — versioning, signing, three-platform release.
 - `docs/SECURITY.md` — threat model and residual risks.
 - `CHANGELOG.md` — history; `AUDIT_REPORT.md` — current audit status.
+- `docs/screenshots/` — README screenshots (regenerate with `scripts/capture-screenshots.mjs`).
 - `docs/GITHUB_PROJECT_COPY.md` — About description, topics and discoverability copy.
 - `LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.
