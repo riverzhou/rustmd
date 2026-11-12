@@ -165,6 +165,43 @@ async function rasterizeSvgImages(stage, scale) {
   });
 }
 
+/// WebKitGTK's html2canvas can ignore CSS `max-width` on an intrinsic-width
+/// `<img>` and clip wide charts at the canvas edge. Freeze every bitmap image
+/// into a same-box `<canvas>` before rasterizing the stage: html2canvas draws
+/// canvas elements at their CSS box, independent of the source image size.
+async function freezeImagesAsCanvas(stage) {
+  const images = [...stage.querySelectorAll('img')];
+  await mapLimit(images, 4, async (img) => {
+    try {
+      await waitImageLoad(img);
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1 || !img.naturalWidth) return;
+      const targetWidth = Math.min(
+        img.naturalWidth,
+        Math.round(CONTENT_WIDTH * SCALE)
+      );
+      const targetHeight = Math.max(
+        1,
+        Math.round((img.naturalHeight * targetWidth) / img.naturalWidth)
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      canvas.style.width = `${Math.min(CONTENT_WIDTH, rect.width)}px`;
+      canvas.style.height = 'auto';
+      canvas.style.maxWidth = `${CONTENT_WIDTH}px`;
+      canvas.style.display = 'block';
+      if (img.alt) canvas.setAttribute('aria-label', img.alt);
+      img.replaceWith(canvas);
+    } catch (err) {
+      console.warn('export image freeze failed:', err);
+    }
+  });
+}
+
 /// Resolve once `img` has loaded its current src (or reject on error /
 /// 20 s timeout). Event-based because img.decode() hangs on blob: URLs.
 function waitImageLoad(img, timeoutMs = 20000) {
@@ -217,6 +254,7 @@ async function renderToCanvas(source, kind = 'markdown') {
     // Rasterize at the scale the canvas will use; the frozen image boxes keep
     // the stage height unchanged, but measure again in case of rounding.
     await rasterizeSvgImages(stage, exportScale(stage.offsetHeight));
+    await freezeImagesAsCanvas(stage);
     const cssWidth = stage.offsetWidth;
     const cssHeight = stage.offsetHeight;
     // Keep the canvas bounded for very long notes (scale may drop below 3).
