@@ -77,13 +77,18 @@ export function compareNotes(a, b, sort) {
   const sign = dir === SORT_ASC ? 1 : -1;
   if (key === SORT_NAME) {
     return (
-      sign * compareFileNames(a.path, b.path) || comparePaths(a.path, b.path)
+      sign * compareFileNames(a.path, b.path) ||
+      comparePaths(a.path, b.path) ||
+      comparePaths(a.vault, b.vault)
     );
   }
   return (
     sign * ((Number(a.mtime) || 0) - (Number(b.mtime) || 0)) ||
     compareFileNames(a.path, b.path) ||
-    comparePaths(a.path, b.path)
+    comparePaths(a.path, b.path) ||
+    // The same relative path can exist in several open vaults; keep the
+    // aggregated list deterministic.
+    comparePaths(a.vault, b.vault)
   );
 }
 
@@ -118,12 +123,19 @@ export function folderInScope(noteFolder, selected, includeSubfolders = false) {
     : folder === scope;
 }
 
+/**
+ * Filter the aggregated list by vault and folder scope. `vault` is the
+ * absolute vault directory of the note (multi-vault mode); `null` keeps notes
+ * from every open vault. Folder paths are vault-relative, so the vault check
+ * is what keeps two `work/` folders from two vaults distinguishable.
+ */
 export function filterNotes(
   notes,
-  { folder = null, tag = null, includeSubfolders = false } = {}
+  { vault = null, folder = null, tag = null, includeSubfolders = false } = {}
 ) {
   return notes.filter(
     (note) =>
+      (!vault || note.vault === vault) &&
       folderInScope(note.folder, folder, includeSubfolders) &&
       (!tag || (Array.isArray(note.tags) && note.tags.includes(tag)))
   );

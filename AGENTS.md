@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.8.1` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.8.1 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.9.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.9.0 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -71,7 +71,8 @@ this file is the developer/agent contract.
   - HTML capture result handling must always resolve the waiting renderer,
     including decode/stitch errors; close/cancel on timeout or task failure;
   - the `rmd` custom protocol (`serve_rmd`, `VaultFileCache`, mtime + byte
-    budget), `read_local_image`;
+    budget) and `read_local_image`: both accept files under any registered
+    vault root (`set_notes_roots`, multi-vault mode);
   - dev-only self-test commands (`selftest_config/write/finish`);
   - unit tests.
 - `frontend/src/api.js` — the **only** Tauri bridge. Detects Tauri via
@@ -80,16 +81,20 @@ this file is the developer/agent contract.
 - `frontend/src/main.js` — UI state and DOM wiring (no framework/state lib).
   Save queue, conflict retry, unsaved guard, folder tree, sorting, note
   selection/search race guards, export menu, wrap persistence, fullscreen
-  button + `F11`, the recent-vault switcher (`rustmd-recent-dirs`, MRU max 8),
-  the current-folder/subfolder scope switch (`rustmd-include-subfolders`),
-  and the format badges (`MD` green / `HTML` blue) shown in both the note list
-  and the topbar.
+  button + `F11`, the recent-vault switcher (`rustmd-recent-dirs`, MRU max 20,
+  pinned vaults displayed first and never evicted), the current-folder/subfolder
+  scope switch (`rustmd-include-subfolders`), multi-vault mode
+  (`rustmd-multi-vault`: pinned vaults + the current one, aggregated note list,
+  per-vault folder trees), the 320 px sidebar with a draggable folders/tags ↔
+  note-list splitter (`rustmd-nav-height`), and the format badges (`MD` green /
+  `HTML` blue) shown in both the note list and the topbar.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers,
   folder-scope predicates and scoped tag counts (covered by `node --test`).
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
-  MRU cap, display name; covered by `node --test`).
+  MRU cap 20, pinned entries that survive eviction, pinned-first display order,
+  display name; covered by `node --test`).
 - `frontend/src/markdown.js` — pure math protection + code-segment helpers
   (covered by `node --test`).
 - `frontend/src/preview.js` — Markdown via marked + DOMPurify + highlight.js
@@ -145,14 +150,26 @@ this file is the developer/agent contract.
   frontend sends `baseHash` on save; a mismatch returns
   `conflict: note changed on disk` and the UI asks before forcing.
 - `mtime` is unix seconds (display/sort only); `hash` is the conflict token.
+- Multi-vault mode is a frontend concept: `main.js` aggregates
+  `list_notes(dir)` results from every active vault and tags each note with
+  `vault` (the absolute vault folder). Relative paths are only unique per
+  vault, so save/read/rename/move/delete/export pass that note’s `vault`
+  directory, and the folder tree is built per vault. The open note’s vault is
+  kept active (so unpinning it never closes the editor); leaving multi-vault
+  mode promotes that vault to primary.
 
-### IPC commands (21)
+### IPC commands (22)
 
 `list_notes`, `list_folders`, `read_note`, `save_note`, `create_note`,
 `rename_note`, `delete_note`, `move_note`, `search_notes`, `save_export`,
 `print_note_pdf`, `print_html_note`, `fetch_image_bytes`, `set_notes_root`,
-`read_local_image`, `render_html_note`, `html_preview_finish`,
-`set_html_preview`, `selftest_config`, `selftest_write`, `selftest_finish`.
+`set_notes_roots`, `read_local_image`, `render_html_note`,
+`html_preview_finish`, `set_html_preview`, `selftest_config`, `selftest_write`,
+`selftest_finish`.
+
+`set_notes_root` registers one vault for the `rmd` protocol/`read_local_image`;
+`set_notes_roots` registers every loaded vault (multi-vault mode). A request is
+served only when its canonical path is under at least one registered root.
 
 `create_note` takes an optional `kind` (`"markdown"` default, `"html"`) and
 picks `untitled.md` / `untitled.html`. `rename_note` preserves the note’s
@@ -224,7 +241,9 @@ If a new Tauri *plugin* is used:
    canonicalizes existing paths, and canonicalizes the deepest existing
    ancestor for new paths (junction/symlink escape guard). `walk` skips
    symlinks/junctions. `resolve_vault_file` is the equivalent guard for the
-   `rmd` protocol and `read_local_image`.
+   `rmd` protocol and `read_local_image`; `resolve_vault_file_in_roots` applies
+   it to every registered vault root and still rejects a file outside all of
+   them.
 4. **SSRF guard.** `fetch_image_bytes` only accepts http(s), rejects
    localhost/private/loopback/link-local/reserved targets, validates DNS
    resolution, and re-validates every redirect.
@@ -311,10 +330,24 @@ If a new Tauri *plugin* is used:
   with the subfolder scope off the tree shows `direct`, otherwise `count`, and
   `countTags` only counts notes in the active scope. Changing folder or scope
   refreshes the tag cloud and clears an active tag that no longer exists.
-  Expanded paths are stored in `rustmd-expanded-folders`; an empty set is the
-  default, so every folder starts collapsed. Recent vaults live MRU-first (max
-  8) in `rustmd-recent-dirs`; `#btn-change-dir` opens the quick switcher and
-  the onboarding page reuses the same list. Sort state is `rustmd-sort-key` +
+  Expanded paths are stored in `rustmd-expanded-folders` (multi-vault keys are
+  `<vault>\0<path>`); an empty set is the default, so every folder starts
+  collapsed. Multi-vault tree sections start expanded; folded vault roots live
+  in `rustmd-collapsed-vaults` (the vault root chevron toggles only the
+  section, clicking the label still selects that vault's scope). Recent
+  vaults live MRU-first (max 20) in `rustmd-recent-dirs` as
+  `{ dir, pinned }` entries (legacy string arrays still parse); pinned vaults
+  are shown first and are never evicted. `#btn-change-dir` opens the switcher
+  and the onboarding page reuses the same list. `#btn-multi-vault`, next to the
+  subfolder toggle, loads every pinned vault plus the current one; the choice
+  lives in `rustmd-multi-vault` (`on`/`off`). The aggregated list carries the
+  note’s `vault`, and the folder sidebar renders one section per vault so equal
+  relative folder paths stay independently selectable. The sidebar is 320 px
+  wide; the folders/tags block and the note list are separated by a draggable
+  grip. The folders/tags block is content-sized by default and capped at
+  `min(55%, 100vh - 274px)`, so the note list gets all remaining height; a
+  drag/keyboard resize persists px as `rustmd-nav-height`, double-click or
+  Enter resets to the content-sized default. Sort state is `rustmd-sort-key` +
   `rustmd-sort-dir` (`mtime` defaults to desc, `name` to asc). `#btn-refresh`
   rescans the vault through `loadNotes` (there is no file watcher): it flushes
   pending saves first, reloads a clean note whose hash changed, closes a clean
@@ -375,11 +408,12 @@ If a new Tauri *plugin* is used:
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
   `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
-  script captures 1440×900 zh/en light/dark, the 300 px sidebar and a 640×460
-  recent-vault switcher crop; it seeds `rustmd-recent-dirs` with three demo
-  folders (Windows-style paths) before taking the switcher shots, and turns
-  on the subfolder scope so the nested demo note appears. Update it when the
-  UI layout or the mock notes change so the images do not drift.
+  script captures 1440×900 zh/en light/dark, the 320 px sidebar, a 900×900
+  multi-vault view and a 640×460 recent-vault switcher crop; it seeds
+  `rustmd-recent-dirs` with three demo folders (two pinned) before taking the
+  switcher/multi shots, and turns on the subfolder scope so the nested demo
+  note appears. Update it when the UI layout or the mock notes change so the
+  images do not drift.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.

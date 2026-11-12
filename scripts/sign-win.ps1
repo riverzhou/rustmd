@@ -20,6 +20,10 @@ $exe = Join-Path $root 'target/release/rustmd.exe'
 if (-not (Test-Path $exe)) {
   throw "missing $exe; run 'npx tauri build --no-bundle' first"
 }
+$productVersion = (Get-Item $exe).VersionInfo.ProductVersion
+if ($productVersion -notlike "$version*") {
+  throw "target/release/rustmd.exe reports '$productVersion', expected '$version'; run 'npx tauri build --no-bundle' again"
+}
 
 $isSelfSigned = $true
 $cert = $null
@@ -27,12 +31,19 @@ $timestampServer = $null
 
 if ($env:RUSTMD_WIN_CERT_BASE64) {
   Write-Host 'Using RUSTMD_WIN_CERT_BASE64 (real Authenticode certificate).'
-  $pfx = Join-Path $env:RUNNER_TEMP 'rustmd-sign.pfx'
+  $tempDir = $env:RUNNER_TEMP
+  if (-not $tempDir) { $tempDir = [IO.Path]::GetTempPath() }
+  New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+  $pfx = Join-Path $tempDir 'rustmd-sign.pfx'
   [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:RUSTMD_WIN_CERT_BASE64))
   try {
     $password = ''
     if ($env:RUSTMD_WIN_CERT_PASSWORD) { $password = $env:RUSTMD_WIN_CERT_PASSWORD }
-    $secure = ConvertTo-SecureString $password -AsPlainText -Force
+    if ($password) {
+      $secure = ConvertTo-SecureString $password -AsPlainText -Force
+    } else {
+      $secure = New-Object System.Security.SecureString
+    }
     $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
     $cert = @($imported) | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
     if (-not $cert) { throw 'the imported PFX has no private key' }

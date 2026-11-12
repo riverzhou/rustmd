@@ -16,6 +16,10 @@ $exe = Join-Path $source 'rustmd.exe'
 if (-not (Test-Path $exe)) {
   throw "missing $exe; run 'npx tauri build --no-bundle' first"
 }
+$productVersion = (Get-Item $exe).VersionInfo.ProductVersion
+if ($productVersion -notlike "$version*") {
+  throw "target/release/rustmd.exe reports '$productVersion', expected '$version'; run 'npx tauri build --no-bundle' again"
+}
 
 $greenName = "rustmd-$version-win-x64"
 $green = Join-Path $release $greenName
@@ -44,6 +48,14 @@ $docs = Join-Path $root 'docs'
 if (Test-Path $docs) {
   Copy-Item $docs (Join-Path $green 'docs') -Recurse
 }
+# README/RELEASING link the CI/release workflow files; ship them so the
+# offline copy has no dead repository links.
+$workflows = Join-Path $root '.github/workflows'
+if (Test-Path $workflows) {
+  $greenWorkflows = Join-Path $green '.github/workflows'
+  New-Item -ItemType Directory -Force -Path $greenWorkflows | Out-Null
+  Copy-Item (Join-Path $workflows '*.yml') $greenWorkflows
+}
 
 $cert = Join-Path $release 'rustmd-selfsigned.cer'
 if (Test-Path $cert) {
@@ -58,6 +70,7 @@ try {
   $names = @($archive.Entries | ForEach-Object FullName)
   if (-not ($names -match '(^|[\\/])rustmd\.exe$')) { throw 'rustmd.exe missing in zip' }
   if (-not ($names -match '(^|[\\/])README\.md$')) { throw 'README.md missing in zip' }
+  if (-not ($names -match 'ci[.]yml$')) { throw 'ci.yml missing in zip' }
   if ($names -match 'rustmd-tmp') { throw 'temporary files leaked into the zip' }
   Write-Host "zip entries: $($names.Count)"
 } finally {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Every user-facing version must agree: package.json, Cargo.toml,
-// tauri.conf.json. CI additionally passes the git tag.
+// tauri.conf.json, and the root package versions in package-lock.json /
+// Cargo.lock. CI additionally passes the git tag.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,11 +16,17 @@ function read(file) {
 const pkg = JSON.parse(read('package.json'));
 const cargo = read('Cargo.toml').match(/^version\s*=\s*"([^"]+)"/m);
 const tauri = JSON.parse(read('tauri.conf.json'));
+const packageLock = JSON.parse(read('package-lock.json'));
+const cargoLock = read('Cargo.lock').match(
+  /\[\[package\]\]\s*\nname = "rustmd"\s*\nversion = "([^"]+)"/
+);
 
 const versions = {
   'package.json': pkg.version,
   'Cargo.toml': cargo ? cargo[1] : null,
   'tauri.conf.json': tauri.version,
+  'package-lock.json': packageLock.packages?.['']?.version || packageLock.version,
+  'Cargo.lock': cargoLock ? cargoLock[1] : null,
 };
 
 const errors = [];

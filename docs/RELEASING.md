@@ -16,7 +16,7 @@
 - `Cargo.lock` 与 `package-lock.json` 的根包版本
 - git tag：`v<version>`
 
-`npm run check:version` 会校验前三个用户可见版本。建议用
+`npm run check:version` 会校验以上五个版本文件（含两个 lockfile 的根包版本）。建议用
 `npm version <version> --no-git-tag-version` 同步 `package.json` /
 `package-lock.json`，手动改 `Cargo.toml` / `tauri.conf.json`，再在
 `cargo check` / `cargo build` 时确认 `Cargo.lock` 的根包版本；提交前用
@@ -29,26 +29,26 @@
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.8.1
-node scripts/release-notes.mjs v1.8.1 >/dev/null
+node scripts/check-version.mjs v1.9.0
+node scripts/release-notes.mjs v1.9.0 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.8.1"
-git tag v1.8.1
+git commit -m "release: v1.9.0"
+git tag v1.9.0
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.8.1
+git push github v1.9.0
 git push origin master
-git push origin v1.8.1
+git push origin v1.9.0
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.8.1`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.9.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
@@ -73,20 +73,26 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 | macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 | 全部 | `SHA256SUMS.txt`；Windows/macOS 另有同名 `.sha256`，Linux 另有 `SHA256SUMS-linux.txt` | 完整性校验 |
 
-所有 bundle（deb / AppImage / DMG）通过 `bundle.licenseFile` 随附 `LICENSE`；
-Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、README/CHANGELOG 及 `docs/`（含截图）。
+DMG 在卷根目录附加 `LICENSE`、README/CHANGELOG、AGENTS/AUDIT/LINUX_BUILD、
+`docs/`（含截图）和 `.github/workflows/`（并带 `/Applications` 快捷方式）；
+Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、
+README/CHANGELOG、`docs/`（含截图）和 `.github/workflows/`，保证离线 README
+的仓库链接不失效。deb/AppImage 的包内许可证由 Tauri bundler 处理；为确保每个
+Release 都能拿到许可证，publish job 还会把仓库根目录的 `LICENSE` 作为独立资产
+上传。
 
 Windows zip 的目录结构：
 
 ```
-rustmd-1.8.1-win-x64/
+rustmd-1.9.0-win-x64/
 ├── rustmd.exe
 ├── README.md / README.en.md
 ├── CHANGELOG.md
 ├── AUDIT_REPORT.md / AGENTS.md / LINUX_BUILD.md
 ├── SECURITY.md
 ├── LICENSE
-├── rustmd-selfsigned.cer
+├── rustmd-selfsigned.cer      # 仅自签名构建；真实 PFX 构建不含
+├── .github/workflows/*.yml
 └── docs/
     ├── ARCHITECTURE.md / TESTING.md / RELEASING.md / SECURITY.md / ...
     └── screenshots/*.png
@@ -160,17 +166,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.8.1-macos-arm64.dmg.sha256
+shasum -a 256 -c rustmd-1.9.0-macos-arm64.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.8.1-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.8.1-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.9.0-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.9.0-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.8.1-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.9.0-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

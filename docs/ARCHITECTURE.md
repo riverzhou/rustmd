@@ -6,7 +6,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 ┌──────────────────────────── WebView（frontend/）────────────────────────────┐
 │ main.js  UI 状态 / DOM / 保存队列 / 文件夹树 / 搜索 / 导出 / 笔记库切换     │
 │   ├─ notelist.js   纯函数：排序、过滤、文件夹树                             │
-│   ├─ vaultlist.js  纯函数：最近目录去重 / MRU / 显示名                      │
+│   ├─ vaultlist.js  纯函数：最近目录去重 / MRU(20) / 置顶 / 显示名           │
 │   ├─ markdown.js   纯函数：代码段切分、数学公式保护                         │
 │   ├─ preview.js    Markdown → DOMPurify；HTML → sandbox iframe 原生渲染 / 隐藏 WebView 截图 │
 │   ├─ export.js     离屏舞台 → 图片内联 → html2canvas（PNG）/ WebView 打印（PDF）│
@@ -27,14 +27,14 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 │  导出 save_export（原生保存对话框 + 写入）                                  │
 │  print_note_pdf / print_html_note（WebView2 / WKWebView / WebKitGTK 打印） │
 │  网络 fetch_image_bytes（SSRF 防护 + 重定向校验）                           │
-│  rmd 协议 serve_rmd + VaultFileCache + read_local_image                    │
+│  rmd 协议 serve_rmd（多库根）+ VaultFileCache + read_local_image           │
 │  自测命令（仅 debug）                                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 进程与数据流
 
-1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders` + `set_notes_root`，失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 8 个），引导页和侧栏切换器都能一键重开。扫描识别 `.md` / `.html` / `.htm`。列表与搜索默认只覆盖当前文件夹的直属笔记，侧栏“包含子文件夹”开关（`rustmd-include-subfolders`）打开后才递归到整个子树；文件夹计数与标签云也按当前范围统计。
+1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders`，随后用 `set_notes_roots` 注册所有已打开库根（单库时只有一个），失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 20 个；条目为 `{ dir, pinned }`，置顶库永不被淘汰并显示在最上方），引导页和侧栏切换器都能一键重开。侧栏“多库”按钮（`rustmd-multi-vault`）会同时加载所有置顶库和当前库：笔记列表汇总，文件夹树按库分组，各库子目录独立选择。扫描识别 `.md` / `.html` / `.htm`。列表与搜索默认只覆盖当前文件夹的直属笔记，侧栏“包含子文件夹”开关（`rustmd-include-subfolders`）打开后才递归到整个子树；文件夹计数与标签云也按当前范围统计。
 2. 选择笔记：`read_note` 返回 `{ tags, body, mtime, hash, kind }`；编辑器按 `kind` 切换 Markdown/HTML 语法，预览走对应渲染管线；`setImageContext(root, notePath)` 记录图片解析上下文。
 3. 编辑/标签变化：500 ms 防抖后进入保存队列；`save_note` 带 `baseHash`，后端比较磁盘内容 hash，不一致返回 `conflict:`，前端询问是否覆盖；写盘使用同目录临时文件 + rename。
 4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
@@ -45,11 +45,11 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 | 文件 | 职责 |
 | --- | --- |
-| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、目录范围开关（`rustmd-include-subfolders`：默认仅当前目录，打开后含子树）、排序（键 + 升/降序）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`）、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
+| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`，多库时键为 `<vault>\0<path>`）；库根节点折叠状态存 `rustmd-collapsed-vaults`）、目录范围开关（`rustmd-include-subfolders`：默认仅当前目录，打开后含子树）、排序（键 + 升/降序）、可拖动的文件夹/标签 ↔ 笔记列表分隔条（`rustmd-nav-height`，双击重置）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`，最多 20 个、可钉死置顶）、多库同开（`rustmd-multi-vault`，按库聚合笔记与分组文件夹树）、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态；每条笔记在内存中带 `vault` 绝对目录，读写命令按该目录执行 |
 | `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
 | `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
 | `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`folderInScope`、`countTags`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
-| `vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限、显示名；无 DOM，可单测 |
+| `vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限 20、置顶标记（不参与淘汰）、置顶优先显示、显示名；无 DOM，可单测 |
 | `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
 | `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；本地图片在导出前 data URL 内联 |
 | `export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；Markdown PDF 优先 `exportPdfVector`（WebView 打印，矢量文字），HTML 笔记 PDF 走 `print_html_note`，失败回退图片 PDF；长 Markdown 自适应 0.25–3× |
@@ -77,8 +77,9 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `print_note_pdf` | `title` | `bytes` | 把**当前窗口文档**交给平台打印引擎（Windows WebView2 / macOS WKWebView / Linux WebKitGTK）打成矢量 PDF；A4 分页；Windows 带标题页眉 + 页码页脚，macOS/Linux 用 `stamp_page_numbers` 补页码；macOS/Linux 只写系统临时文件并删除；不接收输出路径 |
 | `print_html_note` | `dir, path, html, title` | `bytes` | 在隐藏 `html-render-*` 窗口加载 HTML 笔记（`mode=print`），等字体/图表/图片就绪后经平台打印引擎输出矢量 PDF；固定宽度页面按 `scrollWidth` 缩放；页码与 Markdown 一致 |
 | `fetch_image_bytes` | `url` | `{bytes, mime}` | 仅 http(s)；SSRF/重定向防护 |
-| `set_notes_root` | `dir` | `()` | `rmd` 协议与 `read_local_image` 的根 |
-| `read_local_image` | `path` | `{bytes, mime}` | 仅当前笔记库内；mtime + 字节预算缓存 |
+| `set_notes_root` | `dir` | `()` | 注册一个 `rmd` 协议与 `read_local_image` 的根（自测/单库兼容） |
+| `set_notes_roots` | `dirs` | `()` | 注册所有已打开库根（多库同开）；请求必须位于任一规范化根下 |
+| `read_local_image` | `path` | `{bytes, mime}` | 仅任一已注册笔记库内；mtime + 字节预算缓存 |
 | `selftest_config` | — | `{examplesDir, outDir}` | 仅 debug |
 | `selftest_write` | `name, data` | `()` | 仅 debug；限制在自测输出根 |
 | `selftest_finish` | `ok` | `()` | 仅 debug；以 0/1 退出应用 |
@@ -91,7 +92,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
   - 对不存在的路径，canonicalize **最深的已存在祖先**并检查前缀，从而阻止“vault 内 junction/symlink 指向外部 + 新建文件”的写逃逸；
   - Windows 上剥掉 `\\?\` 前缀；`\\?\UNC\` 还原为 `\\server\share`。
 - `walk`/`walk_folders` 用 `symlink_metadata` + Windows reparse point 属性跳过符号链接/junction，避免环和越界读取。
-- `resolve_vault_file` 对 `rmd` 请求做同样的 canonicalize + 前缀检查；只服务当前 root。
+- `resolve_vault_file` 对 `rmd` 请求做同样的 canonicalize + 前缀检查；`resolve_vault_file_in_roots` 逐个检查所有已注册 root，只服务位于至少一个 root 下的文件。
 - `serve_rmd` 的路径契约：URL 路径去掉**恰好一个**前导 `/` 后 percent-decode，再要求绝对路径；Unix `/home/...` 用 `rmd://localhost//home/...`，Windows `C:/...` 用 `http://rmd.localhost/C%3A/...`，UNC 用 `//server/share/...`。
 - `rmd` 的 Origin 白名单：无 Origin 的普通 `<img>/<link>/<script>` 允许；带 Origin 的请求只允许应用自身 webview（Tauri / 本地 dev server），以及预览 iframe/隐藏窗口的 `font`/`script`/`style` 子资源（`Sec-Fetch-Dest`）。`fetch`/XHR（空 dest）、文档读取和远程 iframe 一律 403。`Access-Control-Allow-Origin` 只回显允许的 Origin，不再 `*`；`rmd` 返回的 HTML/SVG 文档加 sandbox CSP + `nosniff`。预览/导出的本地 CSS/JS 优先内联，减少对这条回退通道的依赖。
 - 导出的目标路径不来自前端命令参数，而是 `save_export` 内部的原生对话框结果。`print_note_pdf` 只打印当前窗口已渲染的文档（由 `export.js` 的离屏舞台 + `body.rmd-printing` 决定），`print_html_note` 只打印隐藏渲染窗口里的笔记文档；两者都不接收输出路径。Windows 直接在内存里取 PDF；macOS/Linux 的打印引擎只能写文件，因此写到 `std::env::temp_dir()` 下的随机名临时文件，读回后立即删除。

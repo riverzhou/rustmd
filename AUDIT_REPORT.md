@@ -1,8 +1,37 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-12（v1.8.1 复核；v1.8.0 于 2026-11-12，v1.7.0 于 2026-11-12）
-**审计对象**：`rustmd` v1.8.1（Rust + Tauri 2，Markdown + HTML 笔记）
-**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+**审计日期**：2026-11-13（v1.9.0 全量复核；v1.8.1 与 v1.8.0 于 2026-11-12）
+**审计对象**：`rustmd` v1.9.0（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测 + 浏览器 mock 状态回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.9.0 最近库置顶 / 多库同开 / 侧栏布局（当前版本）
+
+本版在 v1.8.1 基础上完成一轮“笔记库管理 + 侧栏空间”升级，并做全量代码/文档复核：
+
+- **最近笔记库**：上限 20，条目改为 `{ dir, pinned }`（旧字符串数组自动升级）；
+  置顶库固定显示在“置顶”分组最上方且不参与淘汰。`vaultlist.js` 的 MRU、
+  去重、淘汰和置顶逻辑有 10 个 Node 单测覆盖。
+- **多库同开**：`set_notes_roots` 注册所有已打开库根；`resolve_vault_file_in_roots`
+  对 `rmd` 协议与 `read_local_image` 逐个根做 canonicalize + 前缀检查，仍拒绝
+  位于所有根之外的文件。前端给每条笔记附加 `vault` 绝对目录，打开/保存/重命名/
+  移动/删除/导出均使用该目录；文件夹树按库分组，各库子目录独立选择；关闭多库
+  时保留当前笔记并提升其库为主库。
+- **折叠与侧栏**：库根节点和各级子目录可折叠（库根状态存
+  `rustmd-collapsed-vaults`，子目录沿用 `rustmd-expanded-folders`）；侧栏默认
+  320px，文件夹/标签与笔记列表之间新增可拖动分隔条（`rustmd-nav-height`，
+  双击重置、键盘可调），默认给笔记列表更大面积。
+- **独立复核（两轮）**：第一轮分别审计 Rust、前端状态机、发布脚本/文档，发现并
+  修复了刷新把不可用库误判为删除、HTML 导出切换笔记时图片上下文混用、浏览器
+  mock 未知库共享 Map、分隔条在窗口缩放时覆盖用户偏好、多根注册 all-or-nothing、
+  不可读子目录导致整库扫描失败、HTML 渲染结果缺少像素/载荷上限，以及临时 PDF
+  清理、保存时二次读取、无 `<head>` 文档注入位置、非 UTF-8 笔记按标题/文件名
+  搜索、渲染文档 ring 淘汰在途 token 等边界问题。修复后第二轮复核未发现未修复的
+  高危或中危缺陷；剩余项为产品边界，记录在 §6。
+- **验证**：`npm run check` 全绿（34 个前端单测、64 个 Rust 测试 = 63 通过 +
+  1 个网络测试 ignored、clippy `-D warnings`、Vite build）；`npm run selftest`
+  真实 WebView 6 篇示例 `ok: true`、0 errors、1 条远程图 warning，
+  `--require-html` 通过；浏览器 mock 覆盖置顶/20 条上限/多库聚合/分组/跨库
+  编辑保存/库根折叠/分隔条拖动与重置。
 
 ### v1.8.1 macOS 仅 Apple Silicon（arm64）发布策略
 
@@ -137,17 +166,17 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 |---|---|
 | 未修复高危缺陷 | **0 个已知** |
 | 未修复中危缺陷 | **0 个已知**（少数产品边界见 §6） |
-| Rust 测试 | **59 个**：58 通过 + 1 个网络测试默认 `#[ignore]`（含范围搜索单测、页脚戳记单测与真实 PDF 回归） |
-| 前端单测 | **28 个**，全部通过 |
+| Rust 测试 | **64 个**：63 通过 + 1 个网络测试默认 `#[ignore]`（含范围搜索、多库根包含性、页脚戳记单测与真实 PDF 回归） |
+| 前端单测 | **34 个**，全部通过 |
 | 静态检查 | ESLint 0 error；`cargo fmt --check`；clippy `-D warnings`；`npm run check` 全绿 |
 | 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）`ok: true`、0 errors、1 条远程图 warning；矢量 PDF 字体、HTML iframe/本地资源与分段拼接断言均通过，`--require-html` 报告校验通过 |
-| UI 交互 | 浏览器 mock：当前目录/子树范围、范围搜索、文件夹计数、标签云、刷新后开关持久化，以及最近笔记库切换/移除/ESC/焦点/语言切换通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
+| UI 交互 | 浏览器 mock：最近库钉死/20 条上限、多库聚合/按库分组/跨库保存、库根与子目录折叠、侧栏分隔条拖动/双击重置/键盘调整、当前目录范围、搜索、标签云、语言/主题切换通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
 | macOS 编译 | macOS arm64（`aarch64-apple-darwin`）CI 构建；Intel/universal 已移除，运行时仍需在 Apple Silicon Mac 上自测 |
 | Linux 运行 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析；发布 workflow 在 Ubuntu + Xvfb 跑完整 selftest（含矢量 PDF `/Font` 断言） |
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.8.1 只把 macOS 构建目标收窄为 Apple Silicon（arm64），没有修改应用代码、IPC 命令、权限、CSP、路径封闭、HTML 隔离或导出边界。v1.8.0 的当前目录范围与范围搜索继续通过审计；v1.5.0 的矢量 PDF 打印链路、内置 WebView 预览和发布流程保持有效。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
+**结论**：v1.9.0 的最近库置顶、多库同开、库根折叠与侧栏分隔条通过本轮全量复核；新增的 `set_notes_roots`/`resolve_vault_file_in_roots` 仍保持逐根 canonicalize + 前缀检查，没有放宽 CSP、HTML 隔离、SSRF、导出写路径或主窗口命令校验。v1.8.0 的当前目录范围/搜索、v1.5.0 的矢量 PDF 打印链路和内置 WebView 预览继续有效。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
 
 ---
 
@@ -219,7 +248,7 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 本机（Windows 11，WebView2）执行：
 
 ```text
-npm run check  → ESLint、28 前端单测、repo、version、fmt、clippy -D warnings、59 Rust 测试、Vite build 全通过
+npm run check  → ESLint、34 前端单测、repo、version、fmt、clippy -D warnings、64 Rust 测试、Vite build 全通过
 npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过；report ok:true、0 errors、1 条 picsum 远程图 warning；check-selftest-report --require-html 通过
 ```
 
@@ -259,13 +288,19 @@ CI：Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`；Linux Xvfb 
 | 无 macOS 运行时 CI | 只有编译 + 本地 Windows/Linux E2E | 记录；后续可加 macOS runner E2E |
 | macOS 打印运行时 | macOS arm64 由 CI 构建，但尚未在真机跑打印；Linux 已由 Ubuntu Xvfb E2E 覆盖 | 发布前在 Apple Silicon Mac 上跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
 | Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
-| 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言（当前目录范围与最近笔记库切换已做浏览器 mock 检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
+| 无 UI 自动化 | 排序/重命名/wrap/fullscreen 仍无浏览器级断言（最近库、多库、折叠、分隔条与当前目录范围已做浏览器 mock 检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
-| 本地偏好 | 最近目录（最多 8 个路径）与“包含子文件夹”开关存于 WebView `localStorage`，不加密 | 仅本机使用、不上传；清除应用数据即可删除 |
+| 大库/慢图床卡顿 | `list_notes`/搜索/`fetch_image_bytes` 仍在同步命令内完成，超大库或慢图床可能短暂占用 UI 线程 | 现有行为；后续迁移 `spawn_blocking` |
+| 超长 HTML 渲染 | `html_preview_finish` 的解码/拼接有像素/载荷上限，但仍在同步命令内完成，极端长页面可能短暂停顿 | 上限已防 OOM；后续可迁移 `spawn_blocking` |
+| macOS 打印超时临时文件 | >180s 打印超时后，已 detach 的 AppKit 线程可能重新写出临时 PDF | 仅超时路径；正常路径有 Drop guard 清理 |
+| IPC PNG 编码 | 渲染 PNG 以 JSON 数字数组回传，极端长图有额外序列化开销 | 已有像素上限；后续可改二进制 IPC |
+| 原子写元数据 | 保留 Unix mode；Windows ACL、macOS xattr/标签不复制 | 文档记录；内容与冲突检测不受影响 |
+| 冲突 token | 64-bit `DefaultHasher`，能写盘者可构造碰撞 | 仅影响外部修改检测，需本地写权限；后续可换 SHA-256 |
+| 本地偏好 | 最近目录（最多 20 个路径，含置顶）、多库开关、库根/子目录折叠、侧栏高度与“包含子文件夹”开关存于 WebView `localStorage`，不加密 | 仅本机使用、不上传；清除应用数据即可删除 |
 | 导出 HTML 原文 | HTML 笔记导出保留脚本/样式；用户分享需自行审查 | 安全文档明示 |
 
 ---
 
 ## 7. 结论
 
-v1.8.1 可以发布。macOS 构建目标已收窄为 Apple Silicon，README/AGENTS/RELEASING/TESTING 与 release workflow 保持一致；当前目录范围、范围搜索、矢量打印链路和最近笔记库切换继续有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.9.0 可以发布。最近库置顶、多库同开、库根折叠与侧栏分隔条均完成代码、文档、截图和回归验证；README/AGENTS/RELEASING/TESTING 与 release workflow 保持一致；当前目录范围、范围搜索、矢量打印链路和最近笔记库切换继续有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

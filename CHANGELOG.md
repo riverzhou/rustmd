@@ -5,6 +5,47 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.9.0] - 2026-11-13
+
+### 新增（Added）
+
+- **最近笔记库最多 20 个 + 钉死/置顶**：切换窗口按最近使用顺序列出最多 20 个
+  目录。每行新增图钉按钮，可把笔记库“钉死/置顶”；置顶库固定显示在列表最上方，
+  并且永远不会被容量上限淘汰。`rustmd-recent-dirs` 改为存储 `{ dir, pinned }`
+  对象数组，旧的纯字符串数组会自动升级读取。
+- **多库同开**：搜索框下方新增“多库”按钮（`rustmd-multi-vault`）。开启后同时加载
+  所有置顶库和当前库，笔记列表汇总展示；文件夹树按库分组，各库的子目录独立选择。
+  文件名卡片和状态栏显示所属库，打开/保存/重命名/移动/删除/导出都会使用该笔记
+  所属的库目录。关闭多库时会保留当前打开的笔记（把它的库提升为主库）。
+  多库文件夹树中的库根节点和各级子目录都可以折叠/展开；库根折叠状态存
+  `rustmd-collapsed-vaults`，子目录展开状态沿用 `rustmd-expanded-folders`。
+- 新增 `set_notes_roots` IPC：`rmd` 本地图片协议和 `read_local_image` 可以同时
+  服务多个已打开库；每个文件仍逐个根目录做规范化与包含性校验，不放松路径封闭。
+- 浏览器 mock 支持按目录隔离的示例库（`D:\Notes`、`D:\Knowledge`、
+  `D:\Writing`），方便在浏览器模式验证置顶与多库聚合。
+
+### 变更（Changed）
+
+- **侧栏布局优化**：默认宽度 300 → 320px，顶栏、搜索区、标签区间距收紧；
+  文件夹/标签区与笔记列表之间新增可拖动分隔条（默认按内容自适应，上限
+  `min(55%, 100vh - 274px)`，双击/Enter 恢复默认，高度存 `rustmd-nav-height`），
+  把剩余高度全部留给下方笔记列表，默认可见笔记数明显增加。
+- 侧栏截图、切换窗口截图重新生成，并新增多库同开截图（`multi-vault.png` /
+  `multi-vault.en.png`）；`scripts/capture-screenshots.mjs` 会预置置顶库并拍摄
+  多库视图。
+- README 中英文、AGENTS（架构、数据模型、22 个 IPC、路径封闭与侧栏说明）同步更新。
+- 前端纯函数测试新增置顶淘汰、20 条上限、多库同路径排序/过滤等覆盖。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、34 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、64 个 Rust 测试（63 通过 + 1 个网络测试 ignored）、
+  Vite build 全部通过。
+- `npm run selftest`：真实 WebView 渲染 6 篇示例，`report.ok: true`、0 errors、
+  1 条远程图 warning；`check-selftest-report --require-html` 通过。
+- 浏览器 mock 验证：置顶/取消置顶、20 条上限与置顶不淘汰、多库聚合列表、
+  按库分组的文件夹树、跨库打开/编辑/保存、关闭多库时保留当前笔记。
+
 ## [1.8.1] - 2026-11-12
 
 ### 变更（Changed）

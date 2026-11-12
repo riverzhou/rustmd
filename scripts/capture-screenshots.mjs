@@ -8,8 +8,8 @@
 //        --window-size=1440,900 http://127.0.0.1:5173/
 //   3) node scripts/capture-screenshots.mjs
 //
-// Outputs docs/screenshots/{overview,dark,sidebar,vault-switcher}.png and the
-// .en variants. The script drives the mock vault that ships in
+// Outputs docs/screenshots/{overview,dark,sidebar,multi-vault,vault-switcher}.png
+// and the .en variants. The script drives the mock vault that ships in
 // frontend/src/api.js, so it works without the Rust backend. CDP/APP can be
 // overridden with env vars.
 import { writeFileSync } from 'node:fs';
@@ -19,7 +19,11 @@ const APP = process.env.APP || 'http://127.0.0.1:5173/';
 const OUT = 'docs/screenshots';
 const NOTE = 'work/数学与图表.md';
 const VAULT = 'D:\\Notes';
-const RECENT_VAULTS = [VAULT, 'D:\\Knowledge', 'D:\\Writing'];
+const RECENT_VAULTS = [
+  { dir: VAULT, pinned: true },
+  { dir: 'D:\\Knowledge', pinned: true },
+  { dir: 'D:\\Writing', pinned: false },
+];
 
 const targets = await (await fetch(`${CDP}/json/list`)).json();
 const target = targets.find((t) => t.type === 'page' && t.url.startsWith(APP));
@@ -132,7 +136,21 @@ await send('Emulation.setDeviceMetricsOverride', {
 await js(`localStorage.setItem(
   'rustmd-recent-dirs',
   ${JSON.stringify(JSON.stringify(RECENT_VAULTS))}
-); localStorage.removeItem('rustmd-dir'); true`);
+);
+localStorage.setItem('rustmd-sort-key', 'mtime');
+localStorage.setItem('rustmd-sort-dir', 'desc');
+localStorage.setItem('rustmd-view', 'split');
+localStorage.setItem('rustmd-wrap', 'on');
+localStorage.setItem('rustmd-theme', 'light');
+localStorage.setItem('rustmd-lang', 'zh-CN');
+localStorage.removeItem('rustmd-split');
+localStorage.removeItem('rustmd-dir');
+localStorage.removeItem('rustmd-multi-vault');
+localStorage.removeItem('rustmd-nav-height');
+localStorage.removeItem('rustmd-collapsed-vaults');
+localStorage.removeItem('rustmd-sidebar');
+localStorage.removeItem('rustmd-expanded-folders');
+true`);
 await send('Page.reload');
 await sleep(400);
 await waitFor(
@@ -180,14 +198,14 @@ await sleep(800);
 await setLang('zh-CN');
 await setTheme('light');
 await capture('overview', null);
-await capture('sidebar', { x: 0, y: 0, width: 300, height: 900 });
+await capture('sidebar', { x: 0, y: 0, width: 320, height: 900 });
 await setTheme('dark');
 await capture('dark', null);
 
 await setTheme('light');
 await setLang('en');
 await capture('overview.en', null);
-await capture('sidebar.en', { x: 0, y: 0, width: 300, height: 900 });
+await capture('sidebar.en', { x: 0, y: 0, width: 320, height: 900 });
 await setTheme('dark');
 await capture('dark.en', null);
 
@@ -205,7 +223,19 @@ async function captureVaultSwitcher(name) {
   await sleep(100);
 }
 
+// Multi-vault view: the two pinned demo vaults are shown together, with one
+// folder section per vault and the aggregated note list.
 await setTheme('light');
+await setLang('zh-CN');
+await js("document.getElementById('btn-multi-vault').click(); true");
+await waitFor("document.querySelectorAll('.nav-vault').length === 2");
+await sleep(700);
+await capture('multi-vault', { x: 0, y: 0, width: 900, height: 900 });
+await setLang('en');
+await sleep(300);
+await capture('multi-vault.en', { x: 0, y: 0, width: 900, height: 900 });
+
+// The switcher screenshot also shows the pinned group and the multi-vault hint.
 await setLang('zh-CN');
 await captureVaultSwitcher('vault-switcher');
 await setLang('en');

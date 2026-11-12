@@ -1056,7 +1056,7 @@ fn sort_note_metas(metas: &mut [NoteMeta]) {
 
 fn collect_notes(root: &Path) -> Result<Vec<NoteMeta>, String> {
     let mut metas: Vec<NoteMeta> = Vec::new();
-    walk(root, root, true, &mut metas)?;
+    walk(root, root, true, &mut metas, true)?;
     sort_note_metas(&mut metas);
     Ok(metas)
 }
@@ -1081,15 +1081,30 @@ fn collect_notes_scoped(
         return Err("not a directory".into());
     }
     let mut metas: Vec<NoteMeta> = Vec::new();
-    walk(&dir, &scan_root, recursive, &mut metas)?;
+    walk(&dir, &scan_root, recursive, &mut metas, true)?;
     sort_note_metas(&mut metas);
     Ok(metas)
 }
 
-fn walk(dir: &Path, root: &Path, recursive: bool, out: &mut Vec<NoteMeta>) -> Result<(), String> {
-    let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
+fn walk(
+    dir: &Path,
+    root: &Path,
+    recursive: bool,
+    out: &mut Vec<NoteMeta>,
+    fatal: bool,
+) -> Result<(), String> {
+    // A denied subdirectory (e.g. `System Volume Information` when a drive
+    // root is the vault) must not hide every note in the vault. The scan
+    // start itself is fatal; unreadable descendants are skipped.
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if fatal => return Err(e.to_string()),
+        Err(_) => return Ok(()),
+    };
     for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let Ok(entry) = entry else {
+            continue;
+        };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') {
@@ -1106,7 +1121,8 @@ fn walk(dir: &Path, root: &Path, recursive: bool, out: &mut Vec<NoteMeta>) -> Re
         };
         if file_type.is_dir() {
             if recursive {
-                walk(&path, root, recursive, out)?;
+                // Descendant failures are non-fatal; see above.
+                let _ = walk(&path, root, recursive, out, false);
             }
         } else if file_type.is_file()
             && is_note_file_name(&name)
@@ -1121,7 +1137,7 @@ fn walk(dir: &Path, root: &Path, recursive: bool, out: &mut Vec<NoteMeta>) -> Re
 
 fn collect_folders(root: &Path) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
-    walk_folders(root, root, &mut out)?;
+    walk_folders(root, root, &mut out, true)?;
     out.sort_by(|a, b| {
         a.to_lowercase()
             .cmp(&b.to_lowercase())
@@ -1130,10 +1146,16 @@ fn collect_folders(root: &Path) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>) -> Result<(), String> {
-    let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
+fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>, fatal: bool) -> Result<(), String> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if fatal => return Err(e.to_string()),
+        Err(_) => return Ok(()),
+    };
     for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let Ok(entry) = entry else {
+            continue;
+        };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') || is_link_or_reparse(&path) {
@@ -1146,7 +1168,7 @@ fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>) -> Result<(), St
             if let Ok(rel) = path.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
-            walk_folders(&path, root, out)?;
+            let _ = walk_folders(&path, root, out, false);
         }
     }
     Ok(())
@@ -1233,6 +1255,12 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
         if let Err(e) = write_result {
             let _ = fs::remove_file(&tmp);
             return Err(e.to_string());
+        }
+        // Keep the target's Unix mode across the temp-file + rename replace.
+        // (Windows ACLs and macOS xattrs are not copied; documented boundary.)
+        #[cfg(unix)]
+        if let Ok(metadata) = fs::metadata(path) {
+            let _ = fs::set_permissions(&tmp, metadata.permissions());
         }
         match fs::rename(&tmp, path) {
             Ok(()) => return Ok(()),
@@ -1323,20 +1351,28 @@ fn save_note_impl(
     force: bool,
 ) -> Result<NoteMeta, String> {
     let full = resolve_in_root(root, rel)?;
-    let existing_text = fs::read_to_string(&full).ok();
+    // Read the old bytes once and use them for both the conflict hash and
+    // compose. Re-reading after the hash check allowed an external edit in
+    // between to pass the hash while composing from the older content.
+    let existing_bytes = match fs::read(&full) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == ErrorKind::NotFound => None,
+        Err(e) => return Err(e.to_string()),
+    };
+    let existing_text = existing_bytes
+        .as_ref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned));
     if !force {
         if let Some(expected) = base_hash {
-            let actual = if full.exists() {
-                let bytes = fs::read(&full).map_err(|e| e.to_string())?;
-                content_hash(&bytes)
-            } else {
-                String::new()
-            };
+            let actual = existing_bytes
+                .as_ref()
+                .map(|bytes| content_hash(bytes))
+                .unwrap_or_default();
             if actual != expected {
                 return Err(CONFLICT_ERR.into());
             }
         } else if let Some(expected) = base_mtime
-            && full.exists()
+            && existing_bytes.is_some()
             && mtime_of(&full) != expected
         {
             return Err(CONFLICT_ERR.into());
@@ -1576,16 +1612,18 @@ fn search_notes_impl(
         let Ok(full) = resolve_in_root(root, &meta.path) else {
             continue;
         };
-        let Ok(text) = fs::read_to_string(&full) else {
-            continue;
-        };
+        // A non-UTF-8 note stays visible in the list / openable with a clear
+        // error; it should still be findable by title, filename or tag.
+        let text = fs::read_to_string(&full).ok();
         // Search visible text for HTML notes, not markup: a hit on `class=`
         // or a tag name is not something the user can see in the preview.
-        let body = if meta.kind == "html" {
-            html_to_text(&text)
-        } else {
-            parse_frontmatter(&text).1
-        };
+        let body = text.as_deref().map_or_else(String::new, |text| {
+            if meta.kind == "html" {
+                html_to_text(text)
+            } else {
+                parse_frontmatter(text).1
+            }
+        });
         let body_lower = body.to_lowercase();
         let title_lower = meta.title.to_lowercase();
         let file_name = Path::new(&meta.path)
@@ -1787,7 +1825,15 @@ async fn print_webview_pdf_native(
     window: tauri::WebviewWindow,
     options: PdfPrintOptions,
 ) -> Result<Vec<u8>, String> {
+    struct TempPdfGuard(std::path::PathBuf);
+    impl Drop for TempPdfGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
     let out_path = std::env::temp_dir().join(format!("rustmd-print-{}.pdf", random_token("")));
+    // Remove the temp PDF on every path, including timeout/print failure.
+    let _temp_guard = TempPdfGuard(out_path.clone());
     let out = out_path.to_string_lossy().to_string();
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let path = out.clone();
@@ -1826,7 +1872,6 @@ async fn print_webview_pdf_native(
     })
     .await
     .map_err(|e| format!("PDF print task failed: {e}"))?;
-    let _ = std::fs::remove_file(&out_path);
     Ok(stamp_page_numbers(bytes?))
 }
 
@@ -2678,6 +2723,23 @@ fn resolve_vault_file(root: &Path, path_str: &str) -> Result<PathBuf, String> {
     Ok(file)
 }
 
+/// Multi-vault variant: a file is allowed when it lives under any open root.
+/// The per-root guard is reused so overlapping/nested vaults and Windows
+/// short/long path forms behave exactly like the single-root path.
+fn resolve_vault_file_in_roots(roots: &[PathBuf], path_str: &str) -> Result<PathBuf, String> {
+    if roots.is_empty() {
+        return Err("notes root not set".into());
+    }
+    let mut last_err: Option<String> = None;
+    for root in roots {
+        match resolve_vault_file(root, path_str) {
+            Ok(file) => return Ok(file),
+            Err(err) => last_err = Some(err),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "notes root not set".into()))
+}
+
 /// Content type by file extension. (Magic-byte sniffing would be more
 /// thorough, but notes embed images by extension and this keeps the
 /// handler dependency-free; unknown extensions still display — browsers
@@ -2797,20 +2859,63 @@ impl VaultFileCache {
     }
 }
 
-/// App state for the `rmd` protocol: the open notes root (set by the
-/// frontend via `set_notes_root`) plus the byte cache.
+/// App state for the `rmd` protocol: the open notes roots (set by the
+/// frontend via `set_notes_root`/`set_notes_roots`) plus the byte cache.
+///
+/// Multi-vault mode opens several vaults at once, so image/vault-file
+/// requests are checked against every active root. Requests still use
+/// absolute paths; a file is served when it lives under *any* open root.
 struct VaultState {
-    root: Mutex<Option<PathBuf>>,
+    roots: Mutex<Vec<PathBuf>>,
     cache: Arc<VaultFileCache>,
 }
 
 impl VaultState {
     fn new() -> Self {
         Self {
-            root: Mutex::new(None),
+            roots: Mutex::new(Vec::new()),
             cache: Arc::new(VaultFileCache::new()),
         }
     }
+
+    fn set_roots(&self, roots: Vec<PathBuf>) {
+        let mut guard = self.roots.lock().unwrap();
+        if *guard == roots {
+            return;
+        }
+        self.cache.clear();
+        *guard = roots;
+    }
+
+    fn roots(&self) -> Vec<PathBuf> {
+        self.roots.lock().unwrap().clone()
+    }
+}
+
+/// Canonicalize the vault roots the frontend says are open. Duplicates (same
+/// folder with different casing/trailing separators) collapse to one entry.
+fn canonical_roots(dirs: &[String], allow_missing: bool) -> Result<Vec<PathBuf>, String> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for dir in dirs {
+        let root = Path::new(dir);
+        if !root.is_dir() {
+            if allow_missing {
+                continue;
+            }
+            return Err(format!("directory not found: {dir}"));
+        }
+        let Ok(canon) = fs::canonicalize(root) else {
+            if allow_missing {
+                continue;
+            }
+            return Err(format!("cannot canonicalize directory: {dir}"));
+        };
+        let canon = strip_extended_prefix(&canon);
+        if !roots.iter().any(|existing| existing == &canon) {
+            roots.push(canon);
+        }
+    }
+    Ok(roots)
 }
 
 /// Remember the notes root the frontend just opened, so the `rmd` image
@@ -2822,13 +2927,37 @@ fn set_notes_root(
     dir: String,
 ) -> Result<(), String> {
     require_main(&window)?;
-    let root = Path::new(&dir);
-    if !root.is_dir() {
-        return Err(format!("directory not found: {dir}"));
+    let roots = canonical_roots(&[dir], false)?;
+    if roots.is_empty() {
+        return Err("no notes root".into());
     }
-    let canon = strip_extended_prefix(&fs::canonicalize(root).map_err(|e| e.to_string())?);
-    state.cache.clear();
-    *state.root.lock().unwrap() = Some(canon);
+    state.set_roots(roots);
+    Ok(())
+}
+
+/// Register every vault visible in multi-vault mode (pinned vaults plus the
+/// current one) so images from any of them resolve through the `rmd` protocol.
+#[tauri::command]
+fn set_notes_roots(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, VaultState>,
+    dirs: Vec<String>,
+) -> Result<(), String> {
+    require_main(&window)?;
+    // An explicit empty list revokes access (used while returning to the
+    // onboarding page); this is deliberate, not an accidental "no root".
+    if dirs.is_empty() {
+        state.set_roots(Vec::new());
+        return Ok(());
+    }
+    let roots = canonical_roots(&dirs, true)?;
+    if roots.is_empty() {
+        // Every requested root vanished: clear the old authorization instead
+        // of leaving a superseded vault set registered.
+        state.set_roots(Vec::new());
+        return Err("no notes root".into());
+    }
+    state.set_roots(roots);
     Ok(())
 }
 
@@ -2844,13 +2973,7 @@ fn read_local_image(
     path: String,
 ) -> Result<LocalImage, String> {
     require_main(&window)?;
-    let root = state
-        .root
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "notes root not set".to_string())?;
-    let file = resolve_vault_file(&root, &path)?;
+    let file = resolve_vault_file_in_roots(&state.roots(), &path)?;
     let mime = mime_for_path(&file).to_string();
     let bytes = state.cache.read(&file)?;
     Ok(LocalImage { bytes, mime })
@@ -2859,7 +2982,7 @@ fn read_local_image(
 /// The `rmd` protocol handler body (kept out of the closure so it can be
 /// unit-tested and the closure stays trivially Send).
 fn serve_rmd(
-    root: Option<PathBuf>,
+    roots: &[PathBuf],
     cache: &VaultFileCache,
     request: &tauri::http::Request<Vec<u8>>,
 ) -> tauri::http::Response<Vec<u8>> {
@@ -2928,10 +3051,10 @@ fn serve_rmd(
     if path.trim().is_empty() {
         return text(StatusCode::BAD_REQUEST, "empty path");
     }
-    let Some(root) = root else {
+    if roots.is_empty() {
         return text(StatusCode::FORBIDDEN, "notes root not set");
-    };
-    match resolve_vault_file(&root, &path) {
+    }
+    match resolve_vault_file_in_roots(roots, &path) {
         Err(e) if e == NOT_FOUND => text(StatusCode::NOT_FOUND, &e),
         Err(e) => text(StatusCode::FORBIDDEN, &e),
         Ok(file) => match cache.read(&file) {
@@ -3072,6 +3195,26 @@ impl HtmlPreviewState {
     fn remove_doc(&self, token: &str) {
         self.docs.lock().unwrap().retain(|(t, _)| t != token);
     }
+
+    /// Keep at most 8 registered documents, but never evict a document whose
+    /// renderer window is still waiting for it (the hidden renderer and
+    /// sandbox preview share this ring).
+    fn push_doc(&self, token: String, html: String) {
+        let mut docs = self.docs.lock().unwrap();
+        docs.push((token, html));
+        if docs.len() > 8 {
+            let pending = self.pending.lock().unwrap();
+            while docs.len() > 8 {
+                let Some(index) = docs
+                    .iter()
+                    .position(|(candidate, _)| !pending.contains_key(candidate))
+                else {
+                    break;
+                };
+                docs.remove(index);
+            }
+        }
+    }
 }
 
 fn random_token(prefix: &str) -> String {
@@ -3148,25 +3291,20 @@ fn set_html_preview(
         return Err("HTML preview is too large (> 16 MB)".into());
     }
     let token = random_token("p-");
-    let mut docs = state.docs.lock().unwrap();
-    docs.push((token.clone(), html));
-    if docs.len() > 8 {
-        let drop = docs.len() - 8;
-        docs.drain(0..drop);
-    }
+    state.push_doc(token.clone(), html);
     Ok(token)
 }
 
-fn insert_after_head(html: &str, injection: &str) -> String {
+fn insert_after_first_tag(html: &str, tag: &str, injection: &str) -> Option<String> {
     let mut from = 0usize;
-    while let Some(pos) = find_ascii_ci(html, "<head", from) {
-        let after = pos + 5;
+    while let Some(pos) = find_ascii_ci(html, tag, from) {
+        let after = pos + tag.len();
         let boundary = html[after..]
             .chars()
             .next()
             .is_none_or(|c| c.is_ascii_whitespace() || c == '>');
         if !boundary {
-            // `<header>` and similar tags are not `<head>`.
+            // `<header>` / `<htmlfoo>` / `<!doctypex>` are not the tag.
             from = after;
             continue;
         }
@@ -3176,9 +3314,21 @@ fn insert_after_head(html: &str, injection: &str) -> String {
             out.push('\n');
             out.push_str(injection);
             out.push_str(&html[end + 1..]);
+            return Some(out);
+        }
+        return None;
+    }
+    None
+}
+
+fn insert_after_head(html: &str, injection: &str) -> String {
+    // Prefer <head>. Fragment-style HTML often has no head: keep the doctype
+    // first and insert after <html> (or after the doctype) instead of
+    // prepending before the doctype and forcing quirks mode.
+    for tag in ["<head", "<html", "<!doctype"] {
+        if let Some(out) = insert_after_first_tag(html, tag, injection) {
             return out;
         }
-        break;
     }
     format!("{injection}\n{html}")
 }
@@ -3351,11 +3501,67 @@ fn build_webview_document(html: &str, parent: &Path, token: &str, mode: &str) ->
     insert_after_head(&strip_base_tags(html), &injection)
 }
 
+/// Renderer-result limits. These bound allocations reachable from a hostile
+/// HTML note (the hidden render window runs note scripts with the capture
+/// token): a small compressed PNG can expand to a multi-GB RGBA buffer.
+const MAX_HTML_SEGMENTS: usize = 16;
+const MAX_RENDER_PNG_BYTES: usize = 96 * 1024 * 1024;
+const MAX_RENDER_BASE64_BYTES: usize = 128 * 1024 * 1024;
+const MAX_RENDER_SEGMENT_TOTAL_BYTES: usize = 256 * 1024 * 1024;
+const MAX_RENDER_IMAGE_WIDTH: u32 = 16_384;
+const MAX_RENDER_IMAGE_HEIGHT: u32 = 65_535;
+const MAX_RENDER_TOTAL_PIXELS: u64 = 128_000_000;
+/// Stitched output caps (the capture targets ~48k device px; these still
+/// stop a hostile note from stitching a huge canvas while allowing normal
+/// long notes, including 3600 × 48,000).
+const MAX_RENDER_TOTAL_HEIGHT: u32 = 100_000;
+const MAX_RENDER_STITCHED_PIXELS: u64 = 180_000_000;
+const MAX_RENDER_STITCHED_BYTES: usize = 256 * 1024 * 1024;
+
+fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let reader = decoder.read_info().map_err(|e| e.to_string())?;
+    let info = reader.info();
+    Ok((info.width, info.height))
+}
+
+fn validate_stitched_dimensions(width: u32, height: u32) -> Result<(), String> {
+    if width == 0 || height == 0 {
+        return Err("stitched HTML image is empty".into());
+    }
+    let pixels = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or_else(|| "stitched HTML image dimensions overflow".to_string())?;
+    if pixels > MAX_RENDER_STITCHED_PIXELS {
+        return Err("stitched HTML image is too large (pixel limit)".into());
+    }
+    Ok(())
+}
+
+fn validate_render_dimensions(width: u32, height: u32) -> Result<u64, String> {
+    if width == 0 || height == 0 {
+        return Err("HTML renderer returned an empty image".into());
+    }
+    if width > MAX_RENDER_IMAGE_WIDTH || height > MAX_RENDER_IMAGE_HEIGHT {
+        return Err("rendered HTML image dimensions are too large".into());
+    }
+    let pixels = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or_else(|| "rendered HTML image dimensions overflow".to_string())?;
+    if pixels > MAX_RENDER_TOTAL_PIXELS {
+        return Err("rendered HTML image is too large (pixel limit)".into());
+    }
+    Ok(pixels)
+}
+
 /// Stitch PNG segments (same width, stacked vertically) into one RGBA8 PNG.
 fn stitch_png_segments(segments: &[Vec<u8>]) -> Result<(Vec<u8>, u32, u32), String> {
     use std::io::Cursor;
     if segments.is_empty() {
         return Err("HTML renderer returned no image segments".into());
+    }
+    if segments.len() > MAX_HTML_SEGMENTS {
+        return Err("HTML renderer returned too many segments".into());
     }
     let mut infos = Vec::with_capacity(segments.len());
     let mut total_height = 0u32;
@@ -3364,17 +3570,24 @@ fn stitch_png_segments(segments: &[Vec<u8>]) -> Result<(Vec<u8>, u32, u32), Stri
         let decoder = png::Decoder::new(Cursor::new(data));
         let reader = decoder.read_info().map_err(|e| e.to_string())?;
         let info = reader.info();
-        if info.width == 0 || info.height == 0 {
-            return Err("HTML renderer returned an empty segment".into());
-        }
+        // Per-segment cap bounds the one decoded buffer alive at a time;
+        // stitching streams segments, so a cumulative pixel cap would only
+        // reject legitimate long HTML notes.
+        validate_render_dimensions(info.width, info.height)?;
         if width == 0 {
             width = info.width;
         } else if width != info.width {
             return Err("HTML renderer segments have different widths".into());
         }
-        total_height = total_height.saturating_add(info.height);
+        total_height = total_height
+            .checked_add(info.height)
+            .ok_or_else(|| "rendered HTML image height overflow".to_string())?;
+        if total_height > MAX_RENDER_TOTAL_HEIGHT {
+            return Err("rendered HTML image is too tall".into());
+        }
         infos.push(info.clone());
     }
+    validate_stitched_dimensions(width, total_height)?;
     let color = infos[0].color_type;
     let depth = infos[0].bit_depth;
     for info in &infos {
@@ -3404,6 +3617,9 @@ fn stitch_png_segments(segments: &[Vec<u8>]) -> Result<(Vec<u8>, u32, u32), Stri
         stream.finish().map_err(|e| e.to_string())?;
         writer.finish().map_err(|e| e.to_string())?;
     }
+    if out.len() > MAX_RENDER_STITCHED_BYTES {
+        return Err("stitched HTML image is too large (byte limit)".into());
+    }
     Ok((out, width, total_height))
 }
 
@@ -3413,6 +3629,9 @@ fn decode_png_data_url(data_url: &str) -> Result<Vec<u8>, String> {
         .ok_or_else(|| "HTML renderer returned an invalid data URL".to_string())?;
     if !header.starts_with("data:image/png;base64") {
         return Err("HTML renderer returned a non-PNG image".into());
+    }
+    if payload.len() > MAX_RENDER_BASE64_BYTES {
+        return Err("rendered HTML image payload is too large".into());
     }
     let mut out = Vec::with_capacity(payload.len() * 3 / 4);
     let mut buf: u32 = 0;
@@ -3439,9 +3658,11 @@ fn decode_png_data_url(data_url: &str) -> Result<Vec<u8>, String> {
     if !out.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err("HTML renderer did not produce a PNG".into());
     }
-    if out.len() > 120 * 1024 * 1024 {
-        return Err("rendered HTML image is too large (> 120 MB)".into());
+    if out.len() > MAX_RENDER_PNG_BYTES {
+        return Err("rendered HTML image is too large".into());
     }
+    let (width, height) = png_dimensions(&out)?;
+    validate_render_dimensions(width, height)?;
     Ok(out)
 }
 
@@ -3521,8 +3742,14 @@ fn html_preview_finish(
             return Err(error);
         }
         if let Some(segments) = segments.filter(|parts| !parts.is_empty()) {
-            if segments.len() > 64 {
+            if segments.len() > MAX_HTML_SEGMENTS {
                 return Err("HTML renderer returned too many segments".into());
+            }
+            let total_encoded = segments
+                .iter()
+                .fold(0usize, |total, segment| total.saturating_add(segment.len()));
+            if total_encoded > MAX_RENDER_SEGMENT_TOTAL_BYTES {
+                return Err("rendered HTML segments are too large".into());
             }
             let mut decoded = Vec::with_capacity(segments.len());
             for segment in segments {
@@ -3538,6 +3765,9 @@ fn html_preview_finish(
             });
         }
         let data_url = data_url.ok_or_else(|| "missing image data".to_string())?;
+        if data_url.len() > MAX_RENDER_BASE64_BYTES {
+            return Err("rendered HTML image payload is too large".into());
+        }
         decode_png_data_url(&data_url).map(|png| HtmlCapture {
             png,
             width: width.unwrap_or(0),
@@ -3587,20 +3817,20 @@ fn open_html_render_window(
         .parent()
         .ok_or_else(|| "note has no parent directory".to_string())?;
     let token = random_token("r-");
-    let document = build_webview_document(html, parent, &token, mode);
-    {
-        let mut docs = state.docs.lock().unwrap();
-        docs.push((token.clone(), document));
-        if docs.len() > 8 {
-            let drop = docs.len() - 8;
-            docs.drain(0..drop);
-        }
-    }
+    // Mark the token pending before adding the document so the shared ring
+    // cannot evict it while the window is being created.
     let rx = state.prepare(&token);
+    let document = build_webview_document(html, parent, &token, mode);
+    state.push_doc(token.clone(), document);
     let label = format!("html-render-{token}");
-    let url = html_preview_window_url(&token)
-        .parse::<tauri::Url>()
-        .map_err(|e| e.to_string())?;
+    let url = match html_preview_window_url(&token).parse::<tauri::Url>() {
+        Ok(url) => url,
+        Err(err) => {
+            state.cancel(&token);
+            state.remove_doc(&token);
+            return Err(err.to_string());
+        }
+    };
     let width = if mode == "print" {
         HTML_PDF_VIEWPORT_WIDTH
     } else {
@@ -3849,10 +4079,10 @@ fn main() {
         // async variant runs the (cached) file read off the main thread.
         .register_asynchronous_uri_scheme_protocol("rmd", |ctx, request, responder| {
             let state = ctx.app_handle().state::<VaultState>();
-            let root = state.root.lock().unwrap().clone();
+            let roots = state.roots();
             let cache = state.cache.clone();
             tauri::async_runtime::spawn(async move {
-                responder.respond(serve_rmd(root, &cache, &request));
+                responder.respond(serve_rmd(&roots, &cache, &request));
             });
         })
         // Built-in renderer: serve the generated document to a hidden
@@ -3876,6 +4106,7 @@ fn main() {
             print_html_note,
             fetch_image_bytes,
             set_notes_root,
+            set_notes_roots,
             read_local_image,
             render_html_note,
             html_preview_finish,
@@ -4163,6 +4394,20 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("UTF-8"), "unexpected error: {err}");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn non_utf8_note_is_searchable_by_filename() {
+        let dir = test_dir("non_utf8_search");
+        fs::write(dir.join("legacy-needle.md"), [0xff, 0xfe, b'x']).unwrap();
+        let hits = search_notes_impl(&dir, "needle", None, true).unwrap();
+        assert_eq!(
+            hits.len(),
+            1,
+            "filename/title search must survive non-UTF-8"
+        );
+        assert!(hits[0].snippet.contains("legacy-needle"));
         cleanup(&dir);
     }
 
@@ -4624,6 +4869,53 @@ Real text here
     }
 
     #[test]
+    fn resolve_vault_file_in_roots_serves_any_open_vault() {
+        let a = test_dir("vault_multi_a");
+        let b = test_dir("vault_multi_b");
+        fs::write(a.join("a.png"), b"a").unwrap();
+        fs::write(b.join("b.png"), b"b").unwrap();
+        let roots = vec![a.clone(), b.clone()];
+        let a_fwd = a.to_string_lossy().replace('\\', "/");
+        let b_fwd = b.to_string_lossy().replace('\\', "/");
+        assert!(resolve_vault_file_in_roots(&roots, &format!("{a_fwd}/a.png")).is_ok());
+        assert!(
+            resolve_vault_file_in_roots(&roots, &format!("{b_fwd}/b.png")).is_ok(),
+            "files from every active vault must be served"
+        );
+        // A file outside every open root stays rejected.
+        let outside = a.parent().unwrap().join("rustmd_multi_outside.png");
+        fs::write(&outside, b"x").unwrap();
+        let outside_fwd = outside.to_string_lossy().replace('\\', "/");
+        assert!(resolve_vault_file_in_roots(&roots, &outside_fwd).is_err());
+        // No open vault at all is a configuration error, not a 404.
+        assert_eq!(
+            resolve_vault_file_in_roots(&[], &outside_fwd).unwrap_err(),
+            "notes root not set"
+        );
+        let _ = fs::remove_file(&outside);
+        cleanup(&a);
+        cleanup(&b);
+    }
+
+    #[test]
+    fn vault_state_canonicalizes_and_dedupes_roots() {
+        let dir = test_dir("vault_roots_dedupe");
+        let dir_str = dir.to_string_lossy().to_string();
+        let canonical = strip_extended_prefix(&fs::canonicalize(&dir).unwrap());
+        let state = VaultState::new();
+        state.set_roots(canonical_roots(&[dir_str.clone(), dir_str.clone()], false).unwrap());
+        assert_eq!(state.roots(), vec![canonical.clone()]);
+        // A missing folder must be rejected instead of silently dropped.
+        assert!(canonical_roots(&[format!("{dir_str}/missing-subdir")], false).is_err());
+        assert!(
+            canonical_roots(&[format!("{dir_str}/missing-subdir")], true)
+                .unwrap()
+                .is_empty()
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
     fn mime_for_path_by_extension() {
         assert_eq!(mime_for_path(Path::new("a/b.PNG")), "image/png");
         assert_eq!(mime_for_path(Path::new("x.Jpeg")), "image/jpeg");
@@ -4815,15 +5107,24 @@ plain
         assert!(!cleaned.contains("<base href"));
         assert!(cleaned.contains("<basefont>text"));
         let header = insert_after_head("<html><header>x</header></html>", "<script>1</script>");
-        assert!(header.starts_with("<script>1</script>"));
+        assert!(
+            header.find("<script>1</script>").unwrap() > header.find("<html>").unwrap(),
+            "injection should follow <html> when there is no <head>: {header}"
+        );
         let injected = insert_after_head(
             "<html><head><title>x</title></head><body>x</body></html>",
             "<script>1</script>",
         );
-        assert!(injected.contains(
-            "<head>
-<script>1</script>"
-        ));
+        assert!(injected.contains("<head>") && injected.contains("<script>1</script>"));
+        let doctype = insert_after_head(
+            "<!doctype html><html><body>x</body></html>",
+            "<script>1</script>",
+        );
+        assert!(doctype.starts_with("<!doctype html>"));
+        assert!(
+            doctype.find("<script>1</script>").unwrap() > doctype.find("<html>").unwrap(),
+            "injection must not precede the doctype: {doctype}"
+        );
     }
 
     #[test]
@@ -4842,6 +5143,22 @@ plain
         let wide = tiny_png(2, 1, &[0, 0, 255, 255, 0, 255, 0, 255]);
         assert!(stitch_png_segments(&[a.clone(), wide]).is_err());
         assert!(stitch_png_segments(&[]).is_err());
+    }
+
+    #[test]
+    fn renderer_dimension_caps_reject_oversized_images() {
+        assert!(validate_render_dimensions(1, 1).is_ok());
+        assert!(validate_render_dimensions(948, 48_000).is_ok());
+        assert!(validate_render_dimensions(3555, 16_000).is_ok());
+        assert!(validate_render_dimensions(3600, 30_000).is_ok());
+        assert!(validate_stitched_dimensions(3600, 48_000).is_ok());
+        assert!(validate_stitched_dimensions(16_384, 100_000).is_err());
+        assert!(validate_stitched_dimensions(0, 10).is_err());
+        assert!(validate_render_dimensions(0, 1).is_err());
+        assert!(validate_render_dimensions(MAX_RENDER_IMAGE_WIDTH + 1, 1).is_err());
+        assert!(validate_render_dimensions(1, MAX_RENDER_IMAGE_HEIGHT + 1).is_err());
+        assert!(validate_render_dimensions(16_000, 16_000).is_err());
+        assert!(validate_render_dimensions(30_000, 30_000).is_err());
     }
 
     #[test]
@@ -4866,11 +5183,11 @@ plain
             builder.body(Vec::new()).unwrap()
         };
         assert_eq!(
-            serve_rmd(Some(dir.clone()), &cache, &request(None)).status(),
+            serve_rmd(std::slice::from_ref(&dir), &cache, &request(None)).status(),
             200
         );
         assert_eq!(
-            serve_rmd(Some(dir.clone()), &cache, &request(Some("null"))).status(),
+            serve_rmd(std::slice::from_ref(&dir), &cache, &request(Some("null"))).status(),
             403
         );
         let font_request = tauri::http::Request::builder()
@@ -4881,7 +5198,7 @@ plain
             .body(Vec::new())
             .unwrap();
         assert_eq!(
-            serve_rmd(Some(dir.clone()), &cache, &font_request).status(),
+            serve_rmd(std::slice::from_ref(&dir), &cache, &font_request).status(),
             200
         );
         let script_request = tauri::http::Request::builder()
@@ -4892,7 +5209,7 @@ plain
             .body(Vec::new())
             .unwrap();
         assert_eq!(
-            serve_rmd(Some(dir.clone()), &cache, &script_request).status(),
+            serve_rmd(std::slice::from_ref(&dir), &cache, &script_request).status(),
             200
         );
         let fetch_request = tauri::http::Request::builder()
@@ -4903,12 +5220,12 @@ plain
             .body(Vec::new())
             .unwrap();
         assert_eq!(
-            serve_rmd(Some(dir.clone()), &cache, &fetch_request).status(),
+            serve_rmd(std::slice::from_ref(&dir), &cache, &fetch_request).status(),
             403
         );
         assert_eq!(
             serve_rmd(
-                Some(dir.clone()),
+                std::slice::from_ref(&dir),
                 &cache,
                 &request(Some("http://rmdhtml.localhost/p-x"))
             )
@@ -4917,7 +5234,7 @@ plain
         );
         assert_eq!(
             serve_rmd(
-                Some(dir.clone()),
+                std::slice::from_ref(&dir),
                 &cache,
                 &request(Some("http://tauri.localhost")),
             )
@@ -4925,6 +5242,38 @@ plain
             200
         );
         cleanup(&dir);
+    }
+
+    #[test]
+    fn serve_rmd_serves_every_root_and_revokes_removed_roots() {
+        let a = test_dir("rmd_multi_a");
+        let b = test_dir("rmd_multi_b");
+        fs::write(b.join("pixel.png"), tiny_png(1, 1, &[0, 0, 0, 255])).unwrap();
+        let cache = VaultFileCache::new();
+        let abs = format!(
+            "{}/pixel.png",
+            b.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/")
+        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(&abs, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
+        let request = tauri::http::Request::builder()
+            .method("GET")
+            .uri(format!("rmd://localhost/{encoded}"))
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(&[a.clone(), b.clone()], &cache, &request).status(),
+            200,
+            "a file in the second registered vault must be served"
+        );
+        assert_eq!(
+            serve_rmd(std::slice::from_ref(&a), &cache, &request).status(),
+            403,
+            "removing the owning root must revoke access"
+        );
+        cleanup(&a);
+        cleanup(&b);
     }
 
     #[test]

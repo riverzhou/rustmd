@@ -13,23 +13,27 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.8.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.9.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
-Folder tree, current-folder scope switch, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
+Folder tree, current-folder scope and multi-vault switches, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope switch, folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope and multi-vault switches, folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
 
 Dark theme and sidebar details:
 
 <img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MD/HTML format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders switch, folders, sort buttons, MD/HTML format badges, filenames and tags" width="300">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, folders, sort buttons, MD/HTML format badges, filenames and tags" width="320">
+
+Multi-vault (pinned vaults + the current one, folder tree grouped per vault):
+
+<img src="docs/screenshots/multi-vault.en.png" alt="rustmd multi-vault view: the sidebar groups the folder tree per vault, the note list aggregates notes from both vaults with vault badges, and the Multi-vault button shows two open vaults" width="880">
 
 One-click recent-vault switching:
 
-<img src="docs/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher listing three recent folders, the current one marked, with one-click switch and remove controls" width="560">
+<img src="docs/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher with pinned vaults on top, the current one marked, and pin/remove controls on every row" width="560">
 
 ## Multilingual UI
 
@@ -63,12 +67,21 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 ### Navigation
 
 - **Quick vault switching** — the sidebar switch button lists recently opened
-  folders (most recent first, up to 8, current one marked) for one-click
-  switching; “Browse other folder…” opens the picker at the current folder.
+  folders (most recent first, up to 20, current one marked) for one-click
+  switching. The pin button on each row keeps a vault at the top and exempts
+  it from eviction; “Browse other folder…” opens the picker at the current
+  folder.
+- **Multi-vault** — the **Multi-vault** button below the search box opens every
+  pinned vault together with the current one: notes are aggregated in one list,
+  and the folder tree groups folders per vault so each vault's subfolders stay
+  independently selectable. Vault root sections and every subfolder can be
+  collapsed/expanded, and the state is remembered. Click again to return to a
+  single vault; the open note's vault is never closed.
 - **Manual refresh** — the sidebar refresh button rescans the vault from disk
   (notes, folders, tags, search and counts) without a restart; an open note
   changed on disk is reloaded when clean, and a deleted note is closed safely
   (unsaved edits are kept).
+- **Adjustable sidebar split** — the sidebar is 320 px wide by default; the folders/tags area is content-sized and the note list takes all remaining height, with a draggable divider between them. Dragging adjusts it live, double-clicking or pressing Enter on the divider restores the content-sized default, and a custom height is remembered.
 - **Current folder by default** — the note list, search, folder counts and tag cloud cover only notes directly in the selected folder (the vault root on launch); turn on **Include subfolders** below the search box to recurse into the whole subtree, and the choice is remembered.
 - **Folder tree** with nested folders, empty folders, collapse/expand.
 - **Subfolders collapsed by default**; the expanded state is remembered.
@@ -207,7 +220,7 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 1. ESLint 10
 2. Node tests for sorting, folder tree, folder scope and scoped tags, recent vaults, math protection, code segments and i18n
 3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
-4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json`)
+4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json` plus both lockfile root versions)
 5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 6. Vite production build
 
@@ -274,4 +287,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, recent-folder switcher, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

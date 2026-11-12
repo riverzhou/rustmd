@@ -303,7 +303,7 @@ body[data-theme='dark'] .btn.primary:hover {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  width: 340px;
+  width: 360px;
   max-width: calc(100vw - 16px);
   padding: 6px;
   background: var(--card);
@@ -325,7 +325,7 @@ body[data-theme='dark'] .btn.primary:hover {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 308px;
+  max-height: 420px;
   overflow-y: auto;
 }
 
@@ -374,6 +374,8 @@ body[data-theme='dark'] .btn.primary:hover {
 }
 
 .vault-name {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
   font-size: 13.5px;
@@ -390,6 +392,65 @@ body[data-theme='dark'] .btn.primary:hover {
   color: var(--accent);
   font-size: 10px;
   font-weight: 600;
+}
+
+.vault-pinned-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.vault-group-label {
+  padding: 5px 10px 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.vault-pin {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 1px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.vault-pin.pinned {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.vault-item:hover .vault-pin,
+.vault-pin:focus-visible {
+  opacity: 1;
+}
+
+.vault-pin:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.vault-multi-hint {
+  padding: 4px 10px 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .vault-path {
@@ -462,7 +523,8 @@ body[data-theme='dark'] .btn.primary:hover {
 
 .vault-open:focus-visible,
 .vault-action:focus-visible,
-.vault-remove:focus-visible {
+.vault-remove:focus-visible,
+.vault-pin:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -490,9 +552,9 @@ body[data-theme='dark'] .btn.primary:hover {
 
 /* ============ Sidebar ============ */
 .sidebar {
-  width: 300px;
-  min-width: 232px;
-  max-width: 440px;
+  width: 320px;
+  min-width: 260px;
+  max-width: 460px;
   display: flex;
   flex-direction: column;
   background: var(--bg-sidebar);
@@ -503,7 +565,7 @@ body[data-theme='dark'] .btn.primary:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 10px;
+  padding: 12px 14px 8px;
 }
 
 .brand {
@@ -527,7 +589,7 @@ body[data-theme='dark'] .btn.primary:hover {
 }
 
 .search-section {
-  padding: 2px 14px 12px;
+  padding: 0 12px 8px;
 }
 
 .search-section > input {
@@ -611,15 +673,121 @@ body[data-theme='dark'] .btn.primary:hover {
   outline-offset: 2px;
 }
 
+/* Subfolder scope toggle + multi-vault toggle share one row. */
+.scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.scope-row .scope-toggle {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.scope-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.scope-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.scope-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.scope-btn svg {
+  flex: none;
+}
+
+.scope-btn .multi-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--card);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .sidebar-nav {
+  flex: 0 0 auto;
+  /* Content-sized by default (the note list takes the rest); a drag writes
+     an explicit --sidebar-nav-height. The cap keeps the list usable. */
+  height: var(--sidebar-nav-height, auto);
+  min-height: 96px;
+  max-height: min(55%, calc(100vh - 274px));
   padding: 0 8px;
-  flex-shrink: 0;
-  max-height: 42%;
   overflow-y: auto;
 }
 
+/* Horizontal grip between the folder/tag area and the note list. Dragging it
+   gives the note list as much room as the user wants; double-click resets. */
+.nav-resizer {
+  position: relative;
+  flex: 0 0 8px;
+  margin: 0 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.nav-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 32px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  transform: translate(-50%, -50%);
+  transition: width 0.12s, background 0.12s;
+}
+
+.nav-resizer:hover::after,
+.nav-resizer:focus-visible::after,
+.nav-resizer.dragging::after {
+  width: 52px;
+  background: var(--accent);
+}
+
+.nav-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 5px;
+}
+
+body.nav-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
 .nav-group {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .nav-group-label {
@@ -627,7 +795,7 @@ body[data-theme='dark'] .btn.primary:hover {
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--text-faint);
-  padding: 4px 8px 5px;
+  padding: 4px 8px 4px;
   font-weight: 600;
 }
 
@@ -719,10 +887,60 @@ body[data-theme='dark'] .btn.primary:hover {
   padding-left: 0;
 }
 
+/* Multi-vault folder tree: one section per vault, each with its own folders. */
+.nav-vault {
+  margin-top: 4px;
+  padding-top: 0;
+  padding-bottom: 0;
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.vault-nav-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5.5px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault-nav-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+
+.nav-vault .vault-pin-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+.nav-vault .nav-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vault-children {
+  margin-left: 5px;
+  padding-left: 6px;
+  border-left: 1px dashed var(--border);
+}
+
 .tag-cloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   padding: 2px 6px 4px;
 }
 
@@ -731,7 +949,7 @@ body[data-theme='dark'] .btn.primary:hover {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  padding: 3.5px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
   background: var(--hover);
   color: var(--text-dim);
@@ -763,12 +981,11 @@ body[data-theme='dark'] .btn.primary:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 10px 5px 20px;
+  padding: 4px 10px 4px 18px;
   font-size: 11px;
   letter-spacing: 0.4px;
   color: var(--text-faint);
   font-weight: 600;
-  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -822,13 +1039,13 @@ body[data-theme='dark'] .btn.primary:hover {
 }
 
 .note-list {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
-  min-height: 60px;
+  min-height: 110px;
 }
 
 .note-item {
-  padding: 10px 16px 10px 18px;
+  padding: 9px 14px 9px 16px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   position: relative;
@@ -908,6 +1125,19 @@ body[data-theme='dark'] .btn.primary:hover {
 .note-item .meta .folder-path {
   max-width: 58%;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-item .meta .vault-chip {
+  max-width: 42%;
+  overflow: hidden;
+  border-radius: 4px;
+  padding: 0.5px 6px;
+  background: var(--hover);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

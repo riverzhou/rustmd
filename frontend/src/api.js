@@ -130,6 +130,9 @@ export const api = {
   /// Tell the backend which notes root is open, so the `rmd` image protocol
   /// and `read_local_image` know which vault to serve.
   setNotesRoot: (dir) => invoke('set_notes_root', { dir }),
+  /// Multi-vault mode: every open root (pinned vaults + the current one) is
+  /// served by the `rmd` image protocol.
+  setNotesRoots: (dirs) => invoke('set_notes_roots', { dirs }),
   /// Read an image file from the OPEN NOTES VAULT (root-scoped, same guard
   /// as the `rmd` protocol). `path` is an absolute path.
   readLocalImage: async (path) =>
@@ -312,6 +315,71 @@ const mockNotes = new Map([
   ],
 ]);
 
+// Multi-vault browser dev: the mock keeps one note map per folder so pinned
+// vaults can be opened together and show independent content. Unknown folders
+// get their own empty map (not an alias of the demo vault), so two vaults with
+// equal relative paths cannot accidentally share notes.
+const MOCK_VAULT_DIR = 'D:/Notes';
+const MOCK_BACKSLASH = String.fromCharCode(92);
+
+function mockVaultKey(dir) {
+  let value = String(dir || MOCK_VAULT_DIR).split(MOCK_BACKSLASH).join('/');
+  while (value.endsWith('/') && value.length > 1) value = value.slice(0, -1);
+  return value.toLowerCase();
+}
+
+const mockVaults = new Map([[mockVaultKey(MOCK_VAULT_DIR), mockNotes]]);
+mockVaults.set(
+  mockVaultKey('D:/Knowledge'),
+  new Map([
+    [
+      '知识库/索引.md',
+      {
+        tags: ['知识'],
+        body: `# 知识库索引
+
+- 收集值得复用的资料
+- 按主题整理成文件夹
+`,
+        mtime: Date.now() / 1000 - 1200,
+      },
+    ],
+    [
+      'README.md',
+      {
+        tags: ['知识'],
+        body: `# Knowledge
+
+第二个示例笔记库，用于体验多库同开。
+`,
+        mtime: Date.now() / 1000 - 3600,
+      },
+    ],
+  ])
+);
+mockVaults.set(
+  mockVaultKey('D:/Writing'),
+  new Map([
+    [
+      '草稿/开头.md',
+      {
+        tags: ['写作'],
+        body: `# 开头
+
+第三个示例笔记库，子目录独立选择。
+`,
+        mtime: Date.now() / 1000 - 2400,
+      },
+    ],
+  ])
+);
+
+function mockNotesFor(dir) {
+  const key = mockVaultKey(dir);
+  if (!mockVaults.has(key)) mockVaults.set(key, new Map());
+  return mockVaults.get(key);
+}
+
 function mockHash(text) {
   let h = 2166136261;
   const s = String(text);
@@ -381,8 +449,8 @@ function mockHtmlText(source) {
   return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
-function mockMeta(path) {
-  const n = mockNotes.get(path);
+function mockMeta(notes, path) {
+  const n = notes.get(path);
   if (!n) return null;
   const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
   const name = noteStemOf(path);
@@ -400,9 +468,9 @@ function mockMeta(path) {
   };
 }
 
-function mockFolders() {
+function mockFolders(notes) {
   const folders = new Set();
-  for (const path of mockNotes.keys()) {
+  for (const path of notes.keys()) {
     const parts = path.split('/');
     parts.pop();
     let acc = '';
@@ -423,13 +491,13 @@ function mockNoteInScope(path, scope, recursive) {
     : folder === selected;
 }
 
-function mockSearch(query, scope = null, recursive = true) {
+function mockSearch(notes, query, scope = null, recursive = true) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return [];
   const hits = [];
-  for (const [path, n] of mockNotes) {
+  for (const [path, n] of notes) {
     if (!mockNoteInScope(path, scope, recursive !== false)) continue;
-    const meta = mockMeta(path);
+    const meta = mockMeta(notes, path);
     const body =
       meta.kind === 'html'
         ? mockHtmlText(n.body)
@@ -500,16 +568,16 @@ function stripMockFrontMatter(body) {
   return lines.slice(end + 1).join(nl);
 }
 
-function mockUniqueName(path, currentPath) {
+function mockUniqueName(notes, path, currentPath) {
   if (path === currentPath) return path;
-  if (!mockNotes.has(path)) return path;
+  if (!notes.has(path)) return path;
   const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
   const name = path.slice(dir.length);
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : '.md';
   let i = 1;
-  while (mockNotes.has(`${dir}${stem} (${i})${ext}`)) i += 1;
+  while (notes.has(`${dir}${stem} (${i})${ext}`)) i += 1;
   return `${dir}${stem} (${i})${ext}`;
 }
 
@@ -517,18 +585,19 @@ function mockInvoke(command, args) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       try {
+        const notes = mockNotesFor(args.dir);
         switch (command) {
           case 'list_notes': {
-            const all = [...mockNotes.keys()]
-              .map(mockMeta)
+            const all = [...notes.keys()]
+              .map((path) => mockMeta(notes, path))
               .filter(Boolean)
               .sort((a, b) => b.mtime - a.mtime);
             return resolve(all);
           }
           case 'list_folders':
-            return resolve(mockFolders());
+            return resolve(mockFolders(notes));
           case 'read_note': {
-            const n = mockNotes.get(args.path);
+            const n = notes.get(args.path);
             if (!n) throw new Error('note not found');
             const kind = noteKindOf(args.path);
             return resolve({
@@ -544,7 +613,7 @@ function mockInvoke(command, args) {
             // parent-dir paths are refused, so browser dev sees the same
             // validation errors as the Tauri backend.
             const savePath = mockRelativePath(args.path);
-            const existing = mockNotes.get(savePath);
+            const existing = notes.get(savePath);
             if (
               !args.args.force &&
               args.args.baseHash !== undefined &&
@@ -555,13 +624,13 @@ function mockInvoke(command, args) {
                 throw new Error('conflict: note changed on disk');
               }
             }
-            mockNotes.set(savePath, {
+            notes.set(savePath, {
               tags:
                 noteKindOf(savePath) === 'html' ? [] : [...args.args.tags],
               body: args.args.body,
               mtime: Date.now() / 1000,
             });
-            return resolve(mockMeta(savePath));
+            return resolve(mockMeta(notes, savePath));
           }
           case 'create_note': {
             const folderPath = args.folder
@@ -571,11 +640,11 @@ function mockInvoke(command, args) {
             const ext = args.kind === 'html' || args.kind === 'htm' ? 'html' : 'md';
             let candidate = `${folder}untitled.${ext}`;
             let i = 1;
-            while (mockNotes.has(candidate)) {
+            while (notes.has(candidate)) {
               candidate = `${folder}untitled ${i}.${ext}`;
               i += 1;
             }
-            mockNotes.set(candidate, {
+            notes.set(candidate, {
               tags: [],
               body: '',
               mtime: Date.now() / 1000,
@@ -583,7 +652,7 @@ function mockInvoke(command, args) {
             return resolve(candidate);
           }
           case 'rename_note': {
-            const n = mockNotes.get(args.path);
+            const n = notes.get(args.path);
             if (!n) throw new Error('note not found');
             const dir = args.path.includes('/')
               ? args.path.slice(0, args.path.lastIndexOf('/') + 1)
@@ -595,34 +664,36 @@ function mockInvoke(command, args) {
               ''
             );
             const name = `${clean || 'untitled'}.${ext}`;
-            const target = mockUniqueName(dir + name, args.path);
+            const target = mockUniqueName(notes, dir + name, args.path);
             if (target !== args.path) {
-              mockNotes.delete(args.path);
-              mockNotes.set(target, n);
+              notes.delete(args.path);
+              notes.set(target, n);
             }
             return resolve(target);
           }
           case 'delete_note': {
-            if (!mockNotes.delete(args.path)) throw new Error('note not found');
+            if (!notes.delete(args.path)) throw new Error('note not found');
             return resolve(null);
           }
           case 'move_note': {
-            const n = mockNotes.get(args.path);
+            const n = notes.get(args.path);
             if (!n) throw new Error('note not found');
             const name = args.path.split('/').pop();
             const destFolder = args.destFolder
               ? mockRelativePath(args.destFolder, 'folder')
               : '';
             const dest = destFolder ? `${destFolder}/` : '';
-            const target = mockUniqueName(dest + name, args.path);
+            const target = mockUniqueName(notes, dest + name, args.path);
             if (target !== args.path) {
-              mockNotes.delete(args.path);
-              mockNotes.set(target, n);
+              notes.delete(args.path);
+              notes.set(target, n);
             }
             return resolve(target);
           }
           case 'search_notes':
-            return resolve(mockSearch(args.query, args.folder, args.recursive));
+            return resolve(
+              mockSearch(notes, args.query, args.folder, args.recursive)
+            );
           case 'save_export':
             // Browser mock: no native dialog, caller falls back to download.
             return resolve(null);
@@ -651,6 +722,7 @@ function mockInvoke(command, args) {
             return;
           }
           case 'set_notes_root':
+          case 'set_notes_roots':
             return resolve(null);
           case 'read_local_image':
             throw new Error('read_local_image 在浏览器模拟模式下不可用');

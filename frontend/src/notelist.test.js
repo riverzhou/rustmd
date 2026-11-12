@@ -85,6 +85,21 @@ test('both sort keys support ascending and descending', () => {
   );
 });
 
+test('sorting is deterministic for equal paths in different vaults', () => {
+  const duplicated = [
+    { vault: '/b', path: 'same.md', folder: '', tags: [], mtime: 1 },
+    { vault: '/a', path: 'same.md', folder: '', tags: [], mtime: 1 },
+  ];
+  assert.deepEqual(
+    sortNotes(duplicated, SORT_MTIME).map((n) => n.vault),
+    ['/a', '/b']
+  );
+  assert.deepEqual(
+    sortNotes(duplicated, SORT_NAME).map((n) => n.vault),
+    ['/a', '/b']
+  );
+});
+
 test('folder scope is direct-only unless subfolders are included', () => {
   assert.equal(folderInScope('work/sub', 'work'), false);
   assert.equal(folderInScope('work/sub', 'work', true), true);
@@ -127,6 +142,30 @@ test('the default vault scope shows root notes only', () => {
     filterNotes(notes, { includeSubfolders: true }).map((n) => n.path),
     ['work/note10.md', 'work/sub/note2.md', 'work/alpha.md', 'ideas.md']
   );
+});
+
+test('vault scoping keeps equal folder paths from different vaults apart', () => {
+  const multi = [
+    { vault: '/a', path: 'work/x.md', folder: 'work', tags: [], mtime: 1 },
+    { vault: '/a', path: 'root.md', folder: '', tags: [], mtime: 2 },
+    { vault: '/b', path: 'work/x.md', folder: 'work', tags: [], mtime: 3 },
+    { vault: '/b', path: 'root.md', folder: '', tags: [], mtime: 4 },
+  ];
+  assert.deepEqual(
+    filterNotes(multi, { vault: '/a', folder: 'work' }).map((n) => n.path),
+    ['work/x.md']
+  );
+  assert.deepEqual(
+    filterNotes(multi, { vault: '/b', folder: 'work', includeSubfolders: true })
+      .map((n) => n.path),
+    ['work/x.md']
+  );
+  assert.deepEqual(
+    filterNotes(multi, { vault: '/a', folder: null, includeSubfolders: true })
+      .map((n) => n.path),
+    ['work/x.md', 'root.md']
+  );
+  assert.deepEqual(filterNotes(multi, { includeSubfolders: true }).length, 4);
 });
 
 test('tag counts follow the scoped notes', () => {

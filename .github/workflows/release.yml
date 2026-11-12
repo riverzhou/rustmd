@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build and publish (e.g. v1.8.0)'
+        description: 'Existing tag to build and publish (e.g. v1.9.0)'
         required: true
 
 permissions:
@@ -77,6 +77,9 @@ jobs:
           RUSTMD_SELFTEST_OUT: ${{ github.workspace }}/selftest-artifacts
           WEBKIT_DISABLE_COMPOSITING_MODE: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
+        # The report check below is authoritative; a wedged process after a
+        # green report must not turn a valid release red (same policy as CI).
+        continue-on-error: true
         run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
 
       - name: Verify self-test report
@@ -198,8 +201,20 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           APP="target/aarch64-apple-darwin/release/bundle/macos/rustmd.app"
           DMG="release/rustmd-$VERSION-macos-arm64.dmg"
+          STAGE="release/dmg-stage"
           mkdir -p release
-          hdiutil create -volname "rustmd" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          cp LICENSE "$STAGE/LICENSE"
+          cp README.md README.en.md CHANGELOG.md "$STAGE/"
+          cp AGENTS.md AUDIT_REPORT.md LINUX_BUILD.md "$STAGE/"
+          cp -R docs "$STAGE/docs"
+          mkdir -p "$STAGE/.github/workflows"
+          cp .github/workflows/*.yml "$STAGE/.github/workflows/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "rustmd" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          rm -rf "$STAGE"
           hdiutil verify "$DMG"
           HASH=$(shasum -a 256 "$DMG" | awk '{print $1}')
           echo "$HASH  $(basename "$DMG")" | tee "$DMG.sha256"
@@ -304,6 +319,9 @@ jobs:
             | sort -z \
             | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      - name: Include the repository LICENSE as a release asset
+        run: cp LICENSE assets/LICENSE
 
       - name: Render release notes
         run: node scripts/release-notes.mjs "$RELEASE_TAG" > .release-notes.md

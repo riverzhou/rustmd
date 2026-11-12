@@ -62,8 +62,8 @@ gh repo edit riverzhou/rustmd \
 
 README 已包含自然出现的英文/中文关键词，不要为了 SEO 堆砌。重点词：
 
-- 英文：local-first Markdown & HTML notes, HTML editor, built-in WebView preview, Markdown editor, recent-folder switcher, current-folder scope, offline notes, knowledge base, Obsidian alternative, Tauri, Rust, Mermaid, LaTeX, PDF export, portable Windows, macOS (Apple Silicon), Linux.
-- 中文：Markdown / HTML 笔记、HTML 编辑器、内置 WebView 实时预览、最近笔记库切换、当前文件夹范围、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS Apple Silicon。
+- 英文：local-first Markdown & HTML notes, HTML editor, built-in WebView preview, Markdown editor, recent-folder switcher, pinned vaults, multi-vault view, current-folder scope, offline notes, knowledge base, Obsidian alternative, Tauri, Rust, Mermaid, LaTeX, PDF export, portable Windows, macOS (Apple Silicon), Linux.
+- 中文：Markdown / HTML 笔记、HTML 编辑器、内置 WebView 实时预览、最近笔记库切换、置顶笔记库、多库同开、当前文件夹范围、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS Apple Silicon。
 
 `README.md` 首段和 `README.en.md` 首段都包含仓库定位；GitHub 会索引 README 内容。
 
@@ -86,7 +86,7 @@ rustmd v<version> — local-first Markdown & HTML notes
 
 第一段：
 
-> Local-first Markdown & HTML notes for Windows, macOS (Apple Silicon) and Linux. Live HTML preview via the built-in WebView, folder tree, filename cards, recent-vault switcher, current-folder scope, full-text search, Mermaid, LaTeX, HTML/PNG/PDF export. Plain `.md` / `.html` files, no account.
+> Local-first Markdown & HTML notes for Windows, macOS (Apple Silicon) and Linux. Live HTML preview via the built-in WebView, folder tree, filename cards, pinned recent vaults and a multi-vault view, current-folder scope, full-text search, Mermaid, LaTeX, HTML/PNG/PDF export. Plain `.md` / `.html` files, no account.
 
 然后列出三端资产与 `SHA256SUMS.txt`。
 

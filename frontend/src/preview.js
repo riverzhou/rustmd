@@ -204,18 +204,19 @@ function preprocessDetails(md) {
 // `chart.png` resolves against the APP URL and 404s, and file:///… is
 // blocked for an http origin. Notes reference vault files by path, so
 // local sources are rewritten to the `rmd` custom URI scheme, which
-// Rust serves strictly from the CURRENTLY OPEN notes root (see
-// `serve_rmd` / `set_notes_root` in main.rs).
+// Rust serves strictly from the REGISTERED notes roots (see `serve_rmd` /
+// `set_notes_root` / `set_notes_roots` in main.rs; multi-vault mode registers
+// every open vault).
 //
 // On Windows Tauri/wry serve custom schemes under the WebView2
 // workaround origin `http://<scheme>.localhost` (same form as the asset
 // protocol); elsewhere it is `<scheme>://localhost`. Rust always
 // receives the reverted `rmd://localhost/…` URI.
 //
-// The context is set by main.js per open note (root = the vault dir the
-// user opened, notePath = the note's root-relative path). In browser
-// mock mode it stays null: local files are unreachable there, so srcs
-// are left untouched (broken as before, no regression).
+// The context is set by main.js per open note (root = the vault dir the note
+// belongs to, notePath = the note's root-relative path). In browser mock mode
+// it stays null: local files are unreachable there, so srcs are left untouched
+// (broken as before, no regression).
 
 const RMD_ORIGIN = /windows/i.test(navigator.userAgent)
   ? 'http://rmd.localhost/'
@@ -234,8 +235,10 @@ export function setImageContext(root, notePath) {
 
 /// Absolute vault path for a local image src, or null when the src is not
 /// a vault file we can map (remote/data URLs, fragments, no context).
-function localImageAbsPath(src) {
-  if (!imageCtx || !src) return null;
+/// `ctx` can be passed explicitly for an export that must keep the note it
+/// started with even if the user switches notes while assets are inlined.
+function localImageAbsPath(src, ctx = imageCtx) {
+  if (!ctx || !src) return null;
   if (isRmdUrl(src)) return null; // already resolved
   if (/^(https?:|data:|blob:)/i.test(src)) return null;
   if (/^file:\/\//i.test(src)) {
@@ -261,11 +264,11 @@ function localImageAbsPath(src) {
   }
   if (/[?#]/.test(src)) return null; // fragment/query — leave untouched
   if (/^[a-zA-Z]:[\\/]/.test(src)) return src.replace(/\\/g, '/'); // drive path
-  if (src.startsWith('/')) return imageCtx.root + src; // vault-root-relative
-  const dir = imageCtx.notePath.includes('/')
-    ? imageCtx.notePath.slice(0, imageCtx.notePath.lastIndexOf('/'))
+  if (src.startsWith('/')) return ctx.root + src; // vault-root-relative
+  const dir = ctx.notePath.includes('/')
+    ? ctx.notePath.slice(0, ctx.notePath.lastIndexOf('/'))
     : '';
-  return imageCtx.root + (dir ? `/${dir}` : '') + `/${src}`;
+  return ctx.root + (dir ? `/${dir}` : '') + `/${src}`;
 }
 
 /// Swap rmd:-served local images for inline data: URLs so an exported
@@ -299,13 +302,16 @@ async function inlineLocalImagesForHtml(stage) {
 /// stylesheets; the strict `rmd` origin allowlist intentionally rejects
 /// note-controlled origins. Inlining makes the page independent of those
 /// requests and works identically on WebView2/WebKitGTK/WKWebView.
-export async function inlineLocalAssetsInHtml(source) {
+export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
   const template = document.createElement('template');
   template.innerHTML = String(source || '');
   const decode = (bytes) => new TextDecoder().decode(new Uint8Array(bytes));
 
+  // Snapshot the context for the whole operation: a per-asset read of the
+  // global context could mix two notes if the user switches mid-inline.
+  const context = ctx;
   const resolveAndRead = async (url) => {
-    const abs = localImageAbsPath(url);
+    const abs = localImageAbsPath(url, context);
     if (!abs) return null;
     return api.readLocalImage(abs);
   };
@@ -388,12 +394,12 @@ function sanitizeHtml(html) {
 /// URI allowlist intentionally rejects `file:`; local images must already be
 /// `http://rmd.localhost/…` (Windows) or `rmd://localhost/…` (others) by the
 /// time the sanitizer runs. The detached <template> never executes scripts.
-function rewriteLocalImageHtml(html) {
-  if (!imageCtx) return html;
+function rewriteLocalImageHtml(html, ctx = imageCtx) {
+  if (!ctx) return html;
   const template = document.createElement('template');
   template.innerHTML = html;
   for (const img of template.content.querySelectorAll('img')) {
-    const abs = localImageAbsPath(img.getAttribute('src') || '');
+    const abs = localImageAbsPath(img.getAttribute('src') || '', ctx);
     if (!abs) continue;
     img.removeAttribute('srcset');
     img.setAttribute('src', RMD_ORIGIN + encodeURIComponent(abs));
@@ -753,11 +759,11 @@ function escapeAttr(value) {
 
 /// Absolute vault-folder base so relative images/assets in the HTML resolve
 /// through the existing `rmd` protocol.
-function htmlPreviewBaseHref() {
-  if (!api.isTauri || !imageCtx) return '';
-  const root = imageCtx.root.replace(/\/+$/, '');
-  const dir = imageCtx.notePath.includes('/')
-    ? imageCtx.notePath.slice(0, imageCtx.notePath.lastIndexOf('/'))
+function htmlPreviewBaseHref(ctx = imageCtx) {
+  if (!api.isTauri || !ctx) return '';
+  const root = ctx.root.replace(/\/+$/, '');
+  const dir = ctx.notePath.includes('/')
+    ? ctx.notePath.slice(0, ctx.notePath.lastIndexOf('/'))
     : '';
   const abs = `${root}${dir ? `/${dir}` : ''}/`;
   // Keep literal `/` separators; encode only each path segment, otherwise
@@ -793,12 +799,12 @@ function injectHtmlHead(html, injection) {
   return injection + '\n' + out;
 }
 
-async function buildHtmlPreviewDocument(source) {
+async function buildHtmlPreviewDocument(source, ctx = imageCtx) {
   // Browser dev only (no app CSP): inline the UMD bundle so the iframe can
   // capture itself without a second origin.
   const mod = await import('html2canvas/dist/html2canvas.min.js?raw');
   const html2canvasTag = inlineScript(mod.default);
-  const base = htmlPreviewBaseHref();
+  const base = htmlPreviewBaseHref(ctx);
   const injection = [
     base ? `<base href="${escapeAttr(base)}">` : '',
     inlineScript(HTML_IPC_GUARD),
@@ -981,9 +987,9 @@ const HTML_NATIVE_LINK_SCRIPT = `<script>
 })();
 </script>`;
 
-async function buildNativeHtmlPreviewDocument(source) {
-  const prepared = await inlineLocalAssetsInHtml(source);
-  const base = htmlPreviewBaseHref();
+async function buildNativeHtmlPreviewDocument(source, ctx = imageCtx) {
+  const prepared = await inlineLocalAssetsInHtml(source, ctx);
+  const base = htmlPreviewBaseHref(ctx);
   const injection = [
     base ? `<base href="${escapeAttr(base)}">` : '',
     HTML_NATIVE_LINK_SCRIPT,
@@ -999,6 +1005,9 @@ async function buildNativeHtmlPreviewDocument(source) {
 /// isolated from the app DOM by the sandbox.
 async function renderHtmlNativeInto(container, htmlSource) {
   const renderSeq = ++htmlRenderSeq;
+  // Snapshot the note context so a note switch during the async build cannot
+  // mix assets from one vault with the base href of another.
+  const ctx = imageCtx;
   disposeNativeHtmlPreview(container);
   container.innerHTML = '';
   container.classList.add('html-mode');
@@ -1006,7 +1015,9 @@ async function renderHtmlNativeInto(container, htmlSource) {
   if (holder) holder.classList.add('html-mode');
   let url;
   try {
-    url = await api.setHtmlPreview(await buildNativeHtmlPreviewDocument(htmlSource));
+    url = await api.setHtmlPreview(
+      await buildNativeHtmlPreviewDocument(htmlSource, ctx)
+    );
   } catch (err) {
     if (renderSeq === htmlRenderSeq) {
       renderHtmlStaticFallback(container, htmlSource, err.message || err);
@@ -1089,10 +1100,11 @@ async function renderHtmlNativeInto(container, htmlSource) {
 
 async function renderHtmlIframeInto(container, htmlSource) {
   const renderSeq = ++htmlRenderSeq;
+  const ctx = imageCtx;
   disposeHtmlControl(container);
   let url;
   try {
-    url = await api.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource));
+    url = await api.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource, ctx));
   } catch (err) {
     console.error('HTML preview registration failed:', err);
     container.innerHTML = '';
@@ -1153,7 +1165,8 @@ function renderHtmlStaticFallback(container, source, message) {
 /// full-page PNG data URL. The visible preview may be narrower; exports use a
 /// deterministic width so page breaks and chart layout are stable.
 export async function captureHtmlPreview(source) {
-  const url = await api.setHtmlPreview(await buildHtmlPreviewDocument(source));
+  const ctx = imageCtx;
+  const url = await api.setHtmlPreview(await buildHtmlPreviewDocument(source, ctx));
   const iframe = createHtmlFrame(url);
   iframe.classList.add('html-capture-frame');
   iframe.style.cssText =

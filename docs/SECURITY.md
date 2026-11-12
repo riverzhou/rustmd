@@ -20,6 +20,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - **HTML 笔记预览**：`set_html_preview` 把文档存入内存，通过 `rmdhtml` 协议加载到 `sandbox="allow-scripts allow-forms"` 的 iframe（没有 `allow-same-origin`，origin 为 null）。脚本/样式/ECharts 以及本地相对的 CSS/JS/字体/图片在 iframe 内原生运行，但 Tauri IPC 对该 origin 返回 `Origin header is not a valid URL`，父页面 DOM 也不可访问。
 - **HTML 笔记导出**：`render_html_note` 只在隐藏的独立 Tauri WebView 窗口中运行（label `html-render-*`）；除 `html_preview_finish` 外，所有保险库命令都通过 `require_main` 拒绝该窗口。超长页面分段截图后由 Rust 拼接，不需要外部浏览器。
 - **本地资源与读隔离**：HTML 预览/导出会内联相对 CSS/JS 与图片，字体走 `rmd`。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（Tauri / 本地 dev server），以及预览源的 `font`/`script`/`style` 子资源（按 `Sec-Fetch-Dest` 判定，脚本/样式不能读取响应文本）。`fetch`/XHR（空 dest）、文档读取、远程 iframe 一律 403。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
+- **多库模式边界**：多库同开时 `set_notes_roots` 会注册所有已打开库根，`rmd`/`read_local_image` 只服务规范化后位于至少一个根下的文件。副作用是：A 库中的笔记（或它引用的相对 `../` 路径）可以读取/显示 B 库中已打开的本地图片，或加载 B 库中的 classic `<script>` 子资源；这不能读取文本、调用 IPC 或越过两个库的并集，且 B 必须是用户显式打开的库。不要把来源不可信的库与包含敏感文件的库同时置顶打开；关闭多库/退出应用会撤销不再活跃的根。
 - 静态配置，不使用 hooks、`IN_PLACE`、函数式 `ADD_TAGS/ADD_ATTR`、自定义元素；禁止 `style/link/meta/base/iframe/object/embed/form/textarea/select/option/button` 和 `srcdoc`。
 - DOMPurify 默认剥离 `<script>`、`on*` 事件、`javascript:` URL 等。
 - Mermaid 使用 `securityLevel: 'strict'`；它生成的 SVG 在消毒之后挂载，不来自笔记原文。
@@ -41,7 +42,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - 所有笔记路径经 `resolve_in_root`：拒绝绝对路径/`..`，已存在路径 canonicalize 后前缀检查；新路径检查最深已存在祖先，阻止 junction/symlink 写逃逸。
 - `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` 当作笔记。
 - 范围搜索的 `folder` 参数来自 webview，后端仍先 `canonical_root` 再 `resolve_in_root`：非法/缺失目录直接报错，不会越出笔记库扫描。
-- `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file`，只服务当前打开的笔记库。
+- `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file_in_roots`：逐个检查所有已注册的库根（多库同开时可能多个），只有规范化后位于至少一个根下的文件才会被服务；不会因为多库而放弃前缀检查。
 - Windows `\\?\UNC\` 正确还原，不会把网络共享路径改坏。
 - 唯一的前端可触发“库外写”是 `save_export`，它在 Rust 内打开系统保存对话框，前端不提供目标路径。
 - `print_note_pdf` / `print_html_note`（矢量 PDF）只把已经渲染好的文档（主窗口离屏舞台 / 隐藏 `html-render-*` 窗口）交给系统打印引擎，不接收输出路径；导出的字节仍由 `save_export` 落盘。Windows 不写文件；macOS/Linux 的打印引擎只能写文件，因此写到系统临时目录下随机命名的 `.pdf` 并在读回后删除。HTML 打印窗口与截图窗口使用同一套 label 校验，笔记脚本依然只能调用 `html_preview_finish`。
@@ -77,7 +78,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
 5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
 6. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式）。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
-7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 8 条）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”偏好保存在 `localStorage.rustmd-include-subfolders`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
+7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 20 条，含置顶标记）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”与“多库同开”偏好保存在 `localStorage.rustmd-include-subfolders` / `rustmd-multi-vault`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
 8. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
 9. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
 10. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。

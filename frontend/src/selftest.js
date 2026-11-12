@@ -26,9 +26,10 @@ import {
 } from './export.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 
-/// `getState` returns the live app state (dir / current note) so the
-/// finally-block can restore the user's notes root and image context —
-/// exactly what the inlined version did through main.js's module state.
+/// `getState` returns the live app state (primary dir, open note + its vault,
+/// all active vault dirs) so the finally-block can restore the user's notes
+/// roots and image context — exactly what the inlined version did through
+/// main.js's module state.
 /// Remote images live on third-party hosts; a blocked/slow CDN must not fail
 /// a release. Failures are recorded as warnings instead of errors, and after
 /// the first failure the remaining URLs are skipped (the host is usually down
@@ -848,11 +849,16 @@ export async function runSelfTest({ getState }) {
   } catch (e) {
     report.errors.push(String(e && e.stack || e));
   } finally {
-    // Restore the user's notes root (and image context) if they had one.
-    if (getState().dir) {
-      await api.setNotesRoot(getState().dir).catch(() => {});
+    // Restore the user's notes roots (and image context) if they had one.
+    const state = getState();
+    if (state.dir) {
+      const dirs =
+        Array.isArray(state.dirs) && state.dirs.length
+          ? state.dirs
+          : [state.dir];
+      await api.setNotesRoots(dirs).catch(() => {});
     }
-    setImageContext(getState().dir, getState().current);
+    setImageContext(state.currentDir || state.dir, state.current);
   }
   report.finishedAt = new Date().toISOString();
   try {

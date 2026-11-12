@@ -11,11 +11,11 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、范围标签计数、笔记格式识别、最近笔记库路径去重/MRU、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、笔记格式识别、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
-| 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 一致 |
+| 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 及 `package-lock.json` / `Cargo.lock` 根包版本一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
-| Rust 单测 | `node scripts/cargo.mjs test` | 59 个测试（58 通过 + 1 个网络测试默认 ignored；含 PDF 页码戳记单测） |
+| Rust 单测 | `node scripts/cargo.mjs test` | 64 个测试（63 通过 + 1 个网络测试默认 ignored；含 PDF 页码戳记与多库根包含性单测） |
 | 前端构建 | `npm run build` | Vite 生产构建 |
 
 `scripts/cargo.mjs` 会找 `$CARGO`、`~/.cargo/bin/cargo`、PATH。CI 里直接使用 rustup 安装的 stable。
@@ -41,9 +41,9 @@ npm run check
 
 `node --test` 直接 import 纯函数模块，不需要 DOM：
 
-- `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名）、当前目录直属/子树过滤、默认当前目录（启动时为库根目录）范围、范围标签计数、树计数、折叠扁平化、祖先；
+- `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名 / 多库同路径稳定排序）、当前目录直属/子树过滤、按库过滤、默认当前目录（启动时为库根目录）范围、范围标签计数、树计数、折叠扁平化、祖先；
 - `frontend/src/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码；
-- `frontend/src/vaultlist.test.js`：路径规范化、Windows 大小写/分隔符去重、MRU 上限、移除、损坏 localStorage 容错；
+- `frontend/src/vaultlist.test.js`：路径规范化、Windows 大小写/分隔符去重、MRU 上限 20、置顶优先显示、置顶不参与淘汰、旧字符串数组兼容、移除、损坏 localStorage 容错；
 - `frontend/src/i18n.test.js`：中英词典完整性、插值、系统语言选择。
 
 ## 端到端自测
@@ -101,6 +101,20 @@ scripts/linux-headless-smoke.sh
 它在隔离的 Xvfb display 中启动 `target/release/rustmd`，用 `xwd` 截图并校验窗口
 尺寸、颜色数与边缘密度；不需要 root，不会弹到当前桌面。产物写入
 `target/headless-smoke/`。依赖与打包细节见 [../LINUX_BUILD.md](../LINUX_BUILD.md)。
+
+## 浏览器 mock 手工回归
+
+`npm run dev` 的浏览器 mock 不依赖 Rust/WebView，适合在发布前快速复核 UI 状态与
+localStorage 迁移：
+
+- 最近笔记库：钉死/取消置顶、置顶分组、20 条上限与置顶不淘汰、当前库标记、
+  旧字符串数组自动升级；
+- 多库同开：置顶库 + 当前库聚合列表、按库分组文件夹树、各库子目录独立选择、
+  跨库打开/编辑/保存、关闭多库时保留当前笔记；
+- 折叠：库根节点、各级子目录、折叠后点击库名只选中不展开；
+- 侧栏分隔条：拖动、双击重置、键盘 ArrowUp/ArrowDown/Home/End、窗口缩放与
+  侧栏折叠后的高度保持；
+- 语言/主题切换、搜索/排序/标签过滤、刷新与开关持久化。
 
 ## CI
 

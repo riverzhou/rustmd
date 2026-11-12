@@ -15,23 +15,27 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.8.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.9.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
-主界面：文件夹树、当前文件夹范围开关、文件名卡片、排序方向、**MD / HTML 格式徽标**、MathJax 公式与 Mermaid 图表。
+主界面：文件夹树、当前文件夹范围与多库开关、文件名卡片、排序方向、**MD / HTML 格式徽标**、MathJax 公式与 Mermaid 图表。
 
-<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧当前文件夹范围开关、文件夹树与带 MD/HTML 格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
+<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧当前文件夹范围与多库开关、文件夹树与带 MD/HTML 格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
 
 深色主题与侧栏细节：
 
 <img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MD/HTML 格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
 
-<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：搜索框与“包含子文件夹”开关、全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名和标签" width="300">
+<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：搜索框、包含子文件夹与多库开关、可拖动分隔条、全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名和标签" width="320">
+
+多库同开（置顶库与当前库汇总，文件夹树按库分组）：
+
+<img src="docs/screenshots/multi-vault.png" alt="rustmd 多库同开：侧栏按笔记库分组显示文件夹树，笔记列表汇总两个库的文件并带库名徽标，侧栏多库按钮显示已打开 2 个库" width="880">
 
 最近笔记库一键切换：
 
-<img src="docs/screenshots/vault-switcher.png" alt="rustmd 最近笔记库切换：列出最近打开的三个目录，当前目录标记为“当前”，可一键切换或移除记录" width="560">
+<img src="docs/screenshots/vault-switcher.png" alt="rustmd 最近笔记库切换：置顶库显示在最上方，当前目录标记为“当前”，每个目录都有置顶和移除按钮" width="560">
 
 ## 多语言界面
 
@@ -54,7 +58,7 @@
 
 适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
 
-关键词：local-first、Markdown 笔记、HTML 笔记、Markdown 编辑器、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
+关键词：local-first、Markdown 笔记、HTML 笔记、Markdown 编辑器、最近笔记库、置顶笔记库、多库同开、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
 
 ## 功能
 
@@ -66,11 +70,17 @@
 
 ### 文件导航
 
-- **快速切换笔记库**：侧栏切换按钮直接列出最近打开的目录（按最近使用排序，最多 8 个，
-  当前目录带标记），点一下即可切换；需要新目录时“浏览其他目录…”会从当前目录开始。
+- **快速切换笔记库**：侧栏切换按钮直接列出最近打开的目录（按最近使用排序，最多 20 个，
+  当前目录带标记）。每个目录右侧的图钉可“钉死/置顶”：置顶库固定在列表最上方，
+  且永远不会被淘汰。点一下即可切换；需要新目录时“浏览其他目录…”会从当前目录开始。
+- **多库同开**：搜索框下方的“多库”按钮会同时打开所有置顶库（加上当前库），
+  笔记汇总在同一个列表中；文件夹树按库分组，各库的子目录可以独立选择。
+  库根节点和各级子目录都可以折叠/展开，折叠状态会记住。
+  再次点击按钮恢复单库视图，当前打开笔记所在的库不会被关闭。
 - **手动刷新**：侧栏顶部的刷新按钮从磁盘重新扫描整个笔记库（笔记、文件夹、标签、
   搜索与计数），无需重启；打开中的笔记被外部修改且没有未保存内容时会自动重新
   载入，被删除时安全关闭或保留未保存内容。
+- **可调侧栏比例**：侧栏默认 320px，文件夹/标签区按内容自适应，下方笔记列表占满剩余高度；两者之间有一条可拖动分隔条，拖动可随时调整，双击/Enter 恢复默认，高度会记住。
 - **默认只看当前文件夹**：笔记列表、搜索、文件夹计数和标签云默认只覆盖当前文件夹（启动时是笔记库根目录）的直属笔记，不进入子文件夹；打开搜索框下方的“包含子文件夹”开关后才递归整个子树，开关状态会记住。
 - **文件夹树**：支持嵌套文件夹、空文件夹、折叠/展开。
 - **子文件夹默认折叠**：只显示顶层文件夹，点击箭头逐层展开；展开状态会记住。
@@ -229,7 +239,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 1. ESLint 10
 2. Node 前端单测（排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、数学保护、代码段、多语言）
 3. 仓库检查（文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
-4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 一致）
+4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 及两个 lockfile 的根包版本一致）
 5. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
 6. Vite 生产构建
 
@@ -317,4 +327,4 @@ rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
 
 如果 rustmd 对你有帮助，给一个 ⭐ 是最直接的鼓励；也欢迎分享给需要本地 Markdown 笔记的朋友。
 
-**关键词**：Markdown 笔记、HTML 笔记、本地笔记、离线笔记、Markdown 编辑器、最近笔记库切换、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
+**关键词**：Markdown 笔记、HTML 笔记、本地笔记、离线笔记、Markdown 编辑器、最近笔记库切换、置顶笔记库、多库同开、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
