@@ -1,6 +1,6 @@
 [package]
 name = "rustmd"
-version = "1.4.2"
+version = "1.5.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 authors = ["River"]
@@ -22,6 +22,46 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 png = "0.18"
 # Unpredictable tokens for rmdhtml preview/render documents.
 getrandom = "0.3"
+# Page-number footer stamping for the macOS/Linux vector PDFs (Windows uses
+# WebView2's own header/footer). Kept platform-independent so it is compiled
+# and unit-tested on every host.
+lopdf = "0.36"
+# Loading the system WebKitGTK/GTK C APIs at runtime on Linux: the app already
+# links them, so no dev headers are needed to build this code.
+libloading = "0.8"
+
+# Native vector PDF export: WebView2's print-to-PDF stream API. Text, fonts and
+# pagination come from the engine instead of html2canvas + jsPDF image slices.
+# These are already in the Windows dependency graph through wry; pinning the
+# same minor versions keeps the COM interfaces type-compatible.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"] }
+
+# macOS vector PDF: WKWebView's own print operation through AppKit.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+  "NSPrintInfo",
+  "NSPrintOperation",
+  "NSView",
+  "NSResponder",
+  "NSWindow",
+  "objc2-core-foundation",
+] }
+objc2-foundation = { version = "0.3", features = [
+  "NSString",
+  "NSURL",
+  "NSGeometry",
+  "NSDictionary",
+  "NSValue",
+] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
+
+# Linux vector PDF: raw GTK/WebKitGTK print API via the already-linked
+# libraries. Only the webview pointer type comes from the gtk-rs binding.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0"
 
 [profile.release]
 lto = true

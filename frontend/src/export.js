@@ -1,10 +1,14 @@
 // High-res PNG / PDF export.
 //
 // Strategy: render the note into an off-screen stage styled like the in-app
-// preview, rasterize it with html2canvas at 3x scale (~288 DPI, crisp on
-// HiDPI screens), then hand back PNG bytes or slice the raster into pages
-// and wrap it in a multi-page PDF with lossless PNG images (288 DPI without
-// JPEG artifacts — the old 2x/JPEG single page looked blurry and fuzzy).
+// preview, then:
+//   - PNG: rasterize it with html2canvas at 3x scale (~288 DPI, crisp on
+//     HiDPI screens);
+//   - PDF: hand the same stage to the WebView's own print pipeline, which
+//     keeps text/fonts vector (selectable, sharp at any zoom) and paginates
+//     the document at CSS block boundaries. This is the default on Windows,
+//     macOS and Linux; platforms without a print engine fall back to slicing
+//     an html2canvas raster into lossless PNG pages.
 
 import { renderPreview, isRmdUrl, rmdUrlPath } from './preview.js';
 import { api } from './api.js';
@@ -326,6 +330,61 @@ export async function exportPng(source, kind = 'markdown') {
   return { data, ext: 'png', mime: 'image/png' };
 }
 
+// ---------------- Vector PDF (native print pipeline) ----------------
+
+function nextPaint() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/// Wait until every image inside the stage has decoded (or failed): the print
+/// engine snapshots the document once, so an image that is still loading when
+/// printing starts would silently be missing from the PDF.
+async function settleImages(stage) {
+  await Promise.all(
+    [...stage.querySelectorAll('img')].map((img) =>
+      waitImageLoad(img, 15000).catch(() => {
+        console.warn('PDF 打印前图片未加载完成：', img.currentSrc || img.src);
+      })
+    )
+  );
+}
+
+/// Print the note to a real PDF through the WebView's print pipeline: text
+/// and SVG images stay vector (sharp at any zoom, selectable, searchable),
+/// the engine paginates at CSS block boundaries and embeds font subsets, so
+/// the file is also far smaller than the page-sized PNG slices.
+///
+/// The hidden `.export-stage` doubles as the print document: adding
+/// `body.rmd-printing` activates the `@media print` rules in style.css, which
+/// hide the application chrome and let the note flow from page to page.
+/// Rejects when the platform/runtime cannot print, so the caller can fall
+/// back to `exportPdf`.
+/** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
+export async function exportPdfVector(source, kind = 'markdown', title = '') {
+  if (kind !== 'markdown') {
+    throw new Error('vector PDF export only supports Markdown notes');
+  }
+  const { stage, ready } = buildStage(source, kind);
+  try {
+    await ready;
+    normalizeTaskCheckboxes(stage);
+    // Vault/remote images become data URLs (same-origin, already decoded), so
+    // the print snapshot never races the network or the `rmd` protocol.
+    await inlineRemoteImages(stage);
+    await settleImages(stage);
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    document.body.classList.add('rmd-printing');
+    // The print engine re-lays out the page for print media; nothing below may
+    // depend on the on-screen (948 px) geometry.
+    await nextPaint();
+    const data = await api.printNotePdf(title);
+    return { data, ext: 'pdf', mime: 'application/pdf' };
+  } finally {
+    document.body.classList.remove('rmd-printing');
+    stage.remove();
+  }
+}
+
 /** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
 export async function exportPdf(source, kind = 'markdown') {
   const { canvas, cssWidth, pageCuts } = await renderToCanvas(source, kind);
@@ -334,6 +393,12 @@ export async function exportPdf(source, kind = 'markdown') {
   const wPt = cssWidth * 0.75;
   const pxPerCss = canvas.width / cssWidth; // ≈ scale (guard against rounding)
   const { cuts, total } = pageCuts;
+  // A trailing page only a few pixels tall reads as a broken/blank page in
+  // some viewers (and the old hard-split logic could produce one): fold such
+  // a sliver into the previous page instead of emitting it.
+  if (cuts.length && total - cuts[cuts.length - 1] < PDF_PAGE_HEIGHT * 0.12) {
+    cuts.pop();
+  }
   const bounds = [0, ...cuts, total];
   const doc = new jsPDF({
     orientation: 'p',
@@ -399,13 +464,26 @@ export async function pdfFromPngDataUrl(dataUrl, cssWidth) {
   ctx.drawImage(img, 0, 0);
   const pageCssHeight = width * (PDF_PAGE_HEIGHT / 948);
   const pxPerCss = canvas.width / width;
-  const pagePx = Math.max(1, Math.round(pageCssHeight * pxPerCss));
+  const nominalPx = Math.max(1, Math.round(pageCssHeight * pxPerCss));
+  // A trailing sliver (a few image rows) is what made the last page look
+  // broken in some PDF viewers. Keep full-height pages normally, but when the
+  // remainder is under a quarter page, spread it over the pages instead of
+  // emitting an extra near-empty one.
+  const fullPages = Math.floor(canvas.height / nominalPx);
+  const remainder = canvas.height - fullPages * nominalPx;
+  const spreadTail = remainder > 0 && remainder < nominalPx * 0.25;
+  const pages = Math.max(
+    1,
+    spreadTail ? fullPages : fullPages + (remainder > 0 ? 1 : 0)
+  );
+  const pagePx = Math.ceil(canvas.height / pages);
+  const pagePt = (pagePx / pxPerCss) * 0.75;
   const { jsPDF } = await import('jspdf');
   const wPt = width * 0.75;
   const doc = new jsPDF({
     orientation: 'p',
     unit: 'pt',
-    format: [wPt, pageCssHeight * 0.75],
+    format: [wPt, pagePt],
     compress: true,
   });
   let page = 0;

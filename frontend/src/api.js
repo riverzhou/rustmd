@@ -11,9 +11,11 @@ import { noteKindOf, noteStemOf } from './notelist.js';
 const isTauri =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-const HTML_PREVIEW_ORIGIN = /windows/i.test(
+const isWindows = /windows/i.test(
   (typeof navigator !== 'undefined' && navigator.userAgent) || ''
-)
+);
+
+const HTML_PREVIEW_ORIGIN = isWindows
   ? 'http://rmdhtml.localhost/'
   : 'rmdhtml://localhost/';
 
@@ -72,6 +74,10 @@ function normalizeImage(image) {
 
 export const api = {
   isTauri,
+  /// Every desktop backend has a vector PDF path now: WebView2 on Windows,
+  /// WKWebView on macOS, WebKitGTK on Linux. Unsupported targets (or a failed
+  /// print) fall back to the html2canvas + jsPDF image exporter.
+  canPrintPdf: isTauri,
   pickDirectory,
   openExternal,
   listNotes: (dir) => invoke('list_notes', { dir }),
@@ -106,6 +112,15 @@ export const api = {
   /// object, not a `Uint8Array` (`new Blob([bytes])` would stringify it).
   fetchImageBytes: async (url) =>
     normalizeImage(await invoke('fetch_image_bytes', { url })),
+  /// Print the CURRENT document (the hidden print stage export.js prepared)
+  /// to a vector PDF through the platform print engine. Unsupported targets
+  /// reject so the caller can fall back to the image exporter.
+  printNotePdf: async (title) =>
+    toUint8(await invoke('print_note_pdf', { title })),
+  /// Print an HTML note to a vector PDF in the hidden renderer window
+  /// (same platform engines and fallback contract as `printNotePdf`).
+  printHtmlNote: async (dir, path, html, title) =>
+    toUint8(await invoke('print_html_note', { dir, path, html, title })),
   /// Tell the backend which notes root is open, so the `rmd` image protocol
   /// and `read_local_image` know which vault to serve.
   setNotesRoot: (dir) => invoke('set_notes_root', { dir }),
@@ -595,6 +610,9 @@ function mockInvoke(command, args) {
           case 'save_export':
             // Browser mock: no native dialog, caller falls back to download.
             return resolve(null);
+          case 'print_note_pdf':
+          case 'print_html_note':
+            throw new Error('浏览器模拟模式不支持矢量 PDF 导出');
           case 'fetch_image_bytes': {
             // Best-effort real fetch in browser dev (works for hosts that
             // send CORS headers); the Tauri backend has no such restriction.

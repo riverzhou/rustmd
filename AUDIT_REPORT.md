@@ -1,8 +1,34 @@
 # rustmd 代码审计报告
 
 **审计日期**：2026-11-12（v1.4.0 审计于 2026-11-11）
-**审计对象**：`rustmd` v1.4.2（Rust + Tauri 2，Markdown + HTML 笔记）
-**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+**审计对象**：`rustmd` v1.5.0（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS 目标交叉 `cargo check`；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.5.0 矢量 PDF 与跨平台打印审计
+
+本版把 PDF 从「html2canvas 截图 + jsPDF 切片」改成**系统 WebView 打印管线**：
+
+- 新增 `print_note_pdf` / `print_html_note`：Windows 走 WebView2
+  `PrintToPdfStream`；macOS 走 WKWebView `NSPrintOperation`；Linux 走
+  WebKitGTK 打印操作（`libloading` 运行时解析 GTK C API，构建不需要 GTK
+  开发头文件）。失败/不支持时自动回退图片 PDF。
+- macOS 打印改用 `runOperationModalForWindow:` + `canSpawnSeparateThread`，
+  AppKit 分离打印线程，主线程只做文件轮询，导出期间界面不阻塞；Linux 删除了
+  打印完成后在 GTK 主线程里的 5 秒轮询（等待移到后台线程）。
+- 新增 `stamp_page_numbers`（lopdf）：macOS/Linux 在每页底部叠加居中的
+  「N / M」页脚。关键点：先用 `q`/`Q` 包住原有内容，消除页面级 `cm` 造成的
+  坐标偏移；字体资源是**复制合并**而不是替换，解析失败时原样返回，绝不破坏
+  已生成的 PDF。
+- HTML 笔记打印新增 `mode="print"` 隐藏窗口：按 A4 可打印宽度（约 669 px）
+  创建，脚本等字体/图表/图片就绪后回报 `scrollWidth`，固定宽度页面按比例缩放。
+- 安全性：两条打印命令都只接受 `main` 窗口调用；不接收输出路径。macOS/Linux
+  只能写系统临时目录下的随机文件名，读回后立即删除。HTML 打印窗口沿用
+  `html-render-*` label 校验，笔记脚本仍只能调用 `html_preview_finish`。
+- 验证：Windows 真机 E2E 6 篇示例全部矢量（`/Font` 断言）且无回归；macOS
+  的最终 ObjC 代码用 `cargo check --target x86_64-apple-darwin` 交叉编译通过；
+  Linux 的 C 调用在 Windows 上同样参与编译；页脚戳记有单测 + 真实导出 PDF
+  回归（原内容保留、字体资源合并不破坏）。macOS/Linux 的**运行时打印**仍需
+  在对应系统执行一次 `npm run selftest` 复核。
 
 ### v1.4.2 文档与可发现性补丁
 
@@ -38,14 +64,16 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 |---|---|
 | 未修复高危缺陷 | **0 个已知** |
 | 未修复中危缺陷 | **0 个已知**（少数产品边界见 §6） |
-| Rust 测试 | **56 个**：55 通过 + 1 个网络测试默认 `#[ignore]` |
+| Rust 测试 | **58 个**：57 通过 + 1 个网络测试默认 `#[ignore]`（含页脚戳记单测与真实 PDF 回归） |
 | 前端单测 | **20 个**，全部通过 |
 | 静态检查 | ESLint 0 error；`cargo fmt --check`；clippy `-D warnings`；`npm run check` 全绿 |
-| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）通过；HTML iframe ready、PNG/PDF、本地 JS/图片内联、长页分段均有断言 |
+| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）通过；Markdown/HTML PDF 均断言内嵌字体（矢量文字），HTML iframe ready、本地 JS/图片内联、长页分段均有断言 |
+| macOS 编译 | 最终 ObjC 打印代码以 `cargo check --target x86_64-apple-darwin` 交叉编译通过（运行时需在 Mac 上自测） |
+| Linux 编译 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析，代码在所有宿主上参与编译（运行时需在 Linux 上自测） |
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.4.2 的 HTML 笔记、内置 WebView 预览/导出、全屏/折行/语法高亮和 1.4.0 发布链路已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；本轮重点修复了新 HTML 渲染路径引入的跨域读、base URL、并发、资源加载和发布检查问题。
+**结论**：v1.5.0 的矢量 PDF 打印链路（Windows 真机 + macOS 交叉编译 + Linux 编译）、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；v1.5.0 的重点是打印管线替换、页码戳记与跨平台导出，未放宽任何安全不变量。
 
 ---
 
@@ -152,6 +180,8 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 | Markdown 超长 PNG | 0.25× 下限；更长内容仍可能受 canvas 限制 | 建议 PDF；文档记录 |
 | DNS rebinding | 校验与连接解析之间无地址钉扎 | 记录；高保证环境用出口过滤 |
 | 无 macOS 运行时 CI | 只有编译 + 本地 Windows/Linux E2E | 记录；后续可加 macOS runner E2E |
+| macOS/Linux 打印运行时 | v1.5.0 的打印代码在 macOS 只做了交叉编译、Linux 只做了编译；真机运行未验证 | 发布前在对应系统跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
+| Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
 | 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言 | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
 | 导出 HTML 原文 | HTML 笔记导出保留脚本/样式；用户分享需自行审查 | 安全文档明示 |
@@ -160,4 +190,4 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 
 ## 7. 结论
 
-v1.4.2 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.5.0 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；Windows 已完成真机 E2E，macOS/Linux 的打印路径已通过编译并由自动回退兜底，发布前应在对应系统各跑一次 `npm run selftest`。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

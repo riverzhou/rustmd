@@ -8,7 +8,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 │   ├─ notelist.js   纯函数：排序、过滤、文件夹树                             │
 │   ├─ markdown.js   纯函数：代码段切分、数学公式保护                         │
 │   ├─ preview.js    Markdown → DOMPurify；HTML → sandbox iframe 原生渲染 / 隐藏 WebView 截图 │
-│   ├─ export.js     离屏舞台 → 图片内联 → html2canvas → PNG / jsPDF          │
+│   ├─ export.js     离屏舞台 → 图片内联 → html2canvas（PNG）/ WebView 打印（PDF）│
 │   ├─ editor.js     CodeMirror 6                                             │
 │   └─ api.js        唯一的 Tauri 桥（浏览器模式走内存 mock）                 │
 └──────────────────────────────┬─────────────────────────────────────────────┘
@@ -24,6 +24,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 │  笔记命令 list/read/save/create/rename/delete/move/search/list_folders      │
 │  原子写 atomic_write + hash 冲突检测                                        │
 │  导出 save_export（原生保存对话框 + 写入）                                  │
+│  print_note_pdf / print_html_note（WebView2 / WKWebView / WebKitGTK 打印） │
 │  网络 fetch_image_bytes（SSRF 防护 + 重定向校验）                           │
 │  rmd 协议 serve_rmd + VaultFileCache + read_local_image                    │
 │  自测命令（仅 debug）                                                       │
@@ -36,7 +37,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 2. 选择笔记：`read_note` 返回 `{ tags, body, mtime, hash, kind }`；编辑器按 `kind` 切换 Markdown/HTML 语法，预览走对应渲染管线；`setImageContext(root, notePath)` 记录图片解析上下文。
 3. 编辑/标签变化：500 ms 防抖后进入保存队列；`save_note` 带 `baseHash`，后端比较磁盘内容 hash，不一致返回 `conflict:`，前端询问是否覆盖；写盘使用同目录临时文件 + rename。
 4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
-5. 导出：Markdown 走离屏 948 px 舞台；远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image` 内联为 data URL；html2canvas 光栅化；PNG 直接输出，PDF 按块边界分页切片后写入 jsPDF。HTML 笔记的 HTML 导出保存当前源码；PNG/PDF 由隐藏 Tauri WebView 整页渲染——PNG 最高 3×（目标约 48k 设备像素高），CSS 高度超过 12000px 时按垂直段截取（单张模式以 30000/h 为缩放上限），Rust `png` 拼接为单图；PDF 短页面 3×、较高页面 2× 捕获后切片。
+5. 导出：Markdown 走离屏 948 px 舞台；远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image` 内联为 data URL。PNG 由 html2canvas 光栅化后直接输出。PDF 交给系统 WebView 的打印管线：Markdown 用 `print_note_pdf`（`body.rmd-printing` + `@media print` 隐藏应用界面，A4 重排、嵌入字体子集），HTML 笔记用 `print_html_note`（隐藏 `html-render-*` 窗口按可打印宽度排版，`scrollWidth` 超过可打印宽度时整体缩放，保留笔记自己的样式）。Windows 走 WebView2 `PrintToPdfStream`；macOS 走 WKWebView 的 `NSPrintOperation`；Linux 走 WebKitGTK 打印操作（`libloading` 运行时解析 GTK C API）。两者都输出可选中、可搜索的矢量文字 PDF，分页由引擎按 CSS 规则完成（不会把行切成两半，也不会出现只有几像素的尾页）。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印到临时 PDF 后由 `stamp_page_numbers`（lopdf）在每页底部补一个居中的「N / M」页脚，不添加浏览器地址信息。不支持原生打印的平台或旧 WebView2 回退到 html2canvas 光栅 + jsPDF 按块边界切片。HTML 笔记的 HTML 导出保存当前源码；PNG 仍由隐藏 Tauri WebView 整页渲染——最高 3×（目标约 48k 设备像素高），CSS 高度超过 12000px 时按垂直段截取（单张模式以 30000/h 为缩放上限），Rust `png` 拼接为单图。
 6. 保存导出文件：前端把字节交给 `save_export`；Rust 打开系统保存对话框，只有用户选中的路径会被写入。
 
 ## 前端模块
@@ -49,7 +50,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
 | `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
 | `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；本地图片在导出前 data URL 内联 |
-| `export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；长 Markdown 自适应 0.25–3× |
+| `export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；Markdown PDF 优先 `exportPdfVector`（WebView 打印，矢量文字），HTML 笔记 PDF 走 `print_html_note`，失败回退图片 PDF；长 Markdown 自适应 0.25–3× |
 | `editor.js` | CodeMirror 6、Markdown/HTML 语法（Compartment 按笔记切换）、HTML 标签/属性/内嵌 JS/CSS 配色、自动折行 Compartment |
 | `imgutil.js` | bytes→data URL、魔数 MIME 嗅探（SVG/ICO/AVIF 兜底） |
 | `selftest.js` | dev-only E2E；`main.js` 在 `import.meta.env.DEV` 下动态 import |
@@ -67,10 +68,12 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `delete_note` | `dir, path` | `()` | 直接删文件 |
 | `move_note` | `dir, path, destFolder` | `string` | 同目录 no-op；冲突自动后缀 |
 | `search_notes` | `dir, query` | `SearchHit[]` | 正文、标题、文件名、标签；HTML 只搜可见文本；最多 500 条 |
-| `render_html_note` | `dir, path, html, mode` | `{png, width, height, cssWidth, cssHeight}` | 内置隐藏 WebView 渲染 HTML 笔记；`mode` 为 `preview` / `export` / `pdf`；`export` 最高 3×并在超高时分段，`pdf` 短页 3×、较高页 2×；仅主窗口允许 |
-| `html_preview_finish` | `{ payload: { token, dataUrl?, segments?, error?, cssWidth?, cssHeight?, width?, height? } }` | `()` | 隐藏 WebView 回传 PNG/分段；必须来自 `html-render-{token}` 窗口；失败也唤醒等待方 |
+| `render_html_note` | `dir, path, html, mode` | `{png, width, height, cssWidth, cssHeight}` | 内置隐藏 WebView 渲染 HTML 笔记；`mode` 为 `preview` / `export` / `pdf`；`export` 最高 3×并在超高时分段，`pdf` 短页 3×、较高页 2×；仅主窗口允许（`print` 为内部模式，不接受前端传入） |
+| `html_preview_finish` | `{ payload: { token, dataUrl?, segments?, error?, cssWidth?, cssHeight?, width?, height?, ready?, scrollWidth? } }` | `()` | 隐藏 WebView 回传 PNG/分段，或打印模式回报就绪与布局宽度；必须来自 `html-render-{token}` 窗口；失败也唤醒等待方 |
 | `set_html_preview` | `html` | `token` | 注册 sandbox iframe 预览文档（随机 `p-*`）；仅主窗口允许；最多保留 8 份 |
 | `save_export` | `defaultName, filterName, extensions, data` | `string?` | Rust 打开保存对话框并写文件 |
+| `print_note_pdf` | `title` | `bytes` | 把**当前窗口文档**交给平台打印引擎（Windows WebView2 / macOS WKWebView / Linux WebKitGTK）打成矢量 PDF；A4 分页；Windows 带标题页眉 + 页码页脚，macOS/Linux 用 `stamp_page_numbers` 补页码；macOS/Linux 只写系统临时文件并删除；不接收输出路径 |
+| `print_html_note` | `dir, path, html, title` | `bytes` | 在隐藏 `html-render-*` 窗口加载 HTML 笔记（`mode=print`），等字体/图表/图片就绪后经平台打印引擎输出矢量 PDF；固定宽度页面按 `scrollWidth` 缩放；页码与 Markdown 一致 |
 | `fetch_image_bytes` | `url` | `{bytes, mime}` | 仅 http(s)；SSRF/重定向防护 |
 | `set_notes_root` | `dir` | `()` | `rmd` 协议与 `read_local_image` 的根 |
 | `read_local_image` | `path` | `{bytes, mime}` | 仅当前笔记库内；mtime + 字节预算缓存 |
@@ -89,7 +92,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 - `resolve_vault_file` 对 `rmd` 请求做同样的 canonicalize + 前缀检查；只服务当前 root。
 - `serve_rmd` 的路径契约：URL 路径去掉**恰好一个**前导 `/` 后 percent-decode，再要求绝对路径；Unix `/home/...` 用 `rmd://localhost//home/...`，Windows `C:/...` 用 `http://rmd.localhost/C%3A/...`，UNC 用 `//server/share/...`。
 - `rmd` 的 Origin 白名单：无 Origin 的普通 `<img>/<link>/<script>` 允许；带 Origin 的请求只允许应用自身 webview（Tauri / 本地 dev server），以及预览 iframe/隐藏窗口的 `font`/`script`/`style` 子资源（`Sec-Fetch-Dest`）。`fetch`/XHR（空 dest）、文档读取和远程 iframe 一律 403。`Access-Control-Allow-Origin` 只回显允许的 Origin，不再 `*`；`rmd` 返回的 HTML/SVG 文档加 sandbox CSP + `nosniff`。预览/导出的本地 CSS/JS 优先内联，减少对这条回退通道的依赖。
-- 导出的目标路径不来自前端命令参数，而是 `save_export` 内部的原生对话框结果。
+- 导出的目标路径不来自前端命令参数，而是 `save_export` 内部的原生对话框结果。`print_note_pdf` 只打印当前窗口已渲染的文档（由 `export.js` 的离屏舞台 + `body.rmd-printing` 决定），`print_html_note` 只打印隐藏渲染窗口里的笔记文档；两者都不接收输出路径。Windows 直接在内存里取 PDF；macOS/Linux 的打印引擎只能写文件，因此写到 `std::env::temp_dir()` 下的随机名临时文件，读回后立即删除。
 - 自测写文件使用 debug-only 命令，根固定为 `RUSTMD_SELFTEST_OUT`（默认系统临时目录）。
 
 ## Front matter 与 HTML 笔记

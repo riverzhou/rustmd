@@ -9,7 +9,12 @@ import {
   setImageContext,
   inlineLocalAssetsInHtml,
 } from './preview.js';
-import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
+import {
+  exportPng,
+  exportPdf,
+  exportPdfVector,
+  pdfFromPngDataUrl,
+} from './export.js';
 import { bytesToDataUrl, dataUrlToBytes } from './imgutil.js';
 import {
   applyStaticTranslations,
@@ -1579,6 +1584,23 @@ function triggerDownload(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/// PDF prefers the platform print pipeline (vector text, real pagination);
+/// unsupported platforms and old WebView2 runtimes fall back to the
+/// html2canvas image exporter so the export never fails because of the
+/// renderer. PNG always uses the raster path.
+async function exportNote(kind, body, noteKind, title) {
+  if (kind === 'pdf' && api.canPrintPdf) {
+    try {
+      return await exportPdfVector(body, noteKind, title);
+    } catch (err) {
+      console.warn('矢量 PDF 导出不可用，改用图片 PDF：', err);
+    }
+  }
+  return kind === 'png'
+    ? exportPng(body, noteKind)
+    : exportPdf(body, noteKind);
+}
+
 async function runExport(kind) {
   if (!state.current) return;
   const ok = await flushSave();
@@ -1615,55 +1637,76 @@ async function runExport(kind) {
       }
     } else if (currentKind === 'html') {
       // Render the page in a hidden Tauri WebView window, or the dev-only
-      // sandboxed iframe in browser mode, then save/capture it.
+      // sandboxed iframe in browser mode, then save/capture it. PDF prefers
+      // the WebView print pipeline (real text); the image slices below are
+      // the fallback for platforms without a print API.
       toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
-      let pngBytes;
-      let pdfDataUrl;
-      let cssWidth;
-      if (api.isTauri) {
-        // html2canvas in the hidden WebView requests local images in CORS
-        // mode; inline them first so the strict rmd origin allowlist does not
-        // drop vault images from the export.
-        const exportBody = await inlineLocalAssetsInHtml(body);
-        const shot = await api.renderHtmlNote(
-          state.dir,
-          state.current,
-          exportBody,
-          kind === 'pdf' ? 'pdf' : 'export'
-        );
-        pngBytes = shot.png;
-        if (kind === 'pdf') {
-          pdfDataUrl = bytesToDataUrl(shot.png, 'image/png');
+      if (kind === 'pdf' && api.canPrintPdf) {
+        try {
+          // html2canvas in the hidden WebView requests local images in CORS
+          // mode; inline them first so the strict rmd origin allowlist does
+          // not drop vault images from the export.
+          const printBody = await inlineLocalAssetsInHtml(body);
+          const data = await api.printHtmlNote(
+            state.dir,
+            state.current,
+            printBody,
+            title
+          );
+          payload = {
+            data,
+            ext: 'pdf',
+            mime: 'application/pdf',
+            filterName: t('export.filterPdf'),
+            extensions: ['pdf'],
+          };
+        } catch (err) {
+          console.warn('HTML 矢量 PDF 导出不可用，改用图片 PDF：', err);
         }
-        cssWidth = shot.cssWidth;
-      } else {
-        const shot = await captureHtmlPreview(body);
-        pngBytes = dataUrlToBytes(shot.dataUrl);
-        pdfDataUrl = shot.dataUrl;
-        cssWidth = shot.cssWidth;
       }
-      if (kind === 'png') {
-        payload = {
-          data: pngBytes,
-          ext: 'png',
-          mime: 'image/png',
-          filterName: t('export.filterPng'),
-          extensions: ['png'],
-        };
-      } else {
-        const pdf = await pdfFromPngDataUrl(pdfDataUrl, cssWidth);
-        payload = {
-          ...pdf,
-          filterName: t('export.filterPdf'),
-          extensions: ['pdf'],
-        };
+      if (!payload) {
+        let pngBytes;
+        let pdfDataUrl;
+        let cssWidth;
+        if (api.isTauri) {
+          const exportBody = await inlineLocalAssetsInHtml(body);
+          const shot = await api.renderHtmlNote(
+            state.dir,
+            state.current,
+            exportBody,
+            kind === 'pdf' ? 'pdf' : 'export'
+          );
+          pngBytes = shot.png;
+          if (kind === 'pdf') {
+            pdfDataUrl = bytesToDataUrl(shot.png, 'image/png');
+          }
+          cssWidth = shot.cssWidth;
+        } else {
+          const shot = await captureHtmlPreview(body);
+          pngBytes = dataUrlToBytes(shot.dataUrl);
+          pdfDataUrl = shot.dataUrl;
+          cssWidth = shot.cssWidth;
+        }
+        if (kind === 'png') {
+          payload = {
+            data: pngBytes,
+            ext: 'png',
+            mime: 'image/png',
+            filterName: t('export.filterPng'),
+            extensions: ['png'],
+          };
+        } else {
+          const pdf = await pdfFromPngDataUrl(pdfDataUrl, cssWidth);
+          payload = {
+            ...pdf,
+            filterName: t('export.filterPdf'),
+            extensions: ['pdf'],
+          };
+        }
       }
     } else {
       toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
-      const exported =
-        kind === 'png'
-          ? await exportPng(body, currentKind)
-          : await exportPdf(body, currentKind);
+      const exported = await exportNote(kind, body, currentKind, title);
       payload = {
         ...exported,
         filterName: t(

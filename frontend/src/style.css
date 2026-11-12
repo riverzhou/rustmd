@@ -996,6 +996,95 @@ mark {
   word-break: break-word;
 }
 
+/* ============ Vector PDF export (WebView print pipeline) ============
+   export.js appends the rendered note as `.export-stage` and sets
+   `body.rmd-printing`, then asks the WebView to print the page. These rules
+   hide the application chrome and let the note flow across real pages, so the
+   engine paginates at block boundaries instead of the image slicer cutting
+   through lines (and the last page is a normal page, not a leftover strip). */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body.rmd-printing {
+    background: var(--card) !important;
+  }
+
+  body.rmd-printing > *:not(.export-stage) {
+    display: none !important;
+  }
+
+  body.rmd-printing .export-stage {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  body.rmd-printing .export-stage .markdown-body {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  body.rmd-printing .export-stage .markdown-body img {
+    max-width: 100% !important;
+    /* A bitmap taller than the printable area cannot be split across pages
+       and would be clipped at the break; shrink it to fit one page instead. */
+    max-height: 240mm;
+    height: auto !important;
+  }
+
+  /* Keep atomic blocks on one page, and never strand a heading at a page
+     bottom with its text on the next page. */
+  .markdown-body pre,
+  .markdown-body table,
+  .markdown-body blockquote,
+  .markdown-body img,
+  .markdown-body .mermaid-diagram,
+  .markdown-body mjx-container[display='true'] {
+    break-inside: avoid;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  .markdown-body p,
+  .markdown-body li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Long tables: repeat the header row on every page and never split a row. */
+  .markdown-body thead {
+    display: table-header-group;
+  }
+
+  .markdown-body tfoot {
+    display: table-footer-group;
+  }
+
+  .markdown-body tr {
+    break-inside: avoid;
+  }
+
+  .markdown-body a {
+    color: inherit;
+    text-decoration: underline;
+  }
+}
+
 /* ============ Status bar ============ */
 .statusbar {
   display: flex;

@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.4.2** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.5.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -100,22 +100,23 @@
 - 左侧编辑 HTML 源码，右侧用应用内置 WebView（Windows 的 WebView2 / Linux 的 WebKitGTK / macOS 的 WKWebView）直接整页渲染；无需安装 Edge、Chrome 或任何外部浏览器。页面自带的 `<style>`、`<script>`、本地相对 CSS/JS/字体/图片、ECharts 图表都会执行，滚动/缩放为原生清晰文本。`<title>` 或第一个 `<h1>` 作为列表标题，文件名仍可见。
 - 顶部新建按钮提供 **Markdown 笔记 / HTML 页面** 两种选择；重命名、移动、删除、手动刷新和 HTML / PNG / PDF 导出与 Markdown 笔记一致。
 - HTML 笔记没有 front matter，因此不显示标签编辑器；保存时不会插入 `---` 或 `tags:`，并保留文件原有的 BOM 与 CRLF/LF 换行风格。
-- 预览在 **sandbox iframe** 中运行（无 `allow-same-origin`，origin 为 null），拿不到父页面 DOM/Tauri IPC；导出在隐藏的独立 Tauri WebView 窗口中执行，所有笔记/保险库命令按窗口 label 校验，隐藏窗口只能回传截图。渲染失败时才回退为 DOMPurify 消毒后的静态预览。
-- 图表页面通常依赖 CDN 脚本，首次渲染/导出需要联网；HTML 笔记的 **导出 HTML** 直接保存当前源码，PNG / PDF 则由内置 WebView 整页截图（超长页面分段拼接）后导出。
+- 预览在 **sandbox iframe** 中运行（无 `allow-same-origin`，origin 为 null），拿不到父页面 DOM/Tauri IPC；导出在隐藏的独立 Tauri WebView 窗口中执行，所有笔记/保险库命令按窗口 label 校验，隐藏窗口只能回传截图或通知打印就绪。渲染失败时才回退为 DOMPurify 消毒后的静态预览。
+- 图表页面通常依赖 CDN 脚本，首次渲染/导出需要联网；HTML 笔记的 **导出 HTML** 直接保存当前源码，PNG 仍由内置 WebView 整页截图（超长页面分段拼接），PDF 则在隐藏 WebView 里按 A4 打印。
+- Markdown 和 HTML 笔记的 **PDF** 是文字版：由系统 WebView 的打印管线重新排版（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK），不再把整页先截成图片；因此搜索、复制文字和放大查看都正常。
 
 ### 导出
 
 - **HTML**：Markdown 笔记导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；HTML 笔记直接保存当前源码。
 - **PNG**：Markdown 笔记 3× 渲染（约 288 DPI）；HTML 笔记按页面高度在 1–3× 间自适应（短页面 3×，超长报告目标高度约 48k 设备像素），整页保持。
-- **PDF**：Markdown 按块边界分页；HTML 笔记按整页 PNG 切片为多页，均使用无损 PNG。
-- PNG/PDF 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图；HTML 笔记的 PNG/PDF 由内置 WebView 整页渲染后导出，图表会保留，超长报告按高度自适应分段截取并拼接为单图。
+- **PDF**：Markdown 与 HTML 笔记都走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出的是**矢量文字**，可选中、可搜索、任意放大都清晰，A4 排版，由引擎按 CSS 规则分页（不会把一行文字切成两半，也不会出现只有几像素的尾页），文件通常比图片版小一个数量级。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚，不添加浏览器地址栏信息。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。某个平台或环境不支持原生打印时，会自动回退为按块边界分页的无损 PNG 切片。
+- PNG 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图；HTML 笔记的 PNG 由内置 WebView 整页渲染（超长报告按高度自适应分段截取并拼接为单图），PDF 则走上面的系统打印管线。
 - 导出目标路径由系统保存对话框选择，前端不能任意写文件。
 
 ### 安全
 
 - Markdown 渲染出的 HTML 在进入 webview 前经 DOMPurify 消毒；脚本、事件属性、`javascript:` URL、`<style>`、`<iframe>` 等被剥离。HTML 笔记预览在 sandbox iframe（null origin）中运行，导出在隐藏 WebView 中运行，二者都无法调用应用命令。
 - MathJax / Mermaid 在消毒之后生成 DOM，再做一次窄范围清理（`on*`、危险链接、外部 CSS URL）。
-- Tauri CSP 默认启用；外部链接交给系统浏览器打开。HTML 预览/导出在隔离的 WebView 中运行，导出只回传 PNG。
+- Tauri CSP 默认启用；外部链接交给系统浏览器打开。HTML 预览/导出在隔离的 WebView 中运行，导出窗口只能回传截图或打印就绪信号。
 - `resolve_in_root` 对笔记与图片做路径封闭，阻止 `..`、junction/symlink 写逃逸；扫描时跳过符号链接。
 - 远程图片抓取拒绝 loopback / 私有网段 / 链路本地 / 保留地址，并校验每次重定向。
 - 保存使用临时文件 + 原子替换；`baseHash` 冲突检测避免静默覆盖外部修改。

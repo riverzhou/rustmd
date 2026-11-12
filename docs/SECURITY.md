@@ -43,6 +43,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file`，只服务当前打开的笔记库。
 - Windows `\\?\UNC\` 正确还原，不会把网络共享路径改坏。
 - 唯一的前端可触发“库外写”是 `save_export`，它在 Rust 内打开系统保存对话框，前端不提供目标路径。
+- `print_note_pdf` / `print_html_note`（矢量 PDF）只把已经渲染好的文档（主窗口离屏舞台 / 隐藏 `html-render-*` 窗口）交给系统打印引擎，不接收输出路径；导出的字节仍由 `save_export` 落盘。Windows 不写文件；macOS/Linux 的打印引擎只能写文件，因此写到系统临时目录下随机命名的 `.pdf` 并在读回后删除。HTML 打印窗口与截图窗口使用同一套 label 校验，笔记脚本依然只能调用 `html_preview_finish`。
 
 ### 4. SSRF
 

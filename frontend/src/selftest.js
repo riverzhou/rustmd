@@ -18,7 +18,12 @@ import {
   isRmdUrl,
   inlineLocalAssetsInHtml,
 } from './preview.js';
-import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
+import {
+  exportPng,
+  exportPdf,
+  exportPdfVector,
+  pdfFromPngDataUrl,
+} from './export.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 
 /// `getState` returns the live app state (dir / current note) so the
@@ -500,33 +505,59 @@ export async function runSelfTest({ getState }) {
           }
           await api.selftestWrite(`${meta.path}.png`, shot.png);
 
-          // Exercise the real PDF scale path as the app does (mode:'pdf'),
-          // not just the export-mode PNG reused for PDF.
-          const pdfShot = await api.renderHtmlNote(
-            SELFTEST_EXAMPLES_DIR,
-            meta.path,
-            exportBody,
-            'pdf'
-          );
+          // Exercise the same PDF path the app takes: the WebView print
+          // pipeline (text) on Windows, image slices elsewhere. The print
+          // path must produce embedded fonts, i.e. real text, not a picture.
           const t2 = performance.now();
-          const pdf = await pdfFromPngDataUrl(
-            bytesToDataUrl(pdfShot.png, 'image/png'),
-            pdfShot.cssWidth
-          );
+          let pdf;
+          let pdfMode = 'image-slices';
+          if (api.canPrintPdf) {
+            try {
+              pdf = await api.printHtmlNote(
+                SELFTEST_EXAMPLES_DIR,
+                meta.path,
+                exportBody,
+                meta.title
+              );
+              pdfMode = 'print';
+            } catch (e) {
+              report.errors.push(`${meta.path}: HTML vector PDF failed: ${e}`);
+            }
+          }
+          if (!pdf) {
+            const pdfShot = await api.renderHtmlNote(
+              SELFTEST_EXAMPLES_DIR,
+              meta.path,
+              exportBody,
+              'pdf'
+            );
+            pdf = (
+              await pdfFromPngDataUrl(
+                bytesToDataUrl(pdfShot.png, 'image/png'),
+                pdfShot.cssWidth
+              )
+            ).data;
+          }
+          const pdfText = new TextDecoder('latin1').decode(pdf);
           entry.pdf = {
-            bytes: pdf.data.length,
+            bytes: pdf.length,
             ms: Math.round(performance.now() - t2),
-            mode: 'pdf',
-            width: pdfShot.width,
-            height: pdfShot.height,
-            magic: new TextDecoder().decode(pdf.data.slice(0, 5)),
+            mode: pdfMode,
+            magic: pdfText.slice(0, 5),
+            fonts: (pdfText.match(/\/Font/g) || []).length,
           };
           if (entry.pdf.magic !== '%PDF-') {
             report.errors.push(
               `${meta.path}: HTML PDF does not start with %PDF-`
             );
           }
-          await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
+          if (pdfMode === 'print' && entry.pdf.fonts === 0) {
+            report.errors.push(
+              `${meta.path}: HTML vector PDF has no embedded fonts ` +
+                `(expected text, got an image)`
+            );
+          }
+          await api.selftestWrite(`${meta.path}.pdf`, pdf);
         } catch (e) {
           report.errors.push(`${meta.path}: HTML PNG/PDF export failed: ${e}`);
         }
@@ -715,10 +746,39 @@ export async function runSelfTest({ getState }) {
       }
       await api.selftestWrite(`${meta.path}.png`, png.data);
 
-      // 3) PDF export
+      // 3) PDF export. On Windows the real path is the WebView print
+      //    pipeline: assert the result is TEXT (embedded fonts) instead of
+      //    the html2canvas image slices, because "crisp, selectable PDF" is
+      //    the whole point of that exporter.
       const t2 = performance.now();
-      const pdf = await exportPdf(body, kind);
-      entry.pdf = { bytes: pdf.data.length, ms: Math.round(performance.now() - t2) };
+      let pdf;
+      let vector = false;
+      if (api.canPrintPdf) {
+        try {
+          pdf = await exportPdfVector(body, kind, meta.title);
+          vector = true;
+        } catch (e) {
+          report.errors.push(`${meta.path}: vector PDF export failed: ${e}`);
+        }
+      }
+      if (!pdf) pdf = await exportPdf(body, kind);
+      const pdfText = new TextDecoder('latin1').decode(pdf.data);
+      entry.pdf = {
+        bytes: pdf.data.length,
+        ms: Math.round(performance.now() - t2),
+        vector,
+        magic: pdfText.slice(0, 5),
+        fonts: (pdfText.match(/\/Font/g) || []).length,
+        imageXObjects: (pdfText.match(/\/Subtype\s*\/Image/g) || []).length,
+      };
+      if (entry.pdf.magic !== '%PDF-') {
+        report.errors.push(`${meta.path}: PDF does not start with %PDF-`);
+      }
+      if (vector && entry.pdf.fonts === 0) {
+        report.errors.push(
+          `${meta.path}: vector PDF has no embedded fonts (expected text, got an image)`
+        );
+      }
       await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
 
       report.entries.push(entry);

@@ -1623,6 +1623,819 @@ fn save_export(
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
+// ---------------- Vector PDF export (platform print pipeline) ----------------
+
+/// Render the main window's current document to a real (text-based) PDF.
+///
+/// `export.js` puts the rendered note into the off-screen `.export-stage` and
+/// flips `body.rmd-printing`, whose `@media print` rules hide the application
+/// chrome. The WebView then paginates that document itself: text stays vector
+/// (crisp at any zoom, selectable, searchable, far smaller than a raster
+/// page) and page breaks follow normal CSS rules — no canvas strips, so a
+/// short trailing page can no longer be cut through a line.
+///
+/// Uses the platform's own print engine: WebView2 on Windows, WKWebView on
+/// macOS, WebKitGTK on Linux. Other platforms (and old WebView2 runtimes)
+/// return an `unsupported:` error and the frontend falls back to the
+/// html2canvas/jsPDF exporter.
+#[tauri::command]
+async fn print_note_pdf(window: tauri::WebviewWindow, title: String) -> Result<Vec<u8>, String> {
+    require_main(&window)?;
+    print_webview_pdf(
+        window,
+        PdfPrintOptions {
+            header_title: Some(pdf_header_title(&title)),
+            scale: 1.0,
+            margins_in: [0.55, 0.6, 0.65, 0.65],
+        },
+    )
+    .await
+}
+
+/// Header title for the platform print engines that can draw page furniture
+/// (Windows). macOS/Linux stamp a plain page number instead.
+fn pdf_header_title(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(120)
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        "rustmd".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+/// Print settings shared by the Markdown (main window) and HTML-note (hidden
+/// render window) exporters.
+#[derive(Clone)]
+struct PdfPrintOptions {
+    /// `Some(title)` adds the browser-style header (title + export date) and
+    /// the page-number footer on Windows. macOS/Linux ignore it (the footer is
+    /// stamped into the PDF afterwards).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    header_title: Option<String>,
+    /// WebView2 `ScaleFactor` / `NSPrintInfo.scalingFactor` / GTK print scale.
+    /// Fixed-width HTML pages are shrunk to the printable width instead of
+    /// being clipped at the right margin.
+    scale: f64,
+    /// Top, bottom, left, right in inches.
+    margins_in: [f64; 4],
+}
+
+#[cfg(windows)]
+const PDF_PAGE_WIDTH_IN: f64 = 8.27; // A4 portrait
+#[cfg(windows)]
+const PDF_PAGE_HEIGHT_IN: f64 = 11.69;
+
+/// Print one webview's current document to PDF bytes on the current platform.
+async fn print_webview_pdf(
+    window: tauri::WebviewWindow,
+    options: PdfPrintOptions,
+) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        print_webview_pdf_windows(window, options).await
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        print_webview_pdf_native(window, options).await
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (window, options);
+        Err("unsupported: vector PDF export is not available on this platform".into())
+    }
+}
+
+/// Windows: WebView2 renders the page into an in-memory PDF stream on the UI
+/// thread and wakes us through the channel; the wait happens off the async
+/// runtime so the event loop stays free to deliver the completion.
+#[cfg(windows)]
+async fn print_webview_pdf_windows(
+    window: tauri::WebviewWindow,
+    options: PdfPrintOptions,
+) -> Result<Vec<u8>, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<u8>, String>>();
+    window
+        .with_webview(move |platform| start_pdf_print(&platform, options, tx))
+        .map_err(|e| format!("cannot reach the webview: {e}"))?;
+    let waited =
+        tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(60)))
+            .await
+            .map_err(|e| format!("PDF print task failed: {e}"))?;
+    match waited {
+        Ok(result) => result,
+        Err(_) => Err("PDF rendering timed out".into()),
+    }
+}
+
+/// macOS / Linux: ask the system print engine (AppKit / GTK) to print the
+/// webview into a PDF file, then stamp page numbers into it.
+///
+/// macOS queues the operation on a detached AppKit print thread and returns
+/// immediately, so the file is polled for afterwards; Linux prints
+/// synchronously inside the main-thread call. Either way the async command
+/// only waits on channels and timers, never on the UI thread.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+async fn print_webview_pdf_native(
+    window: tauri::WebviewWindow,
+    options: PdfPrintOptions,
+) -> Result<Vec<u8>, String> {
+    let out_path = std::env::temp_dir().join(format!("rustmd-print-{}.pdf", random_token("")));
+    let out = out_path.to_string_lossy().to_string();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let path = out.clone();
+    let opts = options.clone();
+    window
+        .with_webview(move |platform| {
+            #[cfg(target_os = "macos")]
+            let result = macos_print_webview(platform.inner(), platform.ns_window(), &path, &opts);
+            #[cfg(target_os = "linux")]
+            let result = {
+                // `PlatformWebview::inner()` is the GTK wrapper; the C print
+                // API wants its raw GtkWidget pointer.
+                use webkit2gtk::glib::object::ObjectType;
+                let webview = platform.inner();
+                let raw = ObjectType::as_ptr(&webview) as *mut std::ffi::c_void;
+                linux_print_webview(raw, &path, &opts)
+            };
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("cannot reach the webview: {e}"))?;
+    let waited =
+        tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(180)))
+            .await
+            .map_err(|e| format!("PDF print task failed: {e}"))?;
+    let result = match waited {
+        Ok(result) => result,
+        Err(_) => return Err("PDF printing timed out".into()),
+    };
+    result?;
+    // macOS returns before the detached print thread has written the file;
+    // Linux is already done, so this just reads it. The tail check keeps a
+    // half-written file from being used. Poll off the async runtime.
+    let wait_path = out_path.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_printed_pdf(&wait_path, Duration::from_secs(45))
+    })
+    .await
+    .map_err(|e| format!("PDF print task failed: {e}"))?;
+    let _ = std::fs::remove_file(&out_path);
+    Ok(stamp_page_numbers(bytes?))
+}
+
+/// Wait until the system print engine has written a complete PDF at `path`.
+/// macOS writes from a detached thread, so the file appears a little after the
+/// print call returns; Linux writes before returning. The size-stability and
+/// `%%EOF` checks keep a half-written file from being used.
+#[allow(dead_code)]
+fn wait_for_printed_pdf(path: &std::path::Path, timeout: Duration) -> Result<Vec<u8>, String> {
+    let deadline = std::time::Instant::now() + timeout;
+    let mut last_len = u64::MAX;
+    let mut stable = 0u32;
+    loop {
+        if let Ok(meta) = std::fs::metadata(path) {
+            let len = meta.len();
+            if len > 0 {
+                if len == last_len {
+                    stable += 1;
+                } else {
+                    stable = 0;
+                    last_len = len;
+                }
+                if stable >= 2
+                    && let Ok(bytes) = std::fs::read(path)
+                    && bytes.starts_with(b"%PDF-")
+                    && pdf_looks_complete(&bytes)
+                {
+                    return Ok(bytes);
+                }
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("timed out waiting for the system print engine".into());
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+}
+
+#[allow(dead_code)]
+fn pdf_looks_complete(bytes: &[u8]) -> bool {
+    let tail = &bytes[bytes.len().saturating_sub(2048)..];
+    tail.windows(5).any(|window| window == b"%%EOF")
+}
+
+/// macOS: print a WKWebView through AppKit, saving to `out_path`.
+///
+/// Uses `NSPrintSaveJob` + `NSPrintJobSavingURL` and the web view's own print
+/// operation, which paginates the document at the configured paper size. The
+/// operation runs through `runOperationModalForWindow:` with
+/// `canSpawnSeparateThread` set, so AppKit detaches a print thread and the
+/// main thread (the UI) is not blocked while the PDF is produced. The web
+/// view's title/URL banner is left off; page numbers are stamped later.
+#[cfg(target_os = "macos")]
+fn macos_print_webview(
+    view: *mut std::ffi::c_void,
+    ns_window: *mut std::ffi::c_void,
+    out_path: &str,
+    options: &PdfPrintOptions,
+) -> Result<(), String> {
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, ProtocolObject};
+    use objc2_app_kit::{
+        NSPrintHeaderAndFooter, NSPrintInfo, NSPrintJobSavingURL, NSPrintSaveJob, NSWindow,
+    };
+    use objc2_foundation::{NSNumber, NSSize, NSString, NSURL};
+    use objc2_web_kit::WKWebView;
+
+    if view.is_null() {
+        return Err("the webview is not available".into());
+    }
+    let margins = options.margins_in;
+    unsafe {
+        let webview: &WKWebView = &*view.cast::<WKWebView>();
+        let info = NSPrintInfo::new();
+        // A4 in PostScript points.
+        info.setPaperSize(NSSize::new(595.28, 841.89));
+        info.setTopMargin(margins[0] * 72.0);
+        info.setBottomMargin(margins[1] * 72.0);
+        info.setLeftMargin(margins[2] * 72.0);
+        info.setRightMargin(margins[3] * 72.0);
+        info.setScalingFactor(options.scale);
+        info.setJobDisposition(NSPrintSaveJob);
+        {
+            let dict = info.dictionary();
+            let url = NSURL::fileURLWithPath(&NSString::from_str(out_path));
+            let value: &AnyObject = &*(Retained::as_ptr(&url) as *const AnyObject);
+            let key = ProtocolObject::from_ref(NSPrintJobSavingURL);
+            dict.setObject_forKey(value, key);
+            // Keep WebKit's title/URL banner off; the footer is stamped later.
+            let no_header = NSNumber::new_bool(false);
+            let flag: &AnyObject = &*(Retained::as_ptr(&no_header) as *const AnyObject);
+            dict.setObject_forKey(flag, ProtocolObject::from_ref(NSPrintHeaderAndFooter));
+        }
+        let op = webview.printOperationWithPrintInfo(&info);
+        op.setShowsPrintPanel(false);
+        op.setShowsProgressPanel(false);
+        // AppKit is allowed to detach a print thread; that only happens for
+        // `runOperationModalForWindow:` (the synchronous `runOperation` would
+        // block the main thread and freeze the UI).
+        op.setCanSpawnSeparateThread(true);
+        if ns_window.is_null() {
+            if !op.runOperation() {
+                return Err("the system print operation failed".into());
+            }
+        } else {
+            let window: &NSWindow = &*ns_window.cast::<NSWindow>();
+            op.runOperationModalForWindow_delegate_didRunSelector_contextInfo(
+                window,
+                None,
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Linux: print a WebKitGTK webview into a PDF file through GTK's built-in
+/// "Print to File" backend.
+///
+/// The GTK/WebKitGTK C entry points are resolved at runtime (the app already
+/// links both libraries), so building this does not require GTK development
+/// headers. The printer name is the *localized* one GTK uses for its file
+/// backend (`dgettext("gtk30", "Print to File")`), otherwise the operation
+/// could fall back to a real printer.
+#[allow(dead_code)]
+fn linux_print_webview(
+    webview: *mut std::ffi::c_void,
+    out_path: &str,
+    options: &PdfPrintOptions,
+) -> Result<(), String> {
+    use std::ffi::{CStr, CString};
+
+    type NewPrint = unsafe extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    type TwoPtr = unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void);
+    type PrintNow = unsafe extern "C" fn(*mut std::ffi::c_void);
+    type SettingsNew = unsafe extern "C" fn() -> *mut std::ffi::c_void;
+    type SettingsSet = unsafe extern "C" fn(
+        *mut std::ffi::c_void,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    );
+    type SettingsSetScale = unsafe extern "C" fn(*mut std::ffi::c_void, f64);
+    type SettingsSetPrinter = unsafe extern "C" fn(*mut std::ffi::c_void, *const std::ffi::c_char);
+    type SetupNew = unsafe extern "C" fn() -> *mut std::ffi::c_void;
+    type PaperNew = unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void;
+    type SetupSetPaper = unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void);
+    type SetupMargin = unsafe extern "C" fn(*mut std::ffi::c_void, f64, i32);
+    type Unref = unsafe extern "C" fn(*mut std::ffi::c_void);
+    type DGetText = unsafe extern "C" fn(
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char;
+
+    const GTK_UNIT_POINTS: i32 = 1;
+
+    fn load(names: &[&str]) -> Result<libloading::Library, String> {
+        let mut last = String::from("library not found");
+        for name in names {
+            match unsafe { libloading::Library::new(name) } {
+                Ok(lib) => return Ok(lib),
+                Err(err) => last = err.to_string(),
+            }
+        }
+        Err(last)
+    }
+
+    if webview.is_null() {
+        return Err("the webview is not available".into());
+    }
+    let out_uri = CString::new(format!("file://{out_path}")).map_err(|e| e.to_string())?;
+    unsafe {
+        let webkit = load(&["libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.1.so"])
+            .map_err(|e| format!("cannot load WebKitGTK: {e}"))?;
+        let gtk =
+            load(&["libgtk-3.so.0", "libgtk-3.so"]).map_err(|e| format!("cannot load GTK: {e}"))?;
+        let gobject = load(&["libgobject-2.0.so.0", "libgobject-2.0.so"])
+            .map_err(|e| format!("cannot load GObject: {e}"))?;
+
+        let new_print: libloading::Symbol<NewPrint> =
+            webkit
+                .get(b"webkit_print_operation_new\0")
+                .map_err(|e| format!("WebKitGTK print API is missing: {e}"))?;
+        let set_settings: libloading::Symbol<TwoPtr> = webkit
+            .get(b"webkit_print_operation_set_print_settings\0")
+            .map_err(|e| format!("WebKitGTK print API is missing: {e}"))?;
+        let set_setup: libloading::Symbol<TwoPtr> = webkit
+            .get(b"webkit_print_operation_set_page_setup\0")
+            .map_err(|e| format!("WebKitGTK print API is missing: {e}"))?;
+        let print_now: libloading::Symbol<PrintNow> = webkit
+            .get(b"webkit_print_operation_print\0")
+            .map_err(|e| format!("WebKitGTK print API is missing: {e}"))?;
+        let settings_new: libloading::Symbol<SettingsNew> = gtk
+            .get(b"gtk_print_settings_new\0")
+            .map_err(|e| e.to_string())?;
+        let settings_set: libloading::Symbol<SettingsSet> = gtk
+            .get(b"gtk_print_settings_set\0")
+            .map_err(|e| e.to_string())?;
+        let settings_set_scale: libloading::Symbol<SettingsSetScale> = gtk
+            .get(b"gtk_print_settings_set_scale\0")
+            .map_err(|e| e.to_string())?;
+        let settings_set_printer: libloading::Symbol<SettingsSetPrinter> = gtk
+            .get(b"gtk_print_settings_set_printer\0")
+            .map_err(|e| e.to_string())?;
+        let setup_new: libloading::Symbol<SetupNew> = gtk
+            .get(b"gtk_page_setup_new\0")
+            .map_err(|e| e.to_string())?;
+        let paper_new: libloading::Symbol<PaperNew> = gtk
+            .get(b"gtk_paper_size_new\0")
+            .map_err(|e| e.to_string())?;
+        let paper_free: libloading::Symbol<Unref> = gtk
+            .get(b"gtk_paper_size_free\0")
+            .map_err(|e| e.to_string())?;
+        let setup_set_paper: libloading::Symbol<SetupSetPaper> = gtk
+            .get(b"gtk_page_setup_set_paper_size\0")
+            .map_err(|e| e.to_string())?;
+        let margin_top: libloading::Symbol<SetupMargin> = gtk
+            .get(b"gtk_page_setup_set_top_margin\0")
+            .map_err(|e| e.to_string())?;
+        let margin_bottom: libloading::Symbol<SetupMargin> = gtk
+            .get(b"gtk_page_setup_set_bottom_margin\0")
+            .map_err(|e| e.to_string())?;
+        let margin_left: libloading::Symbol<SetupMargin> = gtk
+            .get(b"gtk_page_setup_set_left_margin\0")
+            .map_err(|e| e.to_string())?;
+        let margin_right: libloading::Symbol<SetupMargin> = gtk
+            .get(b"gtk_page_setup_set_right_margin\0")
+            .map_err(|e| e.to_string())?;
+        let unref: libloading::Symbol<Unref> = gobject
+            .get(b"g_object_unref\0")
+            .map_err(|e| e.to_string())?;
+
+        // The file backend's printer name is translated by GTK itself.
+        let printer_name = {
+            let libc = load(&["libc.so.6", "libc.so"]);
+            libc.ok().and_then(|lib| {
+                let dgettext: libloading::Symbol<DGetText> = lib.get(b"dgettext\0").ok()?;
+                let name = dgettext(c"gtk30".as_ptr(), c"Print to File".as_ptr());
+                if name.is_null() {
+                    None
+                } else {
+                    Some(CStr::from_ptr(name).to_owned())
+                }
+            })
+        }
+        .unwrap_or_else(|| CString::new("Print to File").expect("static printer name"));
+        let output_uri_key = c"output-uri";
+        let output_format_key = c"output-file-format";
+        let pdf_format = c"pdf";
+
+        let settings = settings_new();
+        let setup = setup_new();
+        if settings.is_null() || setup.is_null() {
+            return Err("GTK print objects are unavailable".into());
+        }
+        let paper = paper_new(c"iso_a4".as_ptr());
+        if !paper.is_null() {
+            setup_set_paper(setup, paper);
+            paper_free(paper);
+        }
+        let [top, bottom, left, right] = options.margins_in;
+        margin_top(setup, top * 72.0, GTK_UNIT_POINTS);
+        margin_bottom(setup, bottom * 72.0, GTK_UNIT_POINTS);
+        margin_left(setup, left * 72.0, GTK_UNIT_POINTS);
+        margin_right(setup, right * 72.0, GTK_UNIT_POINTS);
+        settings_set_printer(settings, printer_name.as_ptr());
+        settings_set(settings, output_uri_key.as_ptr(), out_uri.as_ptr());
+        settings_set(settings, output_format_key.as_ptr(), pdf_format.as_ptr());
+        settings_set_scale(settings, options.scale.clamp(0.1, 2.0) * 100.0);
+
+        let operation = new_print(webview);
+        if operation.is_null() {
+            unref(settings);
+            unref(setup);
+            return Err("cannot create the WebKitGTK print operation".into());
+        }
+        set_settings(operation, settings);
+        set_setup(operation, setup);
+        print_now(operation);
+        unref(operation);
+        unref(settings);
+        unref(setup);
+    }
+
+    // GTK writes the file while `print_now` runs, so do not poll here: this
+    // runs on the GTK main thread, and sleeping would freeze the UI for real.
+    // `print_webview_pdf_native` waits for the finished file off the UI thread.
+    Ok(())
+}
+
+/// Ask WebView2 to print the current document into an in-memory PDF stream.
+/// The completion handler (invoked later on the UI thread) reads the stream
+/// and sends the bytes through `tx`; setup failures are reported the same
+/// way so the caller always resolves.
+#[cfg(windows)]
+fn start_pdf_print(
+    platform: &tauri::webview::PlatformWebview,
+    options: PdfPrintOptions,
+    tx: std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
+) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT, ICoreWebView2_16, ICoreWebView2Environment6,
+        ICoreWebView2PrintSettings,
+    };
+    use webview2_com::PrintToPdfStreamCompletedHandler;
+    use windows::core::{HSTRING, Interface};
+
+    let tx_done = tx.clone();
+    let handler = PrintToPdfStreamCompletedHandler::create(Box::new(move |error, stream| {
+        let outcome = (|| -> Result<Vec<u8>, String> {
+            error.map_err(|e| format!("PDF printing failed: {e}"))?;
+            let stream = stream.ok_or_else(|| "the webview returned no PDF data".to_string())?;
+            read_pdf_stream(&stream)
+        })();
+        let _ = tx_done.send(outcome);
+        Ok(())
+    }));
+
+    let queued = (|| -> Result<(), String> {
+        let controller = platform.controller();
+        let core = unsafe { controller.CoreWebView2() }
+            .map_err(|e| format!("the webview is not ready to print: {e}"))?;
+        let webview = core
+            .cast::<ICoreWebView2_16>()
+            .map_err(|_| "this WebView2 runtime is too old to print PDFs".to_string())?;
+        let environment = platform
+            .environment()
+            .cast::<ICoreWebView2Environment6>()
+            .map_err(|_| "this WebView2 runtime is too old to print PDFs".to_string())?;
+        let settings: ICoreWebView2PrintSettings = unsafe { environment.CreatePrintSettings() }
+            .map_err(|e| format!("cannot create print settings: {e}"))?;
+        // A4 portrait; margins come from the caller (Markdown leaves room
+        // for the header/footer, HTML notes keep tighter page margins).
+        let [top, bottom, left, right] = options.margins_in;
+        unsafe {
+            settings.SetPageWidth(PDF_PAGE_WIDTH_IN).map_err(err_text)?;
+            settings
+                .SetPageHeight(PDF_PAGE_HEIGHT_IN)
+                .map_err(err_text)?;
+            settings.SetMarginTop(top).map_err(err_text)?;
+            settings.SetMarginBottom(bottom).map_err(err_text)?;
+            settings.SetMarginLeft(left).map_err(err_text)?;
+            settings.SetMarginRight(right).map_err(err_text)?;
+            settings
+                .SetOrientation(COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT)
+                .map_err(err_text)?;
+            settings
+                .SetScaleFactor(options.scale.clamp(0.1, 2.0))
+                .map_err(err_text)?;
+            settings.SetShouldPrintBackgrounds(true).map_err(err_text)?;
+            if let Some(title) = options.header_title.as_deref() {
+                // Title + page number line, like the browser's own print
+                // header; the footer URL is deliberately empty (no
+                // tauri:// addresses in a document the user may share).
+                settings
+                    .SetShouldPrintHeaderAndFooter(true)
+                    .map_err(err_text)?;
+                settings
+                    .SetHeaderTitle(&HSTRING::from(title))
+                    .map_err(err_text)?;
+                settings.SetFooterUri(&HSTRING::new()).map_err(err_text)?;
+            } else {
+                settings
+                    .SetShouldPrintHeaderAndFooter(false)
+                    .map_err(err_text)?;
+            }
+            webview
+                .PrintToPdfStream(&settings, &handler)
+                .map_err(|e| format!("cannot start PDF printing: {e}"))?;
+        }
+        Ok(())
+    })();
+    if let Err(err) = queued {
+        let _ = tx.send(Err(err));
+    }
+}
+
+#[cfg(windows)]
+fn err_text(err: windows::core::Error) -> String {
+    err.to_string()
+}
+
+/// Drain the PDF `IStream` returned by `PrintToPdfStream` (already rewound to
+/// the start by WebView2). The stream is COM/STA-bound, so it is read on the
+/// UI thread inside the completion handler.
+#[cfg(windows)]
+fn read_pdf_stream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>, String> {
+    let mut pdf = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let mut read = 0u32;
+        let hr = unsafe {
+            stream.Read(
+                chunk.as_mut_ptr().cast(),
+                chunk.len() as u32,
+                Some(&mut read),
+            )
+        };
+        if hr.is_err() {
+            return Err(format!("cannot read the rendered PDF: {hr:?}"));
+        }
+        if read == 0 {
+            break;
+        }
+        pdf.extend_from_slice(&chunk[..read as usize]);
+        if pdf.len() > 256 * 1024 * 1024 {
+            return Err("the rendered PDF is too large (> 256 MB)".into());
+        }
+    }
+    if !pdf.starts_with(b"%PDF-") {
+        return Err("the webview did not produce a PDF".into());
+    }
+    Ok(pdf)
+}
+
+// ---------------- PDF page-number footer (macOS / Linux) ----------------
+//
+// Windows gets its page furniture from WebView2's print settings. The macOS
+// and Linux engines cannot produce the same thing: macOS can only add
+// WebKit's title/URL/date banner (ugly for a note), Linux has no page numbers
+// at all. So those platforms stamp a small centered "N / M" into the vector
+// PDF after printing. The page content is untouched (the footer is appended
+// as an extra content stream); anything unexpected in the document leaves it
+// exactly as printed.
+
+/// Stamp page numbers into `pdf`, returning the input untouched on any error:
+/// a cosmetic failure must never break an export.
+#[allow(dead_code)]
+fn stamp_page_numbers(pdf: Vec<u8>) -> Vec<u8> {
+    match stamp_page_numbers_impl(&pdf) {
+        Ok(stamped) => stamped,
+        Err(err) => {
+            eprintln!("rustmd: cannot stamp PDF page numbers: {err}");
+            pdf
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn stamp_page_numbers_impl(pdf: &[u8]) -> Result<Vec<u8>, String> {
+    use lopdf::{Document, ObjectId, dictionary};
+
+    let mut doc =
+        Document::load_mem(pdf).map_err(|e| format!("cannot parse the printed PDF: {e}"))?;
+    let pages: Vec<ObjectId> = doc.get_pages().values().copied().collect();
+    let total = pages.len();
+    if total == 0 {
+        return Err("the printed PDF has no pages".into());
+    }
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+        "Encoding" => "WinAnsiEncoding",
+    });
+
+    for (index, page_id) in pages.iter().enumerate() {
+        let (page_x, page_y, page_width, _page_height) =
+            page_media_box(&doc, *page_id).unwrap_or((0.0, 0.0, 595.0, 842.0));
+        attach_stamp_font(&mut doc, *page_id, font_id)?;
+        let label = format!("{} / {}", index + 1, total);
+        let font_size = 9.0f64;
+        // Helvetica advance widths (per mille): digits 556, space/slash 278.
+        let text_width: f64 = label
+            .chars()
+            .map(|c| match c {
+                '0'..='9' => 0.556,
+                ' ' | '/' => 0.278,
+                _ => 0.5,
+            })
+            .sum::<f64>()
+            * font_size;
+        let x = page_x + (page_width - text_width) / 2.0;
+        let y = page_y + 24.0; // inside the bottom margin, ~8.5 mm above the edge
+        let stamp = format!(
+            "q BT /RMDPageNumber {font_size} Tf 0.45 g 1 0 0 1 {x:.2} {y:.2} Tm ({label}) Tj ET Q\n"
+        );
+        // Printed pages often begin with a page-wide `cm` (Chromium scales and
+        // flips its user space). Wrapping the existing content in q/Q restores
+        // the identity matrix before the footer is drawn, so its coordinates
+        // are real page points regardless of what the renderer did.
+        wrap_page_content(&mut doc, *page_id, stamp.as_bytes())?;
+    }
+
+    let mut out = Vec::new();
+    doc.save_to(&mut out)
+        .map_err(|e| format!("cannot write the stamped PDF: {e}"))?;
+    Ok(out)
+}
+
+/// Wrap a page's existing content in `q` … `Q` and append `footer` inside the
+/// restored (identity) coordinate system. The footer is drawn last, on top.
+#[allow(dead_code)]
+fn wrap_page_content(
+    doc: &mut lopdf::Document,
+    page_id: lopdf::ObjectId,
+    footer: &[u8],
+) -> Result<(), String> {
+    use lopdf::{Dictionary, Object, Stream};
+
+    let page = doc
+        .get_dictionary(page_id)
+        .map_err(|e| format!("invalid page dictionary: {e}"))?
+        .clone();
+    let mut contents: Vec<Object> = match page.get(b"Contents").ok().cloned() {
+        Some(Object::Reference(id)) => vec![Object::Reference(id)],
+        Some(Object::Array(items)) => items,
+        _ => Vec::new(),
+    };
+    let open_id = doc.add_object(Object::Stream(Stream::new(
+        Dictionary::new(),
+        b"q\n".to_vec(),
+    )));
+    let mut closing = Vec::with_capacity(footer.len() + 8);
+    closing.extend_from_slice(b"Q\nq\n");
+    closing.extend_from_slice(footer);
+    closing.extend_from_slice(b"Q\n");
+    let close_id = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), closing)));
+    contents.insert(0, Object::Reference(open_id));
+    contents.push(Object::Reference(close_id));
+    doc.get_object_mut(page_id)
+        .map_err(|e| format!("invalid page object: {e}"))?
+        .as_dict_mut()
+        .map_err(|e| format!("invalid page dictionary: {e}"))?
+        .set("Contents", Object::Array(contents));
+    Ok(())
+}
+
+/// Add the stamp font to a page's `/Resources/Font`, preserving every font the
+/// page already uses (the existing dictionary is copied, not replaced).
+#[allow(dead_code)]
+fn attach_stamp_font(
+    doc: &mut lopdf::Document,
+    page_id: lopdf::ObjectId,
+    font_id: lopdf::ObjectId,
+) -> Result<(), String> {
+    use lopdf::{Dictionary, Object};
+
+    fn merge(
+        doc: &mut lopdf::Document,
+        resources: &mut Dictionary,
+        font_id: lopdf::ObjectId,
+    ) -> Result<(), String> {
+        use lopdf::{Dictionary, Object};
+        let mut fonts = match resources.get(b"Font") {
+            Ok(Object::Reference(id)) => doc
+                .get_dictionary(*id)
+                .map_err(|e| format!("invalid /Font dictionary: {e}"))?
+                .clone(),
+            Ok(Object::Dictionary(dict)) => dict.clone(),
+            _ => Dictionary::new(),
+        };
+        fonts.set("RMDPageNumber", Object::Reference(font_id));
+        let fonts_id = doc.add_object(Object::Dictionary(fonts));
+        resources.set("Font", Object::Reference(fonts_id));
+        Ok(())
+    }
+
+    // The page may inherit /Resources from an ancestor node; clone whatever is
+    // in effect so the stamp font cannot shadow the fonts/images the page
+    // already uses.
+    let mut resources: Option<Dictionary> = None;
+    let mut shared_id: Option<lopdf::ObjectId> = None;
+    let mut current = page_id;
+    for _ in 0..32 {
+        let dict = doc
+            .get_dictionary(current)
+            .map_err(|e| format!("invalid page dictionary: {e}"))?
+            .clone();
+        match dict.get(b"Resources") {
+            Ok(Object::Reference(id)) => {
+                shared_id = Some(*id);
+                resources = Some(
+                    doc.get_dictionary(*id)
+                        .map_err(|e| format!("invalid /Resources dictionary: {e}"))?
+                        .clone(),
+                );
+                break;
+            }
+            Ok(Object::Dictionary(dict)) => {
+                resources = Some(dict.clone());
+                break;
+            }
+            _ => {}
+        }
+        match dict
+            .get(b"Parent")
+            .ok()
+            .and_then(|obj| obj.as_reference().ok())
+        {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+
+    let mut resources = resources.unwrap_or_default();
+    merge(doc, &mut resources, font_id)?;
+    match shared_id {
+        Some(id) => {
+            *doc.get_object_mut(id)
+                .map_err(|e| format!("invalid /Resources object: {e}"))? =
+                Object::Dictionary(resources);
+        }
+        None => {
+            doc.get_object_mut(page_id)
+                .map_err(|e| format!("invalid page object: {e}"))?
+                .as_dict_mut()
+                .map_err(|e| format!("invalid page dictionary: {e}"))?
+                .set("Resources", Object::Dictionary(resources));
+        }
+    }
+    Ok(())
+}
+
+/// Page box in points from `/MediaBox` (origin x, origin y, width, height),
+/// walking up `/Parent` for inherited boxes.
+#[allow(dead_code)]
+fn page_media_box(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Option<(f64, f64, f64, f64)> {
+    use lopdf::{Object, ObjectId};
+
+    fn number(obj: &Object) -> Option<f64> {
+        match obj {
+            Object::Integer(value) => Some(*value as f64),
+            Object::Real(value) => Some(f64::from(*value)),
+            _ => None,
+        }
+    }
+
+    let mut current: ObjectId = page_id;
+    for _ in 0..32 {
+        let dict = doc.get_dictionary(current).ok()?;
+        let values: Vec<Object> = match dict.get(b"MediaBox") {
+            Ok(Object::Array(values)) => values.clone(),
+            Ok(Object::Reference(id)) => doc
+                .get_object(*id)
+                .ok()
+                .and_then(|obj| obj.as_array().ok())
+                .cloned()?,
+            _ => Vec::new(),
+        };
+        if values.len() == 4 {
+            let x0 = number(&values[0])?;
+            let y0 = number(&values[1])?;
+            let x1 = number(&values[2])?;
+            let y1 = number(&values[3])?;
+            return Some((x0, y0, (x1 - x0).abs(), (y1 - y0).abs()));
+        }
+        current = dict.get(b"Parent").ok()?.as_reference().ok()?;
+    }
+    None
+}
+
 // ---------------- Remote image fetching ----------------
 
 const IMAGE_LIMIT: u64 = 25 * 1024 * 1024; // 25 MB
@@ -2170,6 +2983,9 @@ struct HtmlCapture {
     height: u32,
     css_width: u32,
     css_height: u32,
+    /// Layout width reported by a print-mode renderer before printing, used
+    /// to scale fixed-width pages down to the printable area. 0 for captures.
+    scroll_width: u32,
 }
 
 struct HtmlPreviewState {
@@ -2345,9 +3161,68 @@ fn html_preview_base_href(parent: &Path) -> String {
     }
 }
 
+/// Injected into the hidden window in print mode: wait for the page's
+/// scripts, fonts and images, then report the settled layout width so Rust can
+/// print the page at a scale that fits the paper.
+fn print_ready_script(token: &str) -> String {
+    format!(
+        r#"(function () {{
+  function finish(payload) {{
+    try {{
+      window.__TAURI_INTERNALS__.invoke('html_preview_finish', {{ payload: payload }})
+        .catch(function () {{ document.title = 'RMD_IPC_ERR'; }});
+    }} catch (e) {{
+      document.title = 'RMD_IPC_MISSING';
+    }}
+  }}
+  function report() {{
+    var body = document.body;
+    var root = document.documentElement;
+    var w = Math.max(body.scrollWidth, root.scrollWidth, root.clientWidth, body.offsetWidth, 1);
+    var h = Math.max(body.scrollHeight, root.scrollHeight, body.offsetHeight, 1);
+    finish({{
+      token: '{token}',
+      ready: true,
+      scrollWidth: Math.ceil(w),
+      cssWidth: Math.ceil(w),
+      cssHeight: Math.ceil(h)
+    }});
+  }}
+  function settle() {{
+    var images = [].slice.call(document.images || []);
+    var pending = images.filter(function (img) {{ return !img.complete; }}).map(function (img) {{
+      return new Promise(function (resolve) {{
+        img.addEventListener('load', resolve, {{ once: true }});
+        img.addEventListener('error', resolve, {{ once: true }});
+        setTimeout(resolve, 15000);
+      }});
+    }});
+    var fonts = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    Promise.all([fonts].concat(pending)).then(function () {{
+      // Chart/SVG libraries usually paint right after their scripts run.
+      setTimeout(report, 300);
+    }}, report);
+  }}
+  if (document.readyState === 'complete') setTimeout(settle, 1500);
+  else window.addEventListener('load', function () {{ setTimeout(settle, 1500); }});
+}})();"#
+    )
+}
+
 fn build_webview_document(html: &str, parent: &Path, token: &str, mode: &str) -> String {
     let base = html_preview_base_href(parent);
     let escaped_base = base.replace('&', "&amp;").replace('"', "&quot;");
+    if mode == "print" {
+        // Print mode only needs to know when the page has settled; the PDF
+        // itself is produced by WebView2's print pipeline in Rust.
+        let injection = format!(
+            "<base href=\"{escaped_base}\">\n\
+             <style>@media print{{html,body{{overflow:visible !important;}}}}</style>\n\
+             <script>{}</script>",
+            print_ready_script(token)
+        );
+        return insert_after_head(&strip_base_tags(html), &injection);
+    }
     let capture = format!(
         r#"(function () {{
   function invokeFinish(payload) {{
@@ -2545,6 +3420,11 @@ struct HtmlPreviewPayload {
     width: Option<u32>,
     #[serde(default)]
     height: Option<u32>,
+    /// Print mode: the document is loaded/settled and may be printed.
+    #[serde(default)]
+    ready: bool,
+    #[serde(default)]
+    scroll_width: Option<f64>,
 }
 
 #[tauri::command]
@@ -2565,12 +3445,31 @@ fn html_preview_finish(
         css_height,
         width,
         height,
+        ready,
+        scroll_width,
     } = payload;
     if window.label() != format!("html-render-{token}") {
         return Err("HTML renderer result token does not belong to this window".into());
     }
     let css_width = css_width.unwrap_or(0);
     let css_height = css_height.unwrap_or(0);
+    if ready {
+        // Print mode: no image to decode, just wake the waiting print flow
+        // with the measured layout width.
+        state.finish(
+            &token,
+            Ok(HtmlCapture {
+                png: Vec::new(),
+                width: 0,
+                height: 0,
+                css_width,
+                css_height,
+                scroll_width: scroll_width.unwrap_or(0.0).round().max(0.0) as u32,
+            }),
+        );
+        state.remove_doc(&token);
+        return Ok(());
+    }
     // Always resolve the waiting renderer, even when decoding/stitching fails;
     // otherwise the command error would leave it blocked until the 60 s
     // timeout.
@@ -2592,6 +3491,7 @@ fn html_preview_finish(
                 height,
                 css_width,
                 css_height,
+                scroll_width: 0,
             });
         }
         let data_url = data_url.ok_or_else(|| "missing image data".to_string())?;
@@ -2601,6 +3501,7 @@ fn html_preview_finish(
             height: height.unwrap_or(0),
             css_width,
             css_height,
+            scroll_width: 0,
         })
     })();
     state.finish(&token, result);
@@ -2608,27 +3509,42 @@ fn html_preview_finish(
     Ok(())
 }
 
-async fn render_html_note_webview(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, HtmlPreviewState>,
-    dir: String,
-    path: String,
-    html: String,
-    mode: String,
-) -> Result<HtmlRender, String> {
+/// CSS px available between the HTML-print margins. The hidden print window
+/// is created at this width so a fixed-width page overflows exactly the way it
+/// would on paper — that overflow is what the scale factor compensates.
+const HTML_PDF_VIEWPORT_WIDTH: f64 = (8.27 - 1.3) * 96.0;
+
+/// A hidden renderer window plus the channel its document reports back on.
+struct HtmlRenderWindow {
+    token: String,
+    window: tauri::WebviewWindow,
+    rx: std::sync::mpsc::Receiver<Result<HtmlCapture, String>>,
+}
+
+/// Create the hidden `html-render-{token}` window that loads the note from the
+/// `rmdhtml` protocol. Used by the PNG capture (`preview`/`export`/`pdf`) and
+/// by the vector PDF printer (`print`).
+fn open_html_render_window(
+    app: &tauri::AppHandle,
+    state: &HtmlPreviewState,
+    dir: &str,
+    path: &str,
+    html: &str,
+    mode: &str,
+) -> Result<HtmlRenderWindow, String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
-    if mode != "preview" && mode != "export" && mode != "pdf" {
+    if mode != "preview" && mode != "export" && mode != "pdf" && mode != "print" {
         return Err(format!("unsupported HTML render mode: {mode}"));
     }
     if html.len() > 16 * 1024 * 1024 {
         return Err("HTML note is too large (> 16 MB)".into());
     }
-    let full = resolve_in_root(Path::new(&dir), &path)?;
+    let full = resolve_in_root(Path::new(dir), path)?;
     let parent = full
         .parent()
         .ok_or_else(|| "note has no parent directory".to_string())?;
     let token = random_token("r-");
-    let document = build_webview_document(&html, parent, &token, &mode);
+    let document = build_webview_document(html, parent, &token, mode);
     {
         let mut docs = state.docs.lock().unwrap();
         docs.push((token.clone(), document));
@@ -2642,24 +3558,50 @@ async fn render_html_note_webview(
     let url = html_preview_window_url(&token)
         .parse::<tauri::Url>()
         .map_err(|e| e.to_string())?;
-    let window = match WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
+    let width = if mode == "print" {
+        HTML_PDF_VIEWPORT_WIDTH
+    } else {
+        1200.0
+    };
+    let window = match WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .visible(false)
-        .inner_size(1200.0, 1000.0)
+        .inner_size(width, 1000.0)
         .title("")
         .build()
     {
         Ok(window) => window,
         Err(err) => {
             state.cancel(&token);
+            state.remove_doc(&token);
             return Err(format!("cannot create HTML renderer window: {err}"));
         }
     };
+    Ok(HtmlRenderWindow { token, window, rx })
+}
+
+fn close_html_render_window(state: &HtmlPreviewState, token: &str, window: tauri::WebviewWindow) {
+    let _ = window.close();
+    state.cancel(token);
+    state.remove_doc(token);
+}
+
+async fn render_html_note_webview(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HtmlPreviewState>,
+    dir: String,
+    path: String,
+    html: String,
+    mode: String,
+) -> Result<HtmlRender, String> {
+    if mode == "print" {
+        return Err("HTML print mode is internal".into());
+    }
+    let HtmlRenderWindow { token, window, rx } =
+        open_html_render_window(&app, &state, &dir, &path, &html, &mode)?;
     let waited =
         tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(60)))
             .await;
-    let _ = window.close();
-    state.cancel(&token);
-    state.remove_doc(&token);
+    close_html_render_window(&state, &token, window);
     let waited = waited.map_err(|e| format!("HTML renderer task failed: {e}"))?;
     let capture = match waited {
         Ok(Ok(capture)) => capture,
@@ -2689,6 +3631,80 @@ async fn render_html_note(
     // HTML notes always use Tauri's own webview in a hidden window. No
     // external browser (Edge/Chrome/Chromium) is required or launched.
     render_html_note_webview(app, state, dir, path, html, mode).await
+}
+
+/// Print an HTML note to a real (text) PDF inside a hidden renderer window.
+/// The note keeps its own CSS and scripts: the window is sized to the printable
+/// width, so responsive pages lay out the way they will on paper, while
+/// fixed-width layouts report a larger width and are scaled down to fit
+/// instead of being clipped at the right margin. Page numbers follow the same
+/// policy as Markdown (WebView2 footer on Windows, stamped footer elsewhere).
+async fn print_html_note_webview2(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HtmlPreviewState>,
+    dir: String,
+    path: String,
+    html: String,
+    title: String,
+) -> Result<Vec<u8>, String> {
+    let HtmlRenderWindow { token, window, rx } =
+        open_html_render_window(&app, &state, &dir, &path, &html, "print")?;
+    let waited =
+        tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(60)))
+            .await;
+    let waited = match waited {
+        Ok(waited) => waited,
+        Err(e) => {
+            close_html_render_window(&state, &token, window);
+            return Err(format!("HTML renderer task failed: {e}"));
+        }
+    };
+    let ready = match waited {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(e)) => {
+            close_html_render_window(&state, &token, window);
+            return Err(e);
+        }
+        Err(_) => {
+            close_html_render_window(&state, &token, window);
+            return Err("HTML renderer timed out".into());
+        }
+    };
+    let layout = f64::from(ready.scroll_width.max(1));
+    let scale = if layout > HTML_PDF_VIEWPORT_WIDTH + 1.0 {
+        (HTML_PDF_VIEWPORT_WIDTH / layout).clamp(0.1, 1.0)
+    } else {
+        1.0
+    };
+    let printed = print_webview_pdf(
+        window.clone(),
+        PdfPrintOptions {
+            // WebView2 draws the same title header + page-number footer as
+            // Markdown; macOS/Linux ignore this and stamp the footer instead.
+            header_title: Some(pdf_header_title(&title)),
+            scale,
+            margins_in: [0.55, 0.6, 0.65, 0.65],
+        },
+    )
+    .await;
+    close_html_render_window(&state, &token, window);
+    printed
+}
+
+/// Vector PDF for HTML notes through the same platform print engine as
+/// Markdown; unsupported platforms keep the full-page image capture.
+#[tauri::command]
+async fn print_html_note(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HtmlPreviewState>,
+    dir: String,
+    path: String,
+    html: String,
+    title: String,
+) -> Result<Vec<u8>, String> {
+    require_main(&window)?;
+    print_html_note_webview2(app, state, dir, path, html, title).await
 }
 
 // ---------------- Dev-only self-test helpers ----------------
@@ -2813,6 +3829,8 @@ fn main() {
             move_note,
             search_notes,
             save_export,
+            print_note_pdf,
+            print_html_note,
             fetch_image_bytes,
             set_notes_root,
             read_local_image,
@@ -2831,6 +3849,77 @@ fn main() {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn stamps_a_real_printed_pdf_when_provided() {
+        // Dev-only helper: RUSTMD_STAMP_PDF=<pdf> RUSTMD_STAMP_OUT=<pdf> checks
+        // the stamper against a real WebView2/WebKit print output.
+        let Ok(input) = std::env::var("RUSTMD_STAMP_PDF") else {
+            return;
+        };
+        let bytes = fs::read(&input).expect("read input PDF");
+        let stamped = stamp_page_numbers(bytes);
+        if let Ok(out) = std::env::var("RUSTMD_STAMP_OUT") {
+            fs::write(out, &stamped).expect("write stamped PDF");
+        }
+        let doc = lopdf::Document::load_mem(&stamped).expect("stamped PDF must parse");
+        assert!(!doc.get_pages().is_empty());
+    }
+
+    #[test]
+    fn stamps_page_numbers_without_touching_content() {
+        use lopdf::{Dictionary, Document, Object, Stream, dictionary};
+
+        fn build_pdf() -> (Vec<u8>, lopdf::ObjectId) {
+            let mut doc = Document::with_version("1.5");
+            let pages_id = doc.new_object_id();
+            let content_id = doc.add_object(Object::Stream(Stream::new(
+                Dictionary::new(),
+                b"0 0 1 rg 0 0 50 50 re f
+"
+                .to_vec(),
+            )));
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![
+                    Object::Integer(0),
+                    Object::Integer(0),
+                    Object::Integer(595),
+                    Object::Integer(842),
+                ],
+                "Contents" => content_id,
+                "Resources" => dictionary! {},
+            });
+            let pages = dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            };
+            doc.objects.insert(pages_id, Object::Dictionary(pages));
+            let catalog_id =
+                doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+            doc.trailer.set("Root", catalog_id);
+            let mut bytes = Vec::new();
+            doc.save_to(&mut bytes).expect("write test PDF");
+            (bytes, page_id)
+        }
+
+        let (original, page_id) = build_pdf();
+        let stamped = stamp_page_numbers(original.clone());
+        assert_ne!(stamped, original, "the stamp must modify the document");
+        let reloaded = Document::load_mem(&stamped).expect("stamped PDF must parse");
+        assert_eq!(reloaded.get_pages().len(), 1);
+        let content =
+            String::from_utf8_lossy(&reloaded.get_page_content(page_id).unwrap()).to_string();
+        assert!(content.contains("1 / 1"), "got: {content}");
+        assert!(content.contains("0 0 50 50 re f"), "original content lost");
+        let fonts = reloaded.get_page_fonts(page_id).expect("fonts");
+        assert!(
+            fonts.keys().any(|name| name.as_slice() == b"RMDPageNumber"),
+            "stamp font missing from page resources"
+        );
+    }
 
     fn test_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.4.2** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.5.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -98,22 +98,23 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - Edit the HTML source on the left and see a full-page native render on the right using the app's built-in WebView (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). **No Edge, Chrome or other external browser is required.** The page's `<style>`, `<script>`, local relative CSS/JS/fonts/images and ECharts charts run natively; text stays sharp when scrolling/zooming. `<title>` (or the first `<h1>`) becomes the list title, while the filename stays visible.
 - The **New note** button offers **Markdown note** and **HTML page**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for both formats.
 - HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
-- Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot. A sanitized static preview is used only if rendering fails.
-- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** saves the current source verbatim; PNG / PDF use a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image).
+- Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot or signal print readiness. A sanitized static preview is used only if rendering fails.
+- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** saves the current source verbatim; PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
+- Markdown and HTML **PDF** is text-based: the system WebView's print pipeline re-lays out the note (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) instead of screenshotting it first, so text search, copy and zoom all work.
 
 ### Export
 
 - **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); HTML notes save their current source verbatim.
 - **PNG** — 3× rendering (~288 DPI) for Markdown; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
-- **PDF** — block-aware pagination for Markdown; sliced pages from the full HTML render. Both use lossless PNG slices.
-- For PNG/PDF, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNG/PDF exports are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched.
+- **PDF** — both Markdown and HTML notes are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. Platforms without native printing fall back to the block-aware lossless PNG slices.
+- For PNG exports, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNGs are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched. PDFs go through the system print pipeline described above.
 - The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 
 ### Security
 
 - Markdown-rendered HTML is sanitized with DOMPurify before `innerHTML`; scripts, event handlers, `javascript:` URLs, `<style>`, `<iframe>` etc. are stripped. HTML-note preview runs in a sandboxed iframe (null origin), and export runs in a hidden WebView window; neither can call app commands.
 - MathJax/Mermaid run after sanitization, then a narrow post-pass removes `on*`, dangerous links and external CSS URLs.
-- CSP is enabled; external links open in the system browser. HTML preview/export runs in isolated WebViews; export returns only a PNG.
+- CSP is enabled; external links open in the system browser. HTML preview/export run in isolated WebViews; the export window can only return a screenshot or a print-ready signal.
 - `resolve_in_root` contains notes and images inside the vault, rejects `..`, and blocks junction/symlink write escapes; the scanner skips symlinks.
 - Remote image fetching rejects loopback/private/link-local/reserved addresses and re-validates redirects.
 - Saves use a temp file + atomic rename; `baseHash` conflict detection avoids silent overwrites.

@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.4.2` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.4.2 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.5.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.5.0 >/dev/null` |
 | Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 
@@ -61,6 +61,12 @@ this file is the developer/agent contract.
     and hash-based external-change detection;
   - `fetch_image_bytes` (SSRF checks + redirect policy), `save_export`
     (native dialog + write in Rust);
+  - `print_note_pdf` / `print_html_note`: platform print engines (WebView2
+    `PrintToPdfStream`, WKWebView `NSPrintOperation`, WebKitGTK print
+    operation) with A4 settings, vector text, page numbers; the macOS/Linux
+    path writes a temp PDF, then `stamp_page_numbers` adds the footer;
+  - `print_ready_script` + `ready`/`scrollWidth` on `html_preview_finish`
+    (print mode readiness for HTML notes);
   - HTML capture result handling must always resolve the waiting renderer,
     including decode/stitch errors; close/cancel on timeout or task failure;
   - the `rmd` custom protocol (`serve_rmd`, `VaultFileCache`, mtime + byte
@@ -87,7 +93,12 @@ this file is the developer/agent contract.
   inlining for the hidden capture.
 - `frontend/src/export.js` — off-screen stage, image inlining, html2canvas,
   multi-page jsPDF, `pdfFromPngDataUrl` for WebView-rendered HTML notes, and
-  a 0.25–3× adaptive scale for very long Markdown notes.
+  a 0.25–3× adaptive scale for very long Markdown notes. Markdown PDF export
+  prefers the WebView's own print pipeline (`exportPdfVector` →
+  `print_note_pdf`, `print_html_note`): the browser lays the note out on real
+  pages and embeds font subsets, so the PDF is vector text (selectable, sharp,
+  small) instead of sliced canvas images. The raster exporter stays as the
+  fallback for unsupported platforms and older WebView2 runtimes.
 - `frontend/src/editor.js` — CodeMirror 6 setup; Markdown/HTML language is
   swapped per note through a `Compartment`; HTML/JS/CSS highlight rules and
   line-wrap compartment.
@@ -129,13 +140,13 @@ this file is the developer/agent contract.
   `conflict: note changed on disk` and the UI asks before forcing.
 - `mtime` is unix seconds (display/sort only); `hash` is the conflict token.
 
-### IPC commands (19)
+### IPC commands (21)
 
 `list_notes`, `list_folders`, `read_note`, `save_note`, `create_note`,
 `rename_note`, `delete_note`, `move_note`, `search_notes`, `save_export`,
-`fetch_image_bytes`, `set_notes_root`, `read_local_image`, `render_html_note`,
-`html_preview_finish`, `set_html_preview`, `selftest_config`,
-`selftest_write`, `selftest_finish`.
+`print_note_pdf`, `print_html_note`, `fetch_image_bytes`, `set_notes_root`,
+`read_local_image`, `render_html_note`, `html_preview_finish`,
+`set_html_preview`, `selftest_config`, `selftest_write`, `selftest_finish`.
 
 `create_note` takes an optional `kind` (`"markdown"` default, `"html"`) and
 picks `untitled.md` / `untitled.html`. `rename_note` preserves the note’s
@@ -144,6 +155,39 @@ current extension; `unique_sibling` keeps the extension.
 `save_export` opens the OS save dialog in Rust and writes the selected bytes;
 there is deliberately **no** arbitrary `write_text`/`write_bytes` command.
 `selftest_*` are debug-only (release stubs return an error).
+
+`print_note_pdf` prints *the main window's current document* through the
+platform print engine — WebView2 `PrintToPdfStream` on Windows, WKWebView's
+`NSPrintOperation` on macOS, WebKitGTK's print operation on Linux (resolved at
+runtime through `libloading`, so no GTK dev headers are needed to build) — and
+returns the PDF bytes (which then go through `save_export` like any other
+export). It takes only a header `title` — no output path. `export.js` supplies
+the document: the `.export-stage` stays mounted and `body.rmd-printing`
+activates the `@media print` rules in `style.css`, which hide the app chrome
+and let the note flow across pages.
+
+`print_html_note` does the same for an HTML note, but in a hidden
+`html-render-{token}` window (`mode = "print"`, no html2canvas). The window is
+created at `HTML_PDF_VIEWPORT_WIDTH` (~669 CSS px, A4 minus the 0.65in side
+margins) so the page lays out the way it will print; the injected `print_ready_script`
+waits for fonts/charts/images and reports `scrollWidth`, and a fixed-width
+page is scaled down (native scale factor / GTK print scale) instead of being
+clipped. Both exporters use the same A4 margins.
+
+Windows gets WebView2's header (title + export date) and page-number footer.
+macOS/Linux print without browser chrome and then `stamp_page_numbers` appends
+a centered "N / M" footer (base-14 Helvetica, wrapped in `q`/`Q` so a
+page-wide `cm` cannot move it) — a stamping failure returns the PDF untouched.
+On unsupported platforms (and WebView2 runtimes older than 1.0.1518) both
+commands return an `unsupported:` error and the frontend falls back to the
+html2canvas PDF. macOS uses the `objc2` crates; the print runs through
+`runOperationModalForWindow:` with `canSpawnSeparateThread`, so AppKit detaches
+a print thread and the UI is not blocked — the command then polls for the
+finished PDF (`wait_for_printed_pdf`, 45 s) before stamping. Linux only needs
+the `webkit2gtk` wrapper for the raw `GtkWidget` pointer. The macOS code is
+compile-checked from Windows with `cargo check --target x86_64-apple-darwin`
+in a scratch crate; the Linux C calls are compiled on every host
+(`linux_print_webview` is plain `libloading` FFI).
 
 ### Adding a Tauri command (3 touch points)
 
@@ -219,6 +263,21 @@ If a new Tauri *plugin* is used:
   requests, both of which the strict `rmd` policy rejects.
   `export.js` assumes the Markdown stage is 948 px wide (860 content + 2×44
   padding) and adapts scale down to 0.25× for extremely tall notes.
+  Markdown PDF export goes through `exportPdfVector` (`print_note_pdf`):
+  keep the `.export-stage` markup print-friendly (the `@media print`
+  block in `style.css` owns page hiding, page width and `break-inside`), and
+  do not add screen-only transforms/pseudo-elements there — the print engine
+  re-lays the note out at A4 width, so page breaks are the browser's, not
+  `computePageCuts`'. HTML-note PDFs use `print_html_note`: the hidden window
+  is sized to the printable width, `@media print` CSS in the note is honored,
+  and `scrollWidth` drives the scale factor; keep `print_ready_script` in sync
+  with the capture script's settle timing. `exportPdf` (image slices) remains
+  the fallback for unsupported hosts; `pdfFromPngDataUrl` slices pages evenly
+  so the last page is not a sliver. Page-number styling for macOS/Linux lives
+  in `stamp_page_numbers` (lopdf): it appends a content stream per page and
+  must never replace an existing `/Resources/Font` dictionary — it copies it.
+  Keep the `RUSTMD_STAMP_PDF`/`RUSTMD_STAMP_OUT` unit test usable for checking
+  the stamper against a real export.
   PNG/PDF export rasterizes
   `data:image/svg+xml` `<img>` elements before html2canvas: Chromium interprets
   `drawImage` source rectangles in SVG user units, and html2canvas always
@@ -284,7 +343,9 @@ If a new Tauri *plugin* is used:
 - **Selftest**: dev-only; requires examples/ and network for the remote image
   checks. HTML entries use the built-in WebView (native preview iframe +
   hidden export window), check `--require-html`, and assert iframe readiness,
-  local-JS execution, PNG/PDF magic/dimensions and local CSS/JS/image inlining. No
+  local-JS execution, PNG/PDF magic/dimensions and local CSS/JS/image inlining.
+  Markdown and HTML PDF entries assert the vector path really produced text
+  (`/Font` in the PDF, not just image slices) on every desktop platform. No
   external browser is installed or required. Clear the output dir first; the
   checker rejects reports older than 24h. It restores the user’s notes root
   afterwards and exits with 0/1.

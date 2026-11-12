@@ -5,6 +5,36 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-11-12
+
+### 新增（Added）
+
+- **矢量文字 PDF 导出（Markdown + HTML，Windows/macOS/Linux）**：PDF 不再由
+  html2canvas 截图切片，而是交给系统 WebView 的打印管线重新排版——Markdown
+  用新命令 `print_note_pdf`（离屏舞台 + `@media print`），HTML 笔记用
+  `print_html_note`（隐藏渲染窗口按可打印宽度排版，固定宽度页面整体缩放）。
+  Windows 走 WebView2 `PrintToPdfStream`；macOS 走 WKWebView 的
+  `NSPrintOperation`；Linux 走 WebKitGTK 的打印操作（运行时解析 GTK C API，
+  无需开发头文件）。文字、公式、Mermaid/SVG 图表都是矢量，可选中、可搜索、
+  任意放大都清晰；A4 分页由引擎按 CSS 规则完成。Windows 由 WebView2 绘制
+  页眉标题 + 页脚页码；macOS/Linux 打印后由 `stamp_page_numbers` 在每页底部
+  补一个居中的「页码 / 总页数」（不添加浏览器地址栏信息）。不支持原生打印的
+  平台或运行时自动回退到原来的图片 PDF，导出流程（保存对话框、文件名）不变。
+
+### 修复（Fixed）
+
+- **Linux 导出 PDF 的额外主线程阻塞**：GTK 打印完成后不再在 GTK 主线程里
+  轮询输出文件（最多 5 秒的 sleep），等待改为在后台线程完成；WebKitGTK 自身
+  的页面渲染仍是同步的（平台没有异步接口），界面只在渲染期间短暂停顿，
+  导出提示可见。
+- **macOS 导出 PDF 时界面无响应**：改用 AppKit 的
+  `runOperationModalForWindow:` + `canSpawnSeparateThread`，让打印在系统
+  分离出来的线程上完成，主线程只负责轮询输出文件（含文件稳定性和
+  `%%EOF` 校验），导出期间界面不再卡死。
+- **PDF 尾页渲染异常**：图片 PDF 不再产生被硬切出的“几像素尾页”——
+  切片按页均分，末尾过短的页并入上一页；Markdown 的矢量 PDF 则由浏览器
+  正常分页，不会把一行文字切成两半。
+
 ## [1.4.2] - 2026-11-12
 
 ### 文档与可发现性（Docs / Discoverability）
