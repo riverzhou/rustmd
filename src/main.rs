@@ -2040,8 +2040,12 @@ fn serve_rmd(
             || o.starts_with("http://rmdhtml.localhost")
             || o.starts_with("rmdhtml://localhost")
     });
-    let preview_font = preview_origin && dest == Some("font");
-    let allowed_origin = if preview_font {
+    // WebKit sends `Origin: null` for classic scripts/stylesheets in the
+    // null-origin preview (WebView2 usually does not). Allow those subresource
+    // destinations, plus fonts, while keeping fetch/XHR (empty destination)
+    // and documents blocked so vault text stays unreadable.
+    let preview_subresource = preview_origin && matches!(dest, Some("font" | "script" | "style"));
+    let allowed_origin = if preview_subresource {
         origin
     } else {
         match origin {
@@ -3713,6 +3717,28 @@ plain
         assert_eq!(
             serve_rmd(Some(dir.clone()), &cache, &font_request).status(),
             200
+        );
+        let script_request = tauri::http::Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("origin", "null")
+            .header("sec-fetch-dest", "script")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(Some(dir.clone()), &cache, &script_request).status(),
+            200
+        );
+        let fetch_request = tauri::http::Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("origin", "null")
+            .header("sec-fetch-dest", "empty")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(Some(dir.clone()), &cache, &fetch_request).status(),
+            403
         );
         assert_eq!(
             serve_rmd(

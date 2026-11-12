@@ -984,6 +984,12 @@ mark {
   overflow-wrap: anywhere;
 }
 
+.export-stage .markdown-body img {
+  width: auto;
+  height: auto;
+  max-width: 860px;
+}
+
 .export-stage .markdown-body pre {
   overflow-x: visible;
   white-space: pre-wrap;

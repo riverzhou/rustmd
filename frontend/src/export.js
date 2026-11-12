@@ -202,6 +202,14 @@ async function renderToCanvas(source, kind = 'markdown') {
     // .content, so don't rely on the cascade — CONTENT_WIDTH matches
     // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding.
     stage.firstElementChild.style.maxWidth = `${CONTENT_WIDTH}px`;
+    // WebKitGTK can leave an intrinsic-width image unconstrained in the
+    // off-screen stage, which crops wide charts at the canvas edge. Pin every
+    // image to the content width before html2canvas measures the page.
+    for (const img of stage.querySelectorAll('img')) {
+      img.style.maxWidth = `${CONTENT_WIDTH}px`;
+      img.style.width = 'auto';
+      img.style.height = 'auto';
+    }
     // Remote images are swapped for inline data: URLs (nothing to revoke).
     await inlineRemoteImages(stage);
     // SVG images must be bitmaps before html2canvas draws them (see above).
