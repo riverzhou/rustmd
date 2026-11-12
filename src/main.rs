@@ -198,18 +198,16 @@ fn is_link_or_reparse(path: &Path) -> bool {
     let Ok(md) = fs::symlink_metadata(path) else {
         return true;
     };
-    if md.file_type().is_symlink() {
-        return true;
-    }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        if md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return true;
-        }
+        md.file_type().is_symlink() || md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
-    false
+    #[cfg(not(windows))]
+    {
+        md.file_type().is_symlink()
+    }
 }
 
 // ---------------- Front matter ----------------
