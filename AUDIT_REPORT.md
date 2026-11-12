@@ -1,8 +1,15 @@
 # rustmd 代码审计报告
 
 **审计日期**：2026-11-12（v1.4.0 审计于 2026-11-11）
-**审计对象**：`rustmd` v1.4.1（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计对象**：`rustmd` v1.4.2（Rust + Tauri 2，Markdown + HTML 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.4.2 文档与可发现性补丁
+
+GitHub About 改为 **Markdown & HTML notes**，描述加入内置 WebView HTML 预览；
+Topics 新增 `html`、`html-editor`、`html-notes`、`webview`（保持 20 个），并同步
+README/AGENTS/GITHUB_PROJECT_COPY/架构/安全/测试/发布文档。应用代码与 v1.4.1
+相同，v1.4.2 仅版本、文档和仓库元数据变化。
 
 ---
 
@@ -38,7 +45,7 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.4.1 的 HTML 笔记、内置 WebView 预览/导出、全屏/折行/语法高亮和 1.4.0 发布链路已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；本轮重点修复了新 HTML 渲染路径引入的跨域读、base URL、并发、资源加载和发布检查问题。
+**结论**：v1.4.2 的 HTML 笔记、内置 WebView 预览/导出、全屏/折行/语法高亮和 1.4.0 发布链路已通过本轮审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态；本轮重点修复了新 HTML 渲染路径引入的跨域读、base URL、并发、资源加载和发布检查问题。
 
 ---
 
@@ -47,8 +54,8 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 ### H-1 `rmd` 协议 Origin 过宽（跨域读笔记库）
 
 - **问题**：早期只拒绝 `Origin: null` / `rmdhtml`，其他任意 Origin 可带 `Access-Control-Allow-Origin: *` 读取 `rmd://` 文件；恶意 HTML 笔记可嵌套远程 iframe 读取笔记库。
-- **修复**：`serve_rmd` 仅接受无 Origin 的普通子资源请求，或来自应用自身 webview 的 Origin（Tauri / 本地 dev server）；其余 Origin 一律 403。`Access-Control-Allow-Origin` 不再固定 `*`，只回显允许的 Origin。`@font-face` 在预览的 null/rmdhtml 源下按 `Sec-Fetch-Dest: font` 单独放行（字体不是文本读取通道）。`rmd` 返回的 HTML/SVG 文档附加 sandbox CSP 和 `nosniff`。
-- **回归**：`serve_rmd_rejects_preview_origins`；手动验证 null/rmdhtml 403、主 webview 200、本地字体 200。
+- **修复**：`serve_rmd` 仅接受无 Origin 的普通子资源请求，或来自应用自身 webview 的 Origin（Tauri / 本地 dev server）；其余 Origin 一律 403；预览源的 `font`/`script`/`style` 子资源按 `Sec-Fetch-Dest` 放行（脚本/样式不能读取响应文本），`fetch`/XHR 仍 403。`Access-Control-Allow-Origin` 不再固定 `*`，只回显允许的 Origin。`rmd` 返回的 HTML/SVG 文档附加 sandbox CSP 和 `nosniff`。
+- **回归**：`serve_rmd_rejects_preview_origins`；单测验证 null 默认 403、null+script/font 200、null+fetch 403、主 webview 200。
 
 ### H-2 HTML base URL 分隔符错误（Linux/macOS/UNC 本地资源 404）
 
@@ -119,7 +126,7 @@ npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
 - Markdown：残留公式、Mermaid 错误、MathJax 错误、多行矩阵 viewBox、远程/本地图片 NCC、内嵌 SVG 红蓝像素；
 - HTML：sandbox iframe ready、本地相对 CSS/JS 执行、本地图片内联到导出源、PNG 非空/尺寸、PDF magic/尺寸、真实 `mode:'pdf'`；
 - 超长 HTML：32k CSS px 报告导出 PNG 约 1,768×48,000，分段拼接完整；688499 报告 PNG 约 3,037×30,000（约 2.56×）；
-- 手动安全：sandbox iframe 调 `read_note` 返回 `Origin header is not a valid URL`；`rmd` null/rmdhtml Origin 返回 403；主 webview 本地图片正常。
+- 手动安全：sandbox iframe 调 `read_note` 返回 `Origin header is not a valid URL`；`rmd` 对 null+fetch 返回 403，对 null+script/font 子资源放行；主 webview 本地图片正常。
 
 CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
 
@@ -153,4 +160,4 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 
 ## 7. 结论
 
-v1.4.1 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.4.2 可以发布。所有已知高危/中危问题均已修复并有回归覆盖；剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

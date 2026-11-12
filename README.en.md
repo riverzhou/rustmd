@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.4.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.4.2** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -118,7 +118,7 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - Remote image fetching rejects loopback/private/link-local/reserved addresses and re-validates redirects.
 - Saves use a temp file + atomic rename; `baseHash` conflict detection avoids silent overwrites.
 - Notes are read as UTF-8; non-UTF-8 files stay visible but opening one asks you to convert it first.
-- HTML-note relative CSS/JS/fonts/images use `rmd`; `rmd` only accepts CORS requests from the app webview — sandbox/null origins and the `rmdhtml` renderer get 403.
+- HTML-note relative CSS/JS are inlined into the preview/export document, images become data URLs, and fonts use `rmd`; `rmd` only allows classic script/style/font subresources from preview origins, while `fetch`/XHR and document reads still get 403.
 
 ## Download
 

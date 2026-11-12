@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.4.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.4.2** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -120,7 +120,7 @@
 - 远程图片抓取拒绝 loopback / 私有网段 / 链路本地 / 保留地址，并校验每次重定向。
 - 保存使用临时文件 + 原子替换；`baseHash` 冲突检测避免静默覆盖外部修改。
 - 笔记按 UTF-8 读取；非 UTF-8 文件不会被静默隐藏，打开时会提示先转换为 UTF-8。
-- HTML 笔记的相对 CSS/JS/字体/图片走 `rmd`；`rmd` 只接受来自应用 webview 的 CORS 请求，sandbox/null origin 与 `rmdhtml` 源一律 403。
+- HTML 笔记的相对 CSS/JS 会内联进预览/导出文档，图片内联为 data URL，字体走 `rmd`；`rmd` 只对无法内联的 classic script/style/font 子资源放行预览源，`fetch`/XHR 与文档读取仍返回 403。
 
 ## 下载与安装
 

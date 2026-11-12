@@ -5,6 +5,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.2] - 2026-11-12
+
+### 文档与可发现性（Docs / Discoverability）
+
+- GitHub 仓库 About 更新为 **Markdown & HTML notes** 口径，描述中明确
+  “built-in WebView HTML preview”。
+- GitHub Topics 更新为同时覆盖格式/技术栈/平台：新增 `html`、`html-editor`、
+  `html-notes`、`webview`，保持 20 个 topics。
+- README 中英文版、`docs/GITHUB_PROJECT_COPY.md`、`AGENTS.md`、架构/安全/
+  测试/发布文档同步 HTML 本地资源内联、WebKit 导出修复、Origin 白名单例外
+  和 1.4.2 发布流程。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.4.2**；`package.json`、`Cargo.toml`、`tauri.conf.json`、
+  `Cargo.lock`、`package-lock.json` 同步。
+- 新增 `RELEASE_NOTES-1.4.2.md`。本次为文档/可发现性补丁版本，应用代码与
+  v1.4.1 一致。
+
 ## [1.4.1] - 2026-11-12
 
 ### 修复（Fixed）

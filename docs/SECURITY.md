@@ -19,7 +19,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - **Markdown 笔记**：`preview.js` 在 `innerHTML` 前调用 `DOMPurify.sanitize`，使用静态配置。
 - **HTML 笔记预览**：`set_html_preview` 把文档存入内存，通过 `rmdhtml` 协议加载到 `sandbox="allow-scripts allow-forms"` 的 iframe（没有 `allow-same-origin`，origin 为 null）。脚本/样式/ECharts 以及本地相对的 CSS/JS/字体/图片在 iframe 内原生运行，但 Tauri IPC 对该 origin 返回 `Origin header is not a valid URL`，父页面 DOM 也不可访问。
 - **HTML 笔记导出**：`render_html_note` 只在隐藏的独立 Tauri WebView 窗口中运行（label `html-render-*`）；除 `html_preview_finish` 外，所有保险库命令都通过 `require_main` 拒绝该窗口。超长页面分段截图后由 Rust 拼接，不需要外部浏览器。
-- **本地资源与读隔离**：HTML 预览/导出需要相对 CSS/JS/字体/图片，因此 `rmd` 为它们提供文件。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（Tauri / 本地 dev server）。`Origin: null`、`rmdhtml`、远程 iframe 一律 403；字体按 `Sec-Fetch-Dest: font` 单独放行。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
+- **本地资源与读隔离**：HTML 预览/导出会内联相对 CSS/JS 与图片，字体走 `rmd`。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（Tauri / 本地 dev server），以及预览源的 `font`/`script`/`style` 子资源（按 `Sec-Fetch-Dest` 判定，脚本/样式不能读取响应文本）。`fetch`/XHR（空 dest）、文档读取、远程 iframe 一律 403。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
 - 静态配置，不使用 hooks、`IN_PLACE`、函数式 `ADD_TAGS/ADD_ATTR`、自定义元素；禁止 `style/link/meta/base/iframe/object/embed/form/textarea/select/option/button` 和 `srcdoc`。
 - DOMPurify 默认剥离 `<script>`、`on*` 事件、`javascript:` URL 等。
 - Mermaid 使用 `securityLevel: 'strict'`；它生成的 SVG 在消毒之后挂载，不来自笔记原文。
@@ -73,7 +73,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 2. **Windows 自签名**：只保证完整性，不建立公共信任；SmartScreen 仍会警告。真实证书需要用户自行配置。
 3. **macOS ad-hoc**：未公证，首次打开需要用户放行；不能防止用户主动运行被篡改的包。请用 SHA256 校验。
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
-5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS/字体/图片通过 `rmd` base 访问当前笔记目录；rmd 对 sandbox/null origin 与 rmdhtml 源的 CORS 读请求返回 403，普通无 Origin 的资源请求仍可加载。导出截图/临时状态在渲染后清理。
+5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
 6. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式）。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
 7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。
 8. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。

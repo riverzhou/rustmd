@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.4.1` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.4.1 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.4.2` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.4.2 >/dev/null` |
 | Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 
@@ -82,8 +82,7 @@ this file is the developer/agent contract.
   (covered by `node --test`).
 - `frontend/src/preview.js` — Markdown via marked + DOMPurify + highlight.js
   + Mermaid + MathJax; HTML notes via a sandboxed native iframe (preview) and
-  a hidden Tauri WebView capture (export); note-relative CSS/JS/fonts/images
-  through `rmd`; link interception in both Markdown and HTML previews; timeout
+  a hidden Tauri WebView capture (export); note-relative CSS/JS/images are inlined and fonts use `rmd`; link interception in both Markdown and HTML previews; timeout
   warning; async preview generation guard; HTML export and local-image
   inlining for the hidden capture.
 - `frontend/src/export.js` — off-screen stage, image inlining, html2canvas,
@@ -117,8 +116,8 @@ this file is the developer/agent contract.
   the BOM stripped and newlines normalized.
 - HTML preview uses a **sandboxed iframe** (`allow-scripts allow-forms`; no
   `allow-same-origin`; null origin) served by the `rmdhtml` protocol, so
-  scripts/styles/charts and note-relative CSS/JS/fonts/images (served by
-  `rmd` with correct MIME) run natively and quickly. Export uses a hidden
+  scripts/styles/charts and note-relative CSS/JS/images (inlined) run natively
+  and quickly; local fonts use `rmd`. Export uses a hidden
   Tauri WebView window; note scripts run there, but every vault command is
   label-guarded and the hidden window may only call `html_preview_finish`
   with the exact `html-render-{token}` label. Tokens are random, not
@@ -186,9 +185,11 @@ If a new Tauri *plugin* is used:
    the `opener` plugin instead of navigating the app.
 7. **`rmd` origin allowlist.** No-Origin subresource requests are allowed for
    `<img>/<link>/<script>`; requests with an `Origin` header are accepted only
-   from the app webview (Tauri origins or localhost dev server). Sandboxed
-   previews (`null`), the hidden `rmdhtml` renderer, remote iframes and all
-   other origins get 403. Do not restore `Access-Control-Allow-Origin: *`.
+   from the app webview (Tauri origins or localhost dev server) plus preview
+   `font`/`script`/`style` subresources (`Sec-Fetch-Dest`). `fetch`/XHR, document
+   reads, remote iframes and all other origins get 403. Do not restore
+   `Access-Control-Allow-Origin: *`. Local CSS/JS/images are inlined first so
+   this is only a fallback.
 
 ## Change recipes
 
@@ -212,9 +213,10 @@ If a new Tauri *plugin* is used:
   container is reused. `render_html_note` builds the hidden-window document
   with `html2canvas`; `mode=export` captures at up to 3× (target ~48k device
   px height) and `png` stitches tall segments; PDF mode uses 3× for short
-  pages and a 2× cap for taller ones. HTML local `<img>` URLs must be inlined
-  (`inlineLocalImagesInHtml`) before the hidden capture because html2canvas
-  uses CORS-mode image requests and `rmd` rejects `rmdhtml` origins.
+  pages and a 2× cap for taller ones. HTML local images, stylesheets and classic scripts must be inlined
+  (`inlineLocalAssetsInHtml`) before preview/export: WebKit sends
+  `Origin: null` for CORS subresources and html2canvas uses CORS-mode image
+  requests, both of which the strict `rmd` policy rejects.
   `export.js` assumes the Markdown stage is 948 px wide (860 content + 2×44
   padding) and adapts scale down to 0.25× for extremely tall notes.
   PNG/PDF export rasterizes
@@ -282,7 +284,7 @@ If a new Tauri *plugin* is used:
 - **Selftest**: dev-only; requires examples/ and network for the remote image
   checks. HTML entries use the built-in WebView (native preview iframe +
   hidden export window), check `--require-html`, and assert iframe readiness,
-  local-JS execution, PNG/PDF magic/dimensions and local-image inlining. No
+  local-JS execution, PNG/PDF magic/dimensions and local CSS/JS/image inlining. No
   external browser is installed or required. Clear the output dir first; the
   checker rejects reports older than 24h. It restores the user’s notes root
   afterwards and exits with 0/1.
