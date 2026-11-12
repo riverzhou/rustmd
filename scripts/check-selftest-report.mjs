@@ -85,6 +85,12 @@ if (requireHtml && htmlEntries === 0) {
   errors.push('no HTML entry found (--require-html)');
 }
 
+if (Array.isArray(report.warnings) && report.warnings.length) {
+  for (const warning of report.warnings) {
+    console.warn(`selftest warning: ${warning}`);
+  }
+}
+
 if (errors.length) {
   console.error(errors.join('\n'));
   process.exit(1);

@@ -5,6 +5,20 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.1] - 2026-11-12
+
+### 修复（Fixed）
+
+- **E2E 自测不再被第三方图床拖垮**：远程图片探测失败时记录为警告
+  （`report.warnings`），不再写入 `report.errors`，发布门禁不会因为 picsum 等
+  外部站点临时不可达而失败；首次失败后直接跳过其余远程图，避免大量 20 秒超时
+  拖长自测。本地图片、PNG/PDF 矢量文字等断言保持严格。
+- 报告校验脚本会打印这些警告，CI 日志里能看出是哪张远程图被跳过。
+
+### 变更（Changed）
+
+- 1.6.1 包含 1.6.0 的全部内容（Markdown/HTML 统一格式徽标）。
+
 ## [1.6.0] - 2026-11-12
 
 ### 新增（Added）

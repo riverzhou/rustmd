@@ -29,6 +29,23 @@ import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 /// `getState` returns the live app state (dir / current note) so the
 /// finally-block can restore the user's notes root and image context —
 /// exactly what the inlined version did through main.js's module state.
+/// Remote images live on third-party hosts; a blocked/slow CDN must not fail
+/// a release. Failures are recorded as warnings instead of errors, and after
+/// the first failure the remaining URLs are skipped (the host is usually down
+/// as a whole) so one dead CDN cannot stall the run with many timeouts.
+let remoteNetworkDown = false;
+async function fetchRemoteBytes(url) {
+  if (remoteNetworkDown) {
+    return { ok: false, error: 'skipped: an earlier remote image failed' };
+  }
+  try {
+    return { ok: true, image: await api.fetchImageBytes(url) };
+  } catch (e) {
+    remoteNetworkDown = true;
+    return { ok: false, error: String(e) };
+  }
+}
+
 export async function runSelfTest({ getState }) {
   let config;
   try {
@@ -324,7 +341,12 @@ export async function runSelfTest({ getState }) {
     document.body.appendChild(stage);
     const result = { url };
     try {
-      const image = await api.fetchImageBytes(url);
+      const fetched = await fetchRemoteBytes(url);
+      if (!fetched.ok) {
+        result.fetchError = fetched.error;
+        return result;
+      }
+      const image = fetched.image;
       const bytes = image.bytes;
       result.fetchedBytes = bytes.length;
       // Byte type as seen by JS (Tauri used to return a plain array-like;
@@ -391,6 +413,7 @@ export async function runSelfTest({ getState }) {
     },
     entries: [],
     errors: [],
+    warnings: [],
   };
   // Serve the examples vault through the `rmd` image protocol for this
   // run (local-image regression); restore the user's root afterwards.
@@ -648,12 +671,11 @@ export async function runSelfTest({ getState }) {
       const remoteUrls = [...new Set(remoteImgs.map((i) => i.getAttribute('src')))];
       const remoteFetchResults = await Promise.all(
         remoteUrls.map(async (url) => {
-          try {
-            const image = await api.fetchImageBytes(url);
-            return { url, ok: true, bytes: image.bytes };
-          } catch (e) {
-            return { url, ok: false, error: String(e) };
+          const fetched = await fetchRemoteBytes(url);
+          if (fetched.ok) {
+            return { url, ok: true, bytes: fetched.image.bytes };
           }
+          return { url, ok: false, error: fetched.error };
         })
       );
       const remoteFetch = remoteFetchResults.map(({ url, ok, error, bytes }) =>
@@ -664,8 +686,9 @@ export async function runSelfTest({ getState }) {
         .map((r) => ({ ...r, cssWidth: htmlWidthBySrc.get(r.url) }));
       for (const result of remoteFetchResults) {
         if (!result.ok) {
-          report.errors.push(
-            `${meta.path}: remote image fetch failed: ${result.url} (${result.error})`
+          report.warnings.push(
+            `${meta.path}: remote image unavailable (network), skipped in ` +
+              `export checks: ${result.url} (${result.error})`
           );
         }
       }
@@ -802,6 +825,12 @@ export async function runSelfTest({ getState }) {
       .map((f) => f.url)[0];
     if (probeUrl) {
       report.probe = await probeExportPipeline(probeUrl);
+      if (report.probe.fetchError) {
+        report.warnings.push(
+          `export pipeline probe skipped (network): ${report.probe.url} ` +
+            `(${report.probe.fetchError})`
+        );
+      }
     }
     // The point of this selftest is that exports contain their remote
     // AND local (vault) images — a missing one is a failure, not just a

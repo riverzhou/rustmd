@@ -1,16 +1,21 @@
 # rustmd 代码审计报告
 
 **审计日期**：2026-11-12（v1.4.0 审计于 2026-11-11）
-**审计对象**：`rustmd` v1.6.0（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计对象**：`rustmd` v1.6.1（Rust + Tauri 2，Markdown + HTML 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS 目标交叉 `cargo check`；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
 
 ### v1.6.0 格式徽标（UI 补丁）
 
 笔记列表与顶栏对 Markdown / HTML 统一显示格式徽标（`MD` 绿 / `HTML` 蓝），
 替换“只有 HTML 有标记”的不一致。改动只涉及 `main.js`（列表渲染与顶栏 class
-切换）和 `style.css`（两套主题变量与徽标样式），没有新增命令、没有触碰
-渲染/导出/路径/IPC/安全边界。回归仍由 ESLint、前端单测、Rust 测试和完整
-`npm run selftest` 覆盖。
+切换）、`index.html`（初始 class）和 `style.css`（两套主题变量与徽标样式），
+没有新增命令、没有触碰渲染/导出/路径/IPC/安全边界。回归仍由 ESLint、前端
+单测、Rust 测试和完整 `npm run selftest` 覆盖。
+
+v1.6.1 追加：自测的远程图片探测失败降级为 `report.warnings`（首次失败后
+跳过其余远程图，避免大量超时），第三方图床（picsum.photos）临时不可达不再
+卡死发布门禁；本地图片、PNG/PDF 矢量文字、HTML 就绪等断言保持严格。
+报告校验脚本会打印警告。
 
 ### v1.5.0 矢量 PDF 与跨平台打印审计
 
@@ -198,4 +203,4 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 
 ## 7. 结论
 
-v1.6.0 可以发布。v1.5.0 引入的打印链路已通过 Windows 真机 E2E、Linux CI Xvfb E2E 和 macOS 交叉编译；v1.6.0 只改了格式徽标的显示层，未触及安全边界，回归覆盖保持完整。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.6.1 可以发布。v1.5.0 引入的打印链路已通过 Windows 真机 E2E、Linux CI Xvfb E2E 和 macOS 交叉编译；v1.6.x 只改了格式徽标的显示层与自测的远程图片容错，未触及安全边界，回归覆盖保持完整。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

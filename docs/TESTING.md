@@ -56,7 +56,7 @@ npm run selftest
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
 2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；导出前本地图片必须被内联为 data URL；
 3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；PDF 统一走平台打印管线（Markdown `print_note_pdf`、HTML `print_html_note`，均为矢量文字、A4 分页；Windows WebView2 / macOS WKWebView / Linux WebKitGTK），不支持时回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源走 `rmd` base；超长页面分段拼接）；
-4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中；Markdown 与 HTML 的 PDF 都要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
+4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；Markdown 与 HTML 的 PDF 都要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
 5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色
    （html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；
 6. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。
