@@ -206,9 +206,10 @@ async function renderToCanvas(source, kind = 'markdown') {
     // off-screen stage, which crops wide charts at the canvas edge. Pin every
     // image to the content width before html2canvas measures the page.
     for (const img of stage.querySelectorAll('img')) {
-      img.style.maxWidth = `${CONTENT_WIDTH}px`;
-      img.style.width = 'auto';
+      const natural = img.naturalWidth || CONTENT_WIDTH;
+      img.style.width = `${Math.min(CONTENT_WIDTH, natural)}px`;
       img.style.height = 'auto';
+      img.style.maxWidth = `${CONTENT_WIDTH}px`;
     }
     // Remote images are swapped for inline data: URLs (nothing to revoke).
     await inlineRemoteImages(stage);
