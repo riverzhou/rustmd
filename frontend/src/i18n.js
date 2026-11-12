@@ -36,6 +36,9 @@ export const MESSAGES = {
     'sidebar.tags': 'Tags',
     'sidebar.all': 'All notes',
     'sidebar.noTags': 'No tags yet',
+    'sidebar.includeSubfolders': 'Include subfolders',
+    'sidebar.includeSubfoldersTitle':
+      'List and search notes in subfolders (off: current folder only)',
 
     'sort.time': 'Time',
     'sort.name': 'Name',
@@ -81,6 +84,8 @@ export const MESSAGES = {
 
     'notes.count': (v) => `${v.n} ${v.n === 1 ? 'note' : 'notes'}`,
     'notes.empty': 'No notes yet<br>Click + at the top left to create one',
+    'notes.emptyScope':
+      'No notes in this folder<br>Turn on “Include subfolders” to show notes in subfolders',
     'notes.noMatches': 'No matching notes',
 
     'folder.collapse': 'Collapse folder',
@@ -200,6 +205,9 @@ export const MESSAGES = {
     'sidebar.tags': '标签',
     'sidebar.all': '全部',
     'sidebar.noTags': '暂无标签',
+    'sidebar.includeSubfolders': '包含子文件夹',
+    'sidebar.includeSubfoldersTitle':
+      '列表与搜索包含子文件夹（关闭时仅当前文件夹）',
 
     'sort.time': '时间',
     'sort.name': '名称',
@@ -243,6 +251,8 @@ export const MESSAGES = {
 
     'notes.count': (v) => `${v.n} 篇`,
     'notes.empty': '暂无笔记<br>点击左上角 ＋ 新建',
+    'notes.emptyScope':
+      '当前文件夹没有笔记<br>打开“包含子文件夹”可显示子文件夹中的笔记',
     'notes.noMatches': '没有匹配的笔记',
 
     'folder.collapse': '折叠文件夹',

@@ -1,8 +1,33 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-12（v1.7.0 复核；v1.4.0 审计于 2026-11-11）
-**审计对象**：`rustmd` v1.7.0（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计日期**：2026-11-12（v1.8.0 复核；v1.7.0 于 2026-11-12，v1.4.0 于 2026-11-11）
+**审计对象**：`rustmd` v1.8.0（Rust + Tauri 2，Markdown + HTML 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS 目标交叉 `cargo check`；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.8.0 当前文件夹范围与范围搜索（功能 + 后端参数）
+
+本版把“默认只看当前文件夹”落地为明确的范围语义：当前文件夹指侧栏选中的
+目录；刚打开/切换笔记库时当前目录是库根目录。改动同时涉及前端列表/搜索/
+计数和 Rust 搜索参数：
+
+- 搜索框下方新增“包含子文件夹”开关，状态存
+  `localStorage.rustmd-include-subfolders`；关闭时列表、搜索、文件夹计数和
+  标签云只覆盖当前目录的直属笔记，打开后覆盖整个子树。
+- `notelist.js` 新增纯函数 `folderInScope` / `countTags`：前者统一“直属 /
+  子树”判定，后者按当前范围统计标签；新增 2 个 Node 单测，前端单测总数 28。
+  文件夹树关闭范围时显示 `direct`，打开时显示 `count`；切换目录/范围会重算
+  标签并清除已不在范围内的活动标签。
+- `search_notes` 新增 `folder` / `recursive` 参数：前端把当前目录和开关传给
+  后端，`collect_notes_scoped` 先 `canonical_root` 再 `resolve_in_root` 校验
+  目录，不递归时只读取该目录顶层文件；搜索范围与列表严格一致。新增 1 个
+  Rust 范围搜索单测，Rust 测试总数 59（58 通过 + 1 个网络测试 ignored）。
+- 空状态新增 `notes.emptyScope`：当前目录没有直属笔记但子目录有时提示打开
+  开关，避免把“范围过滤”误判成空库。
+- `api.js` 与浏览器 mock 同步 `folder` / `recursive`；未新增 IPC 命令，未改
+  权限、CSP、HTML 隔离、路径封闭或导出链路。`folder` 参数来自 webview，但
+  后端仍做 canonical root + 前缀检查。
+- README 中英文版、AGENTS、架构/测试/安全/发布/审计文档同步更新；
+  `capture-screenshots.mjs` 在截图前打开子文件夹范围并重新生成全部截图。
 
 ### v1.7.0 最近笔记库快速切换（UI 功能）
 
@@ -97,17 +122,17 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 |---|---|
 | 未修复高危缺陷 | **0 个已知** |
 | 未修复中危缺陷 | **0 个已知**（少数产品边界见 §6） |
-| Rust 测试 | **58 个**：57 通过 + 1 个网络测试默认 `#[ignore]`（含页脚戳记单测与真实 PDF 回归） |
-| 前端单测 | **26 个**，全部通过 |
+| Rust 测试 | **59 个**：58 通过 + 1 个网络测试默认 `#[ignore]`（含范围搜索单测、页脚戳记单测与真实 PDF 回归） |
+| 前端单测 | **28 个**，全部通过 |
 | 静态检查 | ESLint 0 error；`cargo fmt --check`；clippy `-D warnings`；`npm run check` 全绿 |
-| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）通过；走矢量打印路径的 PDF 断言内嵌字体（矢量文字），HTML iframe ready、本地 JS/图片内联、长页分段均有断言 |
-| UI 交互 | 浏览器 mock：最近笔记库切换/移除/ESC/焦点/语言切换/900×560 最小窗口通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
+| 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）`ok: true`、0 errors、1 条远程图 warning；矢量 PDF 字体、HTML iframe/本地资源与分段拼接断言均通过，`--require-html` 报告校验通过 |
+| UI 交互 | 浏览器 mock：当前目录/子树范围、范围搜索、文件夹计数、标签云、刷新后开关持久化，以及最近笔记库切换/移除/ESC/焦点/语言切换通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
 | macOS 编译 | 最终 ObjC 打印代码以 `cargo check --target x86_64-apple-darwin` 交叉编译通过（运行时需在 Mac 上自测） |
 | Linux 运行 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析；发布 workflow 在 Ubuntu + Xvfb 跑完整 selftest（含矢量 PDF `/Font` 断言） |
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.7.0 的最近笔记库切换是纯前端 UI 功能，未新增 IPC、未触碰 Rust、权限、CSP、路径封闭或 HTML 隔离边界。v1.5.0 的矢量 PDF 打印链路、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程继续通过审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
+**结论**：v1.8.0 的当前目录范围开关只扩展了 `search_notes` 的可选参数，没有新增 IPC 命令，也没有放松权限、CSP、路径封闭、HTML 隔离或导出边界；范围目录仍经 `canonical_root` + `resolve_in_root` 校验。v1.5.0 的矢量 PDF 打印链路、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程继续通过审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
 
 ---
 
@@ -179,8 +204,8 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 本机（Windows 11，WebView2）执行：
 
 ```text
-npm run check  → ESLint、26 前端单测、repo、version、fmt、clippy -D warnings、58 Rust 测试、Vite build 全通过
-npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
+npm run check  → ESLint、28 前端单测、repo、version、fmt、clippy -D warnings、59 Rust 测试、Vite build 全通过
+npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过；report ok:true、0 errors、1 条 picsum 远程图 warning；check-selftest-report --require-html 通过
 ```
 
 自测覆盖：
@@ -190,6 +215,7 @@ npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过
 - 超长 HTML：32k CSS px 报告导出 PNG 约 1,768×48,000，分段拼接完整；688499 报告 PNG 约 3,037×30,000（约 2.56×）；
 - 手动安全：sandbox iframe 调 `read_note` 返回 `Origin header is not a valid URL`；`rmd` 对 null+fetch 返回 403，对 null+script/font 子资源放行；主 webview 本地图片正常。
 - 最近笔记库切换：一库/多库切换、MRU 更新、单条移除、ESC/外部点击关闭、ESC 关闭后焦点返回、中英文动态文案、900×560 最小窗口布局；最近目录只写 `localStorage`，不进入笔记库或网络。
+- 当前目录范围：默认只显示根目录直属 2 篇；根目录搜索不返回子目录命中；打开开关后 7 篇全部出现并命中子目录搜索；选中 `work` 后关闭开关只显示 3 篇直属笔记；刷新页面后开关状态保持。
 
 CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
 
@@ -217,13 +243,13 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 | 无 macOS 运行时 CI | 只有编译 + 本地 Windows/Linux E2E | 记录；后续可加 macOS runner E2E |
 | macOS 打印运行时 | macOS 只做了交叉编译，尚未在真机跑打印；Linux 已由 Ubuntu Xvfb E2E 覆盖 | 发布前在 Mac 上跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
 | Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
-| 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言（最近笔记库切换已做浏览器 mock 脚本检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
+| 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言（当前目录范围与最近笔记库切换已做浏览器 mock 检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
-| 最近目录历史 | 最多 8 个本机笔记库路径存于 WebView `localStorage`，不加密 | 仅本机使用、不上传；清除应用数据即可删除 |
+| 本地偏好 | 最近目录（最多 8 个路径）与“包含子文件夹”开关存于 WebView `localStorage`，不加密 | 仅本机使用、不上传；清除应用数据即可删除 |
 | 导出 HTML 原文 | HTML 笔记导出保留脚本/样式；用户分享需自行审查 | 安全文档明示 |
 
 ---
 
 ## 7. 结论
 
-v1.7.0 可以发布。最近笔记库切换是独立的前端功能，`npm run check`、完整自测和浏览器 mock 交互检查覆盖了新增路径；v1.5.0 的矢量打印链路、v1.6.x 的格式徽标与自测容错保持有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.8.0 可以发布。当前目录范围与范围搜索由前后端单测、真实 WebView 自测和浏览器 mock 交互检查共同覆盖；`search_notes` 的目录参数保持路径封闭。v1.5.0 的矢量打印链路、v1.6.x 的格式徽标与自测容错、v1.7.0 的最近笔记库切换保持有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

@@ -100,7 +100,8 @@ export const api = {
   deleteNote: (dir, path) => invoke('delete_note', { dir, path }),
   moveNote: (dir, path, destFolder) =>
     invoke('move_note', { dir, path, destFolder }),
-  searchNotes: (dir, query) => invoke('search_notes', { dir, query }),
+  searchNotes: (dir, query, folder = null, recursive = true) =>
+    invoke('search_notes', { dir, query, folder, recursive }),
   /// Open the native save dialog in Rust and write the bytes to the path the
   /// user picked. The frontend never supplies a destination path, so a
   /// compromised webview cannot use export as an arbitrary-file-write API.
@@ -413,11 +414,21 @@ function mockFolders() {
   return [...folders].sort((a, b) => a.localeCompare(b, 'zh-CN'));
 }
 
-function mockSearch(query) {
+function mockNoteInScope(path, scope, recursive) {
+  const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+  const selected = String(scope || '').replace(/^\/+|\/+$/g, '');
+  if (!selected) return recursive || folder === '';
+  return recursive
+    ? folder === selected || folder.startsWith(`${selected}/`)
+    : folder === selected;
+}
+
+function mockSearch(query, scope = null, recursive = true) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return [];
   const hits = [];
   for (const [path, n] of mockNotes) {
+    if (!mockNoteInScope(path, scope, recursive !== false)) continue;
     const meta = mockMeta(path);
     const body =
       meta.kind === 'html'
@@ -611,7 +622,7 @@ function mockInvoke(command, args) {
             return resolve(target);
           }
           case 'search_notes':
-            return resolve(mockSearch(args.query));
+            return resolve(mockSearch(args.query, args.folder, args.recursive));
           case 'save_export':
             // Browser mock: no native dialog, caller falls back to download.
             return resolve(null);

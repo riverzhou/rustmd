@@ -7,10 +7,12 @@ import {
   SORT_NAME,
   ancestorFolders,
   buildFolderTree,
+  countTags,
   defaultSortDir,
   fileNameOf,
   filterNotes,
   flattenFolderTree,
+  folderInScope,
   folderMatches,
   normalizeSort,
   normalizeSortState,
@@ -83,17 +85,62 @@ test('both sort keys support ascending and descending', () => {
   );
 });
 
-test('folder filter includes descendants', () => {
+test('folder scope is direct-only unless subfolders are included', () => {
+  assert.equal(folderInScope('work/sub', 'work'), false);
+  assert.equal(folderInScope('work/sub', 'work', true), true);
+  assert.equal(folderInScope('', null), true);
+  assert.equal(folderInScope('work', null), false);
+  assert.equal(folderInScope('work', null, true), true);
   assert.equal(folderMatches('work/sub', 'work'), true);
   assert.equal(folderMatches('workshop', 'work'), false);
   assert.equal(folderMatches('', null), true);
   assert.deepEqual(
     filterNotes(notes, { folder: 'work' }).map((n) => n.path),
+    ['work/note10.md', 'work/alpha.md']
+  );
+  assert.deepEqual(
+    filterNotes(notes, { folder: 'work', includeSubfolders: true }).map(
+      (n) => n.path
+    ),
     ['work/note10.md', 'work/sub/note2.md', 'work/alpha.md']
   );
   assert.deepEqual(
     filterNotes(notes, { folder: 'work', tag: '会议' }).map((n) => n.path),
+    []
+  );
+  assert.deepEqual(
+    filterNotes(notes, {
+      folder: 'work',
+      tag: '会议',
+      includeSubfolders: true,
+    }).map((n) => n.path),
     ['work/sub/note2.md']
+  );
+});
+
+test('the default vault scope shows root notes only', () => {
+  assert.deepEqual(
+    filterNotes(notes).map((n) => n.path),
+    ['ideas.md']
+  );
+  assert.deepEqual(
+    filterNotes(notes, { includeSubfolders: true }).map((n) => n.path),
+    ['work/note10.md', 'work/sub/note2.md', 'work/alpha.md', 'ideas.md']
+  );
+});
+
+test('tag counts follow the scoped notes', () => {
+  assert.deepEqual(countTags(filterNotes(notes)), [{ name: '灵感', count: 1 }]);
+  assert.deepEqual(countTags(filterNotes(notes, { folder: 'work' })), [
+    { name: '工作', count: 1 },
+  ]);
+  assert.deepEqual(
+    countTags(filterNotes(notes, { includeSubfolders: true })),
+    [
+      { name: '工作', count: 2 },
+      { name: '会议', count: 1 },
+      { name: '灵感', count: 1 },
+    ]
   );
 });
 

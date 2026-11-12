@@ -1,7 +1,7 @@
 # Linux 编译手册
 
 本文说明如何在 Linux 上从源码构建 rustmd，并产出一个可直接拷贝的绿色二进制。
-构建基线：Ubuntu 26.04 x86_64 / Rust stable（edition 2024）/ Node.js 24 / Tauri 2.12.5。
+构建基线：Ubuntu 26.04 x86_64 / Rust stable（edition 2024）/ Node.js 24 / Tauri CLI 2.12.4 + `tauri` crate 2.12.5。
 
 ## 1. 产物
 

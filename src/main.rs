@@ -1045,19 +1045,48 @@ fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
     })
 }
 
-fn collect_notes(root: &Path) -> Result<Vec<NoteMeta>, String> {
-    let mut metas: Vec<NoteMeta> = Vec::new();
-    walk(root, root, &mut metas)?;
+fn sort_note_metas(metas: &mut [NoteMeta]) {
     metas.sort_by(|a, b| {
         b.mtime
             .cmp(&a.mtime)
             .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
             .then_with(|| a.path.cmp(&b.path))
     });
+}
+
+fn collect_notes(root: &Path) -> Result<Vec<NoteMeta>, String> {
+    let mut metas: Vec<NoteMeta> = Vec::new();
+    walk(root, root, true, &mut metas)?;
+    sort_note_metas(&mut metas);
     Ok(metas)
 }
 
-fn walk(dir: &Path, root: &Path, out: &mut Vec<NoteMeta>) -> Result<(), String> {
+/// Notes under `folder` (the vault root when `None`/empty). `recursive`
+/// mirrors the sidebar's "include subfolders" switch: off means only files
+/// sitting directly in that folder are returned. A folder outside the vault
+/// is rejected by `resolve_in_root`.
+fn collect_notes_scoped(
+    root: &Path,
+    folder: Option<&str>,
+    recursive: bool,
+) -> Result<Vec<NoteMeta>, String> {
+    let scope = folder.unwrap_or("").trim_matches('/');
+    let scan_root = canonical_root(root)?;
+    let dir = if scope.is_empty() {
+        scan_root.clone()
+    } else {
+        resolve_in_root(&scan_root, scope)?
+    };
+    if !dir.is_dir() {
+        return Err("not a directory".into());
+    }
+    let mut metas: Vec<NoteMeta> = Vec::new();
+    walk(&dir, &scan_root, recursive, &mut metas)?;
+    sort_note_metas(&mut metas);
+    Ok(metas)
+}
+
+fn walk(dir: &Path, root: &Path, recursive: bool, out: &mut Vec<NoteMeta>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -1076,7 +1105,9 @@ fn walk(dir: &Path, root: &Path, out: &mut Vec<NoteMeta>) -> Result<(), String> 
             continue;
         };
         if file_type.is_dir() {
-            walk(&path, root, out)?;
+            if recursive {
+                walk(&path, root, recursive, out)?;
+            }
         } else if file_type.is_file()
             && is_note_file_name(&name)
             && let Ok(rel) = path.strip_prefix(root)
@@ -1529,12 +1560,17 @@ fn snippet_window(lower: &str, original: &str, pos: usize, q_len: usize) -> Stri
     }
 }
 
-fn search_notes_impl(root: &Path, query: &str) -> Result<Vec<SearchHit>, String> {
+fn search_notes_impl(
+    root: &Path,
+    query: &str,
+    folder: Option<&str>,
+    recursive: bool,
+) -> Result<Vec<SearchHit>, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let metas = collect_notes(root)?;
+    let metas = collect_notes_scoped(root, folder, recursive)?;
     let mut hits: Vec<SearchHit> = Vec::new();
     for meta in metas {
         let Ok(full) = resolve_in_root(root, &meta.path) else {
@@ -1584,9 +1620,16 @@ fn search_notes(
     window: tauri::WebviewWindow,
     dir: String,
     query: String,
+    folder: Option<String>,
+    recursive: Option<bool>,
 ) -> Result<Vec<SearchHit>, String> {
     require_main(&window)?;
-    search_notes_impl(Path::new(&dir), &query)
+    search_notes_impl(
+        Path::new(&dir),
+        &query,
+        folder.as_deref(),
+        recursive.unwrap_or(true),
+    )
 }
 
 /// Open the native save dialog and write the selected bytes. The frontend
@@ -4100,10 +4143,10 @@ mod tests {
             "<html><head><title>Page</title><style>.secret{}</style></head><body><p>Find me here</p></body></html>",
         )
         .unwrap();
-        let hits = search_notes_impl(&dir, "find me").unwrap();
+        let hits = search_notes_impl(&dir, "find me", None, true).unwrap();
         assert_eq!(hits.len(), 1);
         assert!(hits[0].snippet.contains("Find me here"));
-        let none = search_notes_impl(&dir, "secret").unwrap();
+        let none = search_notes_impl(&dir, "secret", None, true).unwrap();
         assert!(none.is_empty());
         cleanup(&dir);
     }
@@ -4646,14 +4689,14 @@ plain body
 ",
         )
         .unwrap();
-        let by_title = search_notes_impl(&dir, "alpha").unwrap();
+        let by_title = search_notes_impl(&dir, "alpha", None, true).unwrap();
         assert_eq!(by_title.len(), 1);
         assert!(
             by_title[0].snippet.contains("标题"),
             "unexpected snippet: {}",
             by_title[0].snippet
         );
-        let by_tag = search_notes_impl(&dir, "secret").unwrap();
+        let by_tag = search_notes_impl(&dir, "secret", None, true).unwrap();
         assert_eq!(by_tag.len(), 1);
         assert!(by_tag[0].snippet.contains("标签"));
         // A heading hides the filename fallback title; the filename itself
@@ -4666,11 +4709,45 @@ plain
 ",
         )
         .unwrap();
-        let by_name = search_notes_impl(&dir, "beta").unwrap();
+        let by_name = search_notes_impl(&dir, "beta", None, true).unwrap();
         assert_eq!(by_name.len(), 1);
         assert!(by_name[0].snippet.contains("文件名"));
-        let none = search_notes_impl(&dir, "missing").unwrap();
+        let none = search_notes_impl(&dir, "missing", None, true).unwrap();
         assert!(none.is_empty());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn search_respects_the_folder_scope_and_subfolder_switch() {
+        let dir = test_dir("search_scope");
+        fs::create_dir_all(dir.join("sub/deep")).unwrap();
+        fs::write(dir.join("root.md"), "# Root\nneedle in root\n").unwrap();
+        fs::write(dir.join("sub/child.md"), "# Child\nneedle in child\n").unwrap();
+        fs::write(dir.join("sub/deep/grand.md"), "# Grand\nneedle in grand\n").unwrap();
+
+        let root_only = search_notes_impl(&dir, "needle", None, false).unwrap();
+        assert_eq!(root_only.len(), 1);
+        assert_eq!(root_only[0].meta.path, "root.md");
+
+        let all = search_notes_impl(&dir, "needle", None, true).unwrap();
+        assert_eq!(all.len(), 3);
+
+        let sub_only = search_notes_impl(&dir, "needle", Some("sub"), false).unwrap();
+        assert_eq!(sub_only.len(), 1);
+        assert_eq!(sub_only[0].meta.path, "sub/child.md");
+
+        let sub_recursive = search_notes_impl(&dir, "needle", Some("sub"), true).unwrap();
+        assert_eq!(sub_recursive.len(), 2);
+        assert!(
+            sub_recursive
+                .iter()
+                .all(|hit| hit.meta.path.starts_with("sub/"))
+        );
+
+        assert!(
+            search_notes_impl(&dir, "needle", Some("missing"), false).is_err(),
+            "a missing scope folder must not be searched"
+        );
         cleanup(&dir);
     }
 

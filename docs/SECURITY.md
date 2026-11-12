@@ -40,6 +40,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 - 所有笔记路径经 `resolve_in_root`：拒绝绝对路径/`..`，已存在路径 canonicalize 后前缀检查；新路径检查最深已存在祖先，阻止 junction/symlink 写逃逸。
 - `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` 当作笔记。
+- 范围搜索的 `folder` 参数来自 webview，后端仍先 `canonical_root` 再 `resolve_in_root`：非法/缺失目录直接报错，不会越出笔记库扫描。
 - `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file`，只服务当前打开的笔记库。
 - Windows `\\?\UNC\` 正确还原，不会把网络共享路径改坏。
 - 唯一的前端可触发“库外写”是 `save_export`，它在 Rust 内打开系统保存对话框，前端不提供目标路径。
@@ -76,7 +77,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
 5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
 6. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式）。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
-7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 8 条）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
+7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 8 条）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”偏好保存在 `localStorage.rustmd-include-subfolders`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
 8. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
 9. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
 10. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。

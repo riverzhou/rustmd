@@ -149,6 +149,17 @@ await js(`(async () => {
   document.querySelector('#open-dir-btn').click();
   await new Promise((r) => setTimeout(r, 500));
 })()`);
+await waitFor("!document.getElementById('main').classList.contains('hidden')", 30000);
+// Screenshots show the whole demo vault, so opt into the subfolder scope
+// (the app's default is the current folder only).
+await js(`(async () => {
+  const cb = document.querySelector('#include-subfolders');
+  if (cb && !cb.checked) {
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+  }
+})()`);
 await waitFor("document.querySelectorAll('.note-item').length >= 5", 20000);
 await js(`(async () => {
   const rows = [...document.querySelectorAll('.sidebar .nav-item')];

@@ -29,10 +29,12 @@ import {
   SORT_DESC,
   SORT_MTIME,
   buildFolderTree,
+  countTags,
   defaultSortDir,
   fileNameOf,
   filterNotes,
   flattenFolderTree,
+  folderInScope,
   folderOf,
   normalizeSortState,
   noteKindOf,
@@ -69,6 +71,8 @@ const initialSort = normalizeSortState({
   dir: localStorage.getItem('rustmd-sort-dir') || undefined,
 });
 
+const INCLUDE_SUBFOLDERS_KEY = 'rustmd-include-subfolders';
+
 const state = {
   dir: localStorage.getItem('rustmd-dir'),
   notes: [],
@@ -89,6 +93,9 @@ const state = {
   theme: localStorage.getItem('rustmd-theme') || 'light',
   sortKey: initialSort.key,
   sortDir: initialSort.dir,
+  // The note list/search only cover the selected folder by default; subfolders
+  // are opt-in and the choice survives restarts.
+  includeSubfolders: localStorage.getItem(INCLUDE_SUBFOLDERS_KEY) === 'on',
   expandedFolders: loadExpandedFolders(),
   filter: { folder: null, tag: null, query: '' },
   searchHits: null,
@@ -125,6 +132,7 @@ const recentDirsEl = $('recent-dirs');
 const recentListEl = $('recent-list');
 const changeDirBtn = $('btn-change-dir');
 const searchInput = $('search-input');
+const includeSubfoldersInput = $('include-subfolders');
 const refreshBtn = $('btn-refresh');
 const folderList = $('folder-list');
 const tagCloud = $('tag-cloud');
@@ -788,7 +796,12 @@ async function refreshSearch() {
   const seq = ++searchSeq;
   try {
     const dir = state.dir;
-    const hits = await api.searchNotes(dir, query);
+    const hits = await api.searchNotes(
+      dir,
+      query,
+      state.filter.folder,
+      state.includeSubfolders
+    );
     if (seq !== searchSeq || query !== state.filter.query || dir !== state.dir) {
       return;
     }
@@ -812,15 +825,16 @@ async function loadNotes({ quiet = false } = {}) {
     if (!quiet) toast(t('toast.readFailed', { msg: err.message || err }), true);
     return { ok: false, error: err };
   }
-  state.folderTree = buildFolderTree(state.folderPaths, state.notes);
-  // tags
-  const tagMap = new Map();
-  for (const n of state.notes) {
-    for (const t of n.tags) tagMap.set(t, (tagMap.get(t) || 0) + 1);
+  // A folder deleted outside the app must not leave the list/search scoped to
+  // a path that no longer exists.
+  if (
+    state.filter.folder !== null &&
+    !state.folderPaths.includes(state.filter.folder)
+  ) {
+    state.filter.folder = null;
   }
-  state.tags = [...tagMap.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'));
+  state.folderTree = buildFolderTree(state.folderPaths, state.notes);
+  recomputeTags();
   await refreshSearch();
   renderFolders();
   renderTags();
@@ -870,28 +884,8 @@ async function refreshVault() {
       );
       return false;
     }
-    // A selected folder/tag may have been deleted outside the app. Drop the
-    // stale filter instead of rendering an inexplicably empty note list.
-    let filtersChanged = false;
-    if (
-      state.filter.folder !== null &&
-      !state.folderPaths.includes(state.filter.folder)
-    ) {
-      state.filter.folder = null;
-      filtersChanged = true;
-    }
-    if (
-      state.filter.tag !== null &&
-      !state.tags.some((tag) => tag.name === state.filter.tag)
-    ) {
-      state.filter.tag = null;
-      filtersChanged = true;
-    }
-    if (filtersChanged) {
-      renderFolders();
-      renderTags();
-      renderNoteList();
-    }
+    // Stale folder/tag filters are cleared while loadNotes rebuilds the
+    // scope, so nothing else to clean up here.
 
     let notice = null;
     if (path && state.current === path) {
@@ -968,8 +962,13 @@ function persistExpandedFolders() {
 
 function selectFolder(path) {
   state.filter.folder = state.filter.folder === path ? null : path;
+  recomputeTags();
+  renderTags();
   renderFolders();
   renderNoteList();
+  // Search is scoped by the selected folder, so an active query must be
+  // re-run against the new scope (the old hits are already filtered above).
+  if (state.filter.query) void runSearch();
 }
 
 function toggleFolder(path) {
@@ -1010,9 +1009,10 @@ function renderFolderBranch(nodes, parentEl, depth) {
       if (hasChildren) toggleFolder(node.path);
     });
     row.appendChild(toggle);
+    const folderCount = state.includeSubfolders ? node.count : node.direct;
     row.insertAdjacentHTML(
       'beforeend',
-      `${FOLDER_SVG}<span class="nav-label">${esc(node.name)}</span><span class="count">${node.count}</span>`
+      `${FOLDER_SVG}<span class="nav-label">${esc(node.name)}</span><span class="count">${folderCount}</span>`
     );
     row.addEventListener('click', () => selectFolder(node.path));
     li.appendChild(row);
@@ -1031,20 +1031,50 @@ function renderFolders() {
   const nav = folderList.closest('.sidebar-nav');
   const navScroll = nav ? nav.scrollTop : 0;
   folderList.innerHTML = '';
+  const allCount = state.notes.filter((n) =>
+    folderInScope(n.folder, null, state.includeSubfolders)
+  ).length;
   const allItem = document.createElement('li');
   allItem.className = 'nav-item' + (state.filter.folder === null ? ' active' : '');
   allItem.innerHTML = `${FOLDER_SVG}<span class="nav-label">${esc(
     t('sidebar.all')
-  )}</span><span class="count">${state.notes.length}</span>`;
+  )}</span><span class="count">${allCount}</span>`;
   allItem.addEventListener('click', () => {
     state.filter.folder = null;
+    recomputeTags();
+    renderTags();
     renderFolders();
     renderNoteList();
+    if (state.filter.query) void runSearch();
   });
   folderList.appendChild(allItem);
   renderFolderBranch(state.folderTree, folderList, 0);
   if (nav) nav.scrollTop = navScroll;
 }
+
+function syncIncludeSubfolders() {
+  includeSubfoldersInput.checked = state.includeSubfolders;
+}
+
+function setIncludeSubfolders(next) {
+  state.includeSubfolders = Boolean(next);
+  localStorage.setItem(
+    INCLUDE_SUBFOLDERS_KEY,
+    state.includeSubfolders ? 'on' : 'off'
+  );
+  syncIncludeSubfolders();
+  // Folder counts, tag counts and the note list all depend on the scope;
+  // search results have to be re-fetched because the backend scopes them too.
+  recomputeTags();
+  renderTags();
+  renderFolders();
+  renderNoteList();
+  if (state.filter.query) void runSearch();
+}
+
+includeSubfoldersInput.addEventListener('change', () => {
+  setIncludeSubfolders(includeSubfoldersInput.checked);
+});
 
 function renderTags() {
   tagCloud.innerHTML = '';
@@ -1071,8 +1101,23 @@ function visibleNotes() {
   let list = state.searchHits
     ? state.searchHits.map((h) => ({ ...h.meta, searchSnippet: h.snippet }))
     : state.notes;
-  list = filterNotes(list, state.filter);
+  list = filterNotes(list, {
+    ...state.filter,
+    includeSubfolders: state.includeSubfolders,
+  });
   return sortNotes(list, { key: state.sortKey, dir: state.sortDir });
+}
+
+/** Notes that exist in the current subtree but are hidden by the scope. */
+function hasHiddenSubfolderNotes() {
+  if (state.includeSubfolders) return false;
+  return state.notes.some(
+    (note) =>
+      (!state.filter.tag ||
+        (Array.isArray(note.tags) && note.tags.includes(state.filter.tag))) &&
+      folderInScope(note.folder, state.filter.folder, true) &&
+      !folderInScope(note.folder, state.filter.folder, false)
+  );
 }
 
 function renderNoteList() {
@@ -1081,10 +1126,12 @@ function renderNoteList() {
   noteCount.textContent = t('notes.count', { n: list.length });
   noteList.innerHTML = '';
   if (list.length === 0) {
-    noteList.innerHTML =
-      '<div class="note-empty">' +
-      (state.filter.query ? t('notes.noMatches') : t('notes.empty')) +
-      '</div>';
+    const emptyKey = state.filter.query
+      ? 'notes.noMatches'
+      : hasHiddenSubfolderNotes()
+        ? 'notes.emptyScope'
+        : 'notes.empty';
+    noteList.innerHTML = `<div class="note-empty">${t(emptyKey)}</div>`;
     noteList.scrollTop = 0;
     return;
   }
@@ -1226,14 +1273,22 @@ function updateNoteInState(meta) {
   state.folderTree = buildFolderTree(state.folderPaths, state.notes);
 }
 
+function scopedNotes() {
+  return state.notes.filter((note) =>
+    folderInScope(note.folder, state.filter.folder, state.includeSubfolders)
+  );
+}
+
 function recomputeTags() {
-  const tagMap = new Map();
-  for (const n of state.notes) {
-    for (const t of n.tags) tagMap.set(t, (tagMap.get(t) || 0) + 1);
+  state.tags = countTags(scopedNotes());
+  // The active tag may not exist in the new scope; leaving it filtered would
+  // hide every note behind an invisible (and now unclickable) chip.
+  if (
+    state.filter.tag &&
+    !state.tags.some((tag) => tag.name === state.filter.tag)
+  ) {
+    state.filter.tag = null;
   }
-  state.tags = [...tagMap.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'));
 }
 
 let saveQueue = Promise.resolve(true);
@@ -1756,7 +1811,12 @@ async function runSearch() {
     return;
   }
   try {
-    const hits = await api.searchNotes(dir, q);
+    const hits = await api.searchNotes(
+      dir,
+      q,
+      state.filter.folder,
+      state.includeSubfolders
+    );
     if (seq !== searchSeq || q !== state.filter.query || dir !== state.dir) {
       return; // a newer query or another vault won
     }
@@ -2087,6 +2147,7 @@ async function boot() {
   updateKindBadge('markdown');
   applyView(state.view);
   applySidebar(localStorage.getItem('rustmd-sidebar') === 'closed');
+  syncIncludeSubfolders();
   renderSortControls();
   renderTagEditor();
   renderOnboardingRecents();

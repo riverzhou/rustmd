@@ -54,6 +54,11 @@
         </div>
         <div class="search-section">
           <input id="search-input" type="text" placeholder="搜索标题、文件名、标签或内容…" data-i18n-placeholder="sidebar.searchPlaceholder" spellcheck="false" />
+          <label class="scope-toggle" for="include-subfolders" title="列表与搜索是否包含子文件夹中的笔记" data-i18n-title="sidebar.includeSubfoldersTitle">
+            <input id="include-subfolders" type="checkbox" />
+            <span class="scope-switch" aria-hidden="true"></span>
+            <span data-i18n="sidebar.includeSubfolders">包含子文件夹</span>
+          </label>
         </div>
         <nav class="sidebar-nav">
           <div class="nav-group">

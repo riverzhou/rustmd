@@ -92,19 +92,54 @@ export function sortNotes(notes, sort) {
   return [...notes].sort((a, b) => compareNotes(a, b, state));
 }
 
-/** True when a note in `noteFolder` belongs to the selected folder subtree. */
-export function folderMatches(noteFolder, selected) {
-  if (!selected) return true;
-  const folder = String(noteFolder || '');
-  return folder === selected || folder.startsWith(`${selected}/`);
+function cleanFolderPath(value) {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
 }
 
-export function filterNotes(notes, { folder = null, tag = null } = {}) {
+/** True when a note in `noteFolder` belongs to the selected folder subtree. */
+export function folderMatches(noteFolder, selected) {
+  return folderInScope(noteFolder, selected, true);
+}
+
+/**
+ * True when a note is inside the current folder scope. `selected` null/empty
+ * means the vault root. With `includeSubfolders` off (the default), only
+ * notes directly in the selected folder count; with it on, the whole subtree
+ * does.
+ */
+export function folderInScope(noteFolder, selected, includeSubfolders = false) {
+  const folder = cleanFolderPath(noteFolder);
+  const scope = cleanFolderPath(selected);
+  if (!scope) return includeSubfolders ? true : folder === '';
+  return includeSubfolders
+    ? folder === scope || folder.startsWith(`${scope}/`)
+    : folder === scope;
+}
+
+export function filterNotes(
+  notes,
+  { folder = null, tag = null, includeSubfolders = false } = {}
+) {
   return notes.filter(
     (note) =>
-      folderMatches(note.folder, folder) &&
+      folderInScope(note.folder, folder, includeSubfolders) &&
       (!tag || (Array.isArray(note.tags) && note.tags.includes(tag)))
   );
+}
+
+/** Tag cloud counts for the notes in the current scope. */
+export function countTags(notes) {
+  const tagMap = new Map();
+  for (const note of notes) {
+    for (const tag of note.tags || []) {
+      tagMap.set(tag, (tagMap.get(tag) || 0) + 1);
+    }
+  }
+  return [...tagMap.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'));
 }
 
 function makeNode(name, path) {

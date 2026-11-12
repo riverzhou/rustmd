@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.7.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.7.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.8.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.8.0 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -81,12 +81,13 @@ this file is the developer/agent contract.
   Save queue, conflict retry, unsaved guard, folder tree, sorting, note
   selection/search race guards, export menu, wrap persistence, fullscreen
   button + `F11`, the recent-vault switcher (`rustmd-recent-dirs`, MRU max 8),
+  the current-folder/subfolder scope switch (`rustmd-include-subfolders`),
   and the format badges (`MD` green / `HTML` blue) shown in both the note list
   and the topbar.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
-- `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers
-  (covered by `node --test`).
+- `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers,
+  folder-scope predicates and scoped tag counts (covered by `node --test`).
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap, display name; covered by `node --test`).
 - `frontend/src/markdown.js` — pure math protection + code-segment helpers
@@ -249,8 +250,13 @@ If a new Tauri *plugin* is used:
   `.md` / `.html` / `.htm`. Update `walk`, `read_meta`, `read_note`,
   `save_note_impl`, `create_note`, `rename_note`, the mock in `api.js`, and the
   per-note preview/export `kind` argument together.
-- **Search**: `search_notes` searches body, heading, filename and tags. For
-  HTML notes the body is visible text (`html_to_text`), not markup. The
+- **Search**: `search_notes` searches body, heading, filename and tags, scoped
+  by its `folder` argument (the selected/current folder; empty/null = vault
+  root) and the `recursive` flag (the sidebar's “include subfolders” switch).
+  The note list uses the same scope: by default only notes directly in the
+  selected folder are shown and searched; the choice persists as
+  `rustmd-include-subfolders` (`on`/`off`).
+  For HTML notes the body is visible text (`html_to_text`), not markup. The
   snippet window is 40 chars before the match and query length + 60 after;
   the mock in `api.js` mirrors it.
 - **Preview/export**: `renderPreview(source, container, kind)` dispatches to
@@ -301,7 +307,10 @@ If a new Tauri *plugin* is used:
   use `t()` in JS and `data-i18n*` attributes in HTML. Never hardcode a
   user-visible string in `main.js`.
 - **Sidebar**: `notelist.js` owns sorting/tree/filtering; `main.js` only
-  renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync.
+  renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync;
+  with the subfolder scope off the tree shows `direct`, otherwise `count`, and
+  `countTags` only counts notes in the active scope. Changing folder or scope
+  refreshes the tag cloud and clears an active tag that no longer exists.
   Expanded paths are stored in `rustmd-expanded-folders`; an empty set is the
   default, so every folder starts collapsed. Recent vaults live MRU-first (max
   8) in `rustmd-recent-dirs`; `#btn-change-dir` opens the quick switcher and
@@ -314,8 +323,11 @@ If a new Tauri *plugin* is used:
 - **Release**: bump `package.json`, `Cargo.toml`, `tauri.conf.json`,
   `Cargo.lock`, `package-lock.json`; update README version banners; add a
   `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the preflight
-  accepts either, but ship both); run `npm run check` + a clean
-  `npm run selftest`; commit, tag `v<version>`, and push the commit + tag to
+  accepts either, but ship both); regenerate README screenshots when the UI or
+  mock vault changed; run `npm run check` + a clean `npm run selftest`; audit
+  version/test-count/screenshot references across `AGENTS.md`, READMEs,
+  `CHANGELOG.md`, `RELEASE_NOTES-<version>.md`, docs and `AUDIT_REPORT.md`;
+  commit, tag `v<version>`, and push the commit + tag to
   **both** remotes (`github` and `origin`/GitLab). GitHub tag triggers the
   three-platform release; GitLab is a mirror with no CI.
 
@@ -365,8 +377,9 @@ If a new Tauri *plugin* is used:
   `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
   script captures 1440×900 zh/en light/dark, the 300 px sidebar and a 640×460
   recent-vault switcher crop; it seeds `rustmd-recent-dirs` with three demo
-  folders (Windows-style paths) before taking the switcher shots. Update it
-  when the UI layout or the mock notes change so the images do not drift.
+  folders (Windows-style paths) before taking the switcher shots, and turns
+  on the subfolder scope so the nested demo note appears. Update it when the
+  UI layout or the mock notes change so the images do not drift.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.

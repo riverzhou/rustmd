@@ -34,7 +34,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 ## 进程与数据流
 
-1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders` + `set_notes_root`，失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 8 个），引导页和侧栏切换器都能一键重开。扫描识别 `.md` / `.html` / `.htm`。
+1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders` + `set_notes_root`，失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 8 个），引导页和侧栏切换器都能一键重开。扫描识别 `.md` / `.html` / `.htm`。列表与搜索默认只覆盖当前文件夹的直属笔记，侧栏“包含子文件夹”开关（`rustmd-include-subfolders`）打开后才递归到整个子树；文件夹计数与标签云也按当前范围统计。
 2. 选择笔记：`read_note` 返回 `{ tags, body, mtime, hash, kind }`；编辑器按 `kind` 切换 Markdown/HTML 语法，预览走对应渲染管线；`setImageContext(root, notePath)` 记录图片解析上下文。
 3. 编辑/标签变化：500 ms 防抖后进入保存队列；`save_note` 带 `baseHash`，后端比较磁盘内容 hash，不一致返回 `conflict:`，前端询问是否覆盖；写盘使用同目录临时文件 + rename。
 4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
@@ -45,10 +45,10 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 | 文件 | 职责 |
 | --- | --- |
-| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`）、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
+| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、目录范围开关（`rustmd-include-subfolders`：默认仅当前目录，打开后含子树）、排序（键 + 升/降序）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`）、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
 | `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
 | `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
-| `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
+| `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`folderInScope`、`countTags`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
 | `vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限、显示名；无 DOM，可单测 |
 | `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
 | `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；本地图片在导出前 data URL 内联 |
@@ -61,7 +61,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 | 命令 | 输入 | 输出 | 说明 |
 | --- | --- | --- | --- |
-| `list_notes` | `dir` | `NoteMeta[]` | 递归扫描 `.md` / `.html` / `.htm`，跳过隐藏项和符号链接；`kind` 区分格式 |
+| `list_notes` | `dir` | `NoteMeta[]` | 仍全库递归扫描 `.md` / `.html` / `.htm`，跳过隐藏项和符号链接；前端按当前目录/`rustmd-include-subfolders` 过滤列表、文件夹树与标签云，范围搜索由 `search_notes` 的 `folder`/`recursive` 完成 |
 | `list_folders` | `dir` | `string[]` | 含空文件夹；用于文件夹树与移动对话框 |
 | `read_note` | `dir, path` | `NoteContent` | 返回 tags/body/mtime/hash/kind；HTML 无 tags，body 为整篇源码 |
 | `save_note` | `dir, path, args` | `NoteMeta` | `args: { tags, body, baseHash?, baseMtime?, force? }` |
@@ -69,7 +69,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `rename_note` | `dir, path, name` | `string` | 保留原扩展名；冲突自动 ` (N)` 后缀 |
 | `delete_note` | `dir, path` | `()` | 直接删文件 |
 | `move_note` | `dir, path, destFolder` | `string` | 同目录 no-op；冲突自动后缀 |
-| `search_notes` | `dir, query` | `SearchHit[]` | 正文、标题、文件名、标签；HTML 只搜可见文本；最多 500 条 |
+| `search_notes` | `dir, query, folder?, recursive?` | `SearchHit[]` | 正文、标题、文件名、标签；`folder` 是当前选中目录（空 = 库根目录），`recursive` 对应“包含子文件夹”；HTML 只搜可见文本；最多 500 条 |
 | `render_html_note` | `dir, path, html, mode` | `{png, width, height, cssWidth, cssHeight}` | 内置隐藏 WebView 渲染 HTML 笔记；`mode` 为 `preview` / `export` / `pdf`；`export` 最高 3×并在超高时分段，`pdf` 短页 3×、较高页 2×；仅主窗口允许（`print` 由 `print_html_note` 内部使用；普通预览/导出传 `preview` / `export` / `pdf`） |
 | `html_preview_finish` | `{ payload: { token, dataUrl?, segments?, error?, cssWidth?, cssHeight?, width?, height?, ready?, scrollWidth? } }` | `()` | 隐藏 WebView 回传 PNG/分段，或打印模式回报就绪与布局宽度；必须来自 `html-render-{token}` 窗口；失败也唤醒等待方 |
 | `set_html_preview` | `html` | `token` | 注册 sandbox iframe 预览文档（随机 `p-*`）；仅主窗口允许；最多保留 8 份 |

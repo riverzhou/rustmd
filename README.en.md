@@ -13,19 +13,19 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.7.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.8.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
-Folder tree, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
+Folder tree, current-folder scope switch, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope switch, folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
 
 Dark theme and sidebar details:
 
 <img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MD/HTML format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with folders, sort buttons, MD/HTML format badges, filenames and tags" width="300">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders switch, folders, sort buttons, MD/HTML format badges, filenames and tags" width="300">
 
 One-click recent-vault switching:
 
@@ -69,14 +69,15 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
   (notes, folders, tags, search and counts) without a restart; an open note
   changed on disk is reloaded when clean, and a deleted note is closed safely
   (unsaved edits are kept).
-- **Folder tree** with nested folders, empty folders, collapse/expand; selecting a parent includes all descendants.
+- **Current folder by default** — the note list, search, folder counts and tag cloud cover only notes directly in the selected folder (the vault root on launch); turn on **Include subfolders** below the search box to recurse into the whole subtree, and the choice is remembered.
+- **Folder tree** with nested folders, empty folders, collapse/expand.
 - **Subfolders collapsed by default**; the expanded state is remembered.
 - **Sort by modified time or file name**, with an `↑` / `↓` button to switch ascending/descending; the choice is remembered.
 - **Filename on every note card**, plus title, excerpt, folder, time and tags — no more guessing between same-named notes.
 
 ### Search
 
-- Searches **title, filename, tags and body**, case-insensitively.
+- Searches **title, filename, tags and body**, case-insensitively. Search stays in the current folder by default; enable **Include subfolders** to search the whole subtree.
 - For HTML notes the searchable body is the visible page text — tags, scripts and styles are not matched as content.
 - Highlights the matching window and tells you whether the hit was in the title, filename or tags.
 - Debounced with a query sequence number so a slow old result cannot overwrite a newer one.
@@ -171,7 +172,7 @@ Removing the warning completely requires Developer ID + notarization; see [docs/
 ## Quick start
 
 1. Launch the app and choose or type a notes folder. Later launches reopen the last vault, and the sidebar switch button brings back recent folders in one click.
-2. Click `＋` to create a note; click folders to filter; click the arrow to expand subfolders.
+2. Click `＋` to create a note; click folders to filter; click the arrow to expand subfolders. The list shows only that folder's own notes unless **Include subfolders** is on.
 3. Rename from the title field; tags, move, delete and export are in the top bar.
 4. `Ctrl+B` toggles the sidebar.
 
@@ -204,7 +205,7 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests for sorting, folder tree, recent vaults, math protection, code segments and i18n
+2. Node tests for sorting, folder tree, folder scope and scoped tags, recent vaults, math protection, code segments and i18n
 3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
 4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json`)
 5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`

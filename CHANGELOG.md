@@ -5,6 +5,45 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.8.0] - 2026-11-12
+
+### 新增（Added）
+
+- **当前文件夹范围开关**：笔记列表、全文搜索、文件夹计数和标签云默认只覆盖
+  当前文件夹（启动/切换笔记库时是库根目录）的直属笔记，不再自动包含子文件夹；
+  搜索框下方的“包含子文件夹”开关打开后递归整个子树。开关状态保存在
+  `localStorage.rustmd-include-subfolders`，重启后保持。
+- `search_notes` 新增 `folder` / `recursive` 参数，后端直接在选中的目录范围内
+  扫描（不递归时只读该目录顶层文件），不再先全库搜索再由前端过滤；Rust 单测覆盖
+  根目录、子目录与递归三种范围。
+- 文件夹树在范围关闭时显示直属笔记数（`direct`），打开时显示子树数（`count`）；
+  标签云只统计当前范围内的笔记，切换目录/范围后若活动标签已不存在会自动清除，
+  避免出现看不到也点不掉的空结果过滤。当前范围没有直属笔记但子文件夹里有笔记时，
+  空状态会提示打开“包含子文件夹”。
+
+### 变更（Changed）
+
+- 版本号提升到 **1.8.0**；`notelist.js` 新增 `folderInScope` / `countTags`，
+  `main.js` 统一用当前范围驱动列表、搜索、文件夹计数与标签云，`api.js` 及其
+  浏览器 mock 同步新的 `folder` / `recursive` 搜索参数。
+- `scripts/capture-screenshots.mjs` 在截图前打开“包含子文件夹”，重新生成
+  README 中英文明暗主题、侧栏和最近笔记库截图，确保截图包含新开关。
+- README 中英文版、AGENTS、架构/测试/安全/发布/审计文档与 GitHub 项目文案
+  同步更新；本轮同时全面校对版本号、测试计数、截图路径和发布命令。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、28 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、59 个 Rust 测试（58 通过 + 1 个网络测试 ignored）、
+  Vite build 全部通过。
+- 浏览器 mock 交互验证：默认只显示 2 篇根目录笔记、根目录搜索不返回子目录命中；
+  打开开关后 7 篇全部出现、子目录搜索命中、文件夹计数与标签云同步变化；
+  选中 `work` 后关闭开关只显示 3 篇直属笔记；刷新页面后开关状态保持。
+- `npm run selftest`：在真实 WebView 中渲染 6 篇示例（含 HTML）并完成
+  PNG/PDF 导出，`report.json` 为 `ok: true`、0 errors；picsum 远程图不可达按
+  既有策略记为 1 条 warning，不阻塞发布；`check-selftest-report --require-html`
+  校验通过。
+
 ## [1.7.0] - 2026-11-12
 
 ### 新增（Added）

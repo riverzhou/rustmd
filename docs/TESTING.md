@@ -11,11 +11,11 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、过滤、笔记格式识别、最近笔记库路径去重/MRU、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、范围标签计数、笔记格式识别、最近笔记库路径去重/MRU、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
-| Rust 单测 | `node scripts/cargo.mjs test` | 58 个测试（57 通过 + 1 个网络测试默认 ignored；含 PDF 页码戳记单测） |
+| Rust 单测 | `node scripts/cargo.mjs test` | 59 个测试（58 通过 + 1 个网络测试默认 ignored；含 PDF 页码戳记单测） |
 | 前端构建 | `npm run build` | Vite 生产构建 |
 
 `scripts/cargo.mjs` 会找 `$CARGO`、`~/.cargo/bin/cargo`、PATH。CI 里直接使用 rustup 安装的 stable。
@@ -30,7 +30,7 @@ npm run check
 - snippet：跳过标题/围栏、列表前缀、未闭合 `[`、`!=`；
 - 路径安全：`..`/绝对路径拒绝、junction/symlink 逃逸拒绝、UNC 前缀还原、遍历跳过符号链接；
 - 保存：内容相同不重写、外部修改 hash 冲突、强制覆盖、front matter 保留、原子写无残留；
-- 搜索：标题、文件名、标签、正文窗口；
+- 搜索：标题、文件名、标签、正文窗口；当前文件夹/子目录/递归范围（`folder` + `recursive`）；
 - 文件夹：空文件夹和嵌套；
 - 重命名/移动：冲突自动后缀；HTML 扩展名保留；
 - 图片：MIME、`rmd` 路径、缓存 mtime、SSRF 私有地址拒绝；
@@ -41,7 +41,7 @@ npm run check
 
 `node --test` 直接 import 纯函数模块，不需要 DOM：
 
-- `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名）、文件夹子树过滤、树计数、折叠扁平化、祖先；
+- `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名）、当前目录直属/子树过滤、默认当前目录（启动时为库根目录）范围、范围标签计数、树计数、折叠扁平化、祖先；
 - `frontend/src/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码；
 - `frontend/src/vaultlist.test.js`：路径规范化、Windows 大小写/分隔符去重、MRU 上限、移除、损坏 localStorage 容错；
 - `frontend/src/i18n.test.js`：中英词典完整性、插值、系统语言选择。

@@ -15,19 +15,19 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.7.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.8.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
-主界面：文件夹树、文件名卡片、排序方向、**MD / HTML 格式徽标**、MathJax 公式与 Mermaid 图表。
+主界面：文件夹树、当前文件夹范围开关、文件名卡片、排序方向、**MD / HTML 格式徽标**、MathJax 公式与 Mermaid 图表。
 
-<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧文件夹树与带 MD/HTML 格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
+<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧当前文件夹范围开关、文件夹树与带 MD/HTML 格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
 
 深色主题与侧栏细节：
 
 <img src="docs/screenshots/dark.png" alt="rustmd 深色主题：MD/HTML 格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
 
-<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名、标签和搜索" width="300">
+<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：搜索框与“包含子文件夹”开关、全部/文件夹树、排序按钮、带 MD/HTML 格式徽标的文件名和标签" width="300">
 
 最近笔记库一键切换：
 
@@ -71,14 +71,15 @@
 - **手动刷新**：侧栏顶部的刷新按钮从磁盘重新扫描整个笔记库（笔记、文件夹、标签、
   搜索与计数），无需重启；打开中的笔记被外部修改且没有未保存内容时会自动重新
   载入，被删除时安全关闭或保留未保存内容。
-- **文件夹树**：支持嵌套文件夹、空文件夹、折叠/展开；选择父文件夹会包含整个子树。
+- **默认只看当前文件夹**：笔记列表、搜索、文件夹计数和标签云默认只覆盖当前文件夹（启动时是笔记库根目录）的直属笔记，不进入子文件夹；打开搜索框下方的“包含子文件夹”开关后才递归整个子树，开关状态会记住。
+- **文件夹树**：支持嵌套文件夹、空文件夹、折叠/展开。
 - **子文件夹默认折叠**：只显示顶层文件夹，点击箭头逐层展开；展开状态会记住。
 - **两种排序 + 方向**：可按最后修改时间或文件名排序，通过 `↑` / `↓` 按钮切换升序/降序；选择持久化。
 - **文件名卡片**：每张笔记卡片显示标题、**文件名**、摘要、所在文件夹、修改时间与标签，同名笔记也容易区分。
 
 ### 搜索
 
-- 同时搜索**标题、文件名、标签、正文**；大小写不敏感。HTML 笔记搜索的是页面可见文本，不会把标签、脚本或样式当作正文命中。
+- 同时搜索**标题、文件名、标签、正文**；大小写不敏感。搜索默认只覆盖当前文件夹的直属笔记，打开“包含子文件夹”后递归整个子树。HTML 笔记搜索的是页面可见文本，不会把标签、脚本或样式当作正文命中。
 - 结果列表高亮命中片段，并显示是标题、文件名还是标签命中。
 - 输入防抖 + 请求序列号，快速输入时旧结果不会覆盖新结果。
 
@@ -181,7 +182,7 @@ sha256sum -c SHA256SUMS.txt
 ## 快速开始
 
 1. 启动应用，选择或输入笔记目录；也可以直接打开已有的 Markdown 文件夹。再次启动会打开上次的笔记库，侧栏切换按钮可一键回到最近目录。
-2. 左侧 `＋` 新建笔记；点击文件夹筛选，点击箭头展开子文件夹。
+2. 左侧 `＋` 新建笔记；点击文件夹筛选，点击箭头展开子文件夹。列表默认只看该层笔记，点击搜索框下方的“包含子文件夹”可包含整个子树。
 3. 标题输入框可重命名文件；标签、移动、删除、导出在顶栏。
 4. 顶栏按钮或 `Ctrl+B` 隐藏/显示侧栏。
 
@@ -226,7 +227,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 `npm run check` 依次执行：
 
 1. ESLint 10
-2. Node 前端单测（排序、文件夹树、最近笔记库、数学保护、代码段、多语言）
+2. Node 前端单测（排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、数学保护、代码段、多语言）
 3. 仓库检查（文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
 4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 一致）
 5. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
