@@ -44,7 +44,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 
 | 文件 | 职责 |
 | --- | --- |
-| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、新建/导出菜单、HTML 类型徽标与标签编辑器切换、自动折行/全屏（`F11`）状态 |
+| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`）、排序（键 + 升/降序）、新建/导出菜单、MD/HTML 格式徽标（列表与顶栏一致）与标签编辑器切换、自动折行/全屏（`F11`）状态 |
 | `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
 | `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
 | `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |

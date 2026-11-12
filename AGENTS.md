@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.5.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.5.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.6.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.6.0 >/dev/null` |
 | Windows sign + portable zip | `powershell -File scripts/sign-win.ps1` then `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 
@@ -79,7 +79,8 @@ this file is the developer/agent contract.
 - `frontend/src/main.js` — UI state and DOM wiring (no framework/state lib).
   Save queue, conflict retry, unsaved guard, folder tree, sorting, note
   selection/search race guards, export menu, wrap persistence, fullscreen
-  button + `F11`.
+  button + `F11`, and the format badges (`MD` green / `HTML` blue) shown in
+  both the note list and the topbar.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers

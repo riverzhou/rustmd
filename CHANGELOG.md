@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-11-12
+
+### 新增（Added）
+
+- **Markdown 格式徽标**：笔记列表与顶栏现在对 Markdown 和 HTML 使用同一套
+  醒目的格式徽标——`MD`（绿色）/ `HTML`（蓝色）。此前只有 HTML 有标记、
+  Markdown 仅靠 `.md` 文件名区分；现在两种格式一眼可辨，徽标带 tooltip 与
+  `aria-label`，并分别适配明暗主题。
+- 列表徽标改为始终渲染（不再依赖文件名），顶栏徽标同步使用相同的配色语义。
+
 ## [1.5.0] - 2026-11-12
 
 ### 新增（Added）

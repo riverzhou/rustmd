@@ -242,6 +242,7 @@ function updateKindBadge(kind = state.currentKind) {
   if (noteKind) {
     noteKind.textContent = isHtml ? 'HTML' : 'MD';
     noteKind.classList.toggle('html', isHtml);
+    noteKind.classList.toggle('markdown', !isHtml);
     noteKind.title = t(
       isHtml ? 'note.kindHtmlTitle' : 'note.kindMarkdownTitle'
     );
@@ -858,12 +859,13 @@ function renderNoteList() {
       metaBits.push(`<span class="mini-tag">${esc(t)}</span>`);
     }
     const kind = n.kind || noteKindOf(n.path);
-    // Markdown files already show their `.md` name; only HTML needs a badge
-    // in the list. The topbar always shows the open note's format.
-    const kindBadge =
-      kind === 'html'
-        ? `<span class="kind-badge html" title="${esc(t('note.kindHtmlTitle'))}">HTML</span>`
-        : '';
+    // Both formats carry the same kind badge in the list; the topbar mirrors
+    // it for the open note.
+    const kindLabel = kind === 'html' ? 'HTML' : 'MD';
+    const kindTitle = t(
+      kind === 'html' ? 'note.kindHtmlTitle' : 'note.kindMarkdownTitle'
+    );
+    const kindBadge = `<span class="kind-badge ${kind}" title="${esc(kindTitle)}">${kindLabel}</span>`;
     item.innerHTML = `
       <div class="title">${highlightText(n.title, state.filter.query)}</div>
       <div class="file-line"><span class="file-name">${highlightText(fileNameOf(n.path), state.filter.query)}</span>${kindBadge}</div>

@@ -22,6 +22,8 @@ body[data-theme='light'] {
   --shadow: 0 8px 28px rgba(30, 35, 60, 0.12);
   --mark: #ffe28a;
   --mark-text: #4a3b00;
+  --kind-md: #157a4c;
+  --kind-md-soft: rgba(21, 122, 76, 0.1);
   --cm-bg: #ffffff;
   --cm-fg: #262b38;
   --cm-selection: rgba(79, 109, 245, 0.18);
@@ -58,6 +60,8 @@ body[data-theme='dark'] {
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   --mark: #6b5813;
   --mark-text: #ffe9a8;
+  --kind-md: #63d29a;
+  --kind-md-soft: rgba(99, 210, 154, 0.14);
   --cm-bg: #1a1d23;
   --cm-fg: #dfe3ec;
   --cm-selection: rgba(124, 140, 255, 0.22);
@@ -609,12 +613,19 @@ body[data-theme='dark'] .btn.primary:hover {
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 9px;
+  font-weight: 600;
   line-height: 1.5;
   letter-spacing: 0.4px;
   color: var(--text-faint);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 4px;
+}
+
+.note-item .kind-badge.markdown {
+  color: var(--kind-md);
+  border-color: var(--kind-md);
+  background: var(--kind-md-soft);
 }
 
 .note-item .kind-badge.html {
@@ -744,6 +755,12 @@ mark {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 5px;
+}
+
+.note-kind.markdown {
+  color: var(--kind-md);
+  border-color: var(--kind-md);
+  background: var(--kind-md-soft);
 }
 
 .note-kind.html {

@@ -24,26 +24,26 @@ release workflow 会再校验 tag。
 中提供对应小节；`scripts/release-notes.mjs` 找不到两者会直接失败。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.5.0
-node scripts/release-notes.mjs v1.5.0 >/dev/null
+node scripts/check-version.mjs v1.6.0
+node scripts/release-notes.mjs v1.6.0 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.5.0"
-git tag v1.5.0
+git commit -m "release: v1.6.0"
+git tag v1.6.0
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.5.0
+git push github v1.6.0
 git push origin master
-git push origin v1.5.0
+git push origin v1.6.0
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.5.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.6.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
@@ -74,7 +74,7 @@ Windows 绿色 zip 由脚本复制 `LICENSE` 与 `SECURITY.md`。
 Windows zip 的目录结构：
 
 ```
-rustmd-1.5.0-win-x64/
+rustmd-1.6.0-win-x64/
 ├── rustmd.exe
 ├── README.md
 ├── SECURITY.md
@@ -150,17 +150,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.5.0-macos-universal.dmg.sha256
+shasum -a 256 -c rustmd-1.6.0-macos-universal.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.5.0-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.5.0-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.6.0-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.6.0-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.5.0-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.6.0-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

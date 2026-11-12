@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.5.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.6.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -94,7 +94,7 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 
 ### HTML notes
 
-- `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts, with an `HTML` badge.
+- `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts. Both formats carry the same prominent format badge in the list and the topbar: **`MD` (green) / `HTML` (blue)**.
 - Edit the HTML source on the left and see a full-page native render on the right using the app's built-in WebView (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). **No Edge, Chrome or other external browser is required.** The page's `<style>`, `<script>`, local relative CSS/JS/fonts/images and ECharts charts run natively; text stays sharp when scrolling/zooming. `<title>` (or the first `<h1>`) becomes the list title, while the filename stays visible.
 - The **New note** button offers **Markdown note** and **HTML page**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for both formats.
 - HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
