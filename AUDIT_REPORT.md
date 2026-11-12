@@ -1,8 +1,23 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-12（v1.8.0 复核；v1.7.0 于 2026-11-12，v1.4.0 于 2026-11-11）
-**审计对象**：`rustmd` v1.8.0（Rust + Tauri 2，Markdown + HTML 笔记）
-**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS 目标交叉 `cargo check`；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+**审计日期**：2026-11-12（v1.8.1 复核；v1.8.0 于 2026-11-12，v1.7.0 于 2026-11-12）
+**审计对象**：`rustmd` v1.8.1（Rust + Tauri 2，Markdown + HTML 笔记）
+**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+
+### v1.8.1 macOS 仅 Apple Silicon（arm64）发布策略
+
+本版是发布目标收窄的补丁版，应用代码与 1.8.0 相同：
+
+- macOS 只构建 `aarch64-apple-darwin`；移除 `x86_64-apple-darwin` 与
+  `universal-apple-darwin`，不再产出 universal DMG，也不再支持 Intel Mac。
+- release workflow 的 macOS job 显式安装 arm64 target、构建
+  `target/aarch64-apple-darwin/release/bundle/macos/rustmd.app`，DMG 资产改名为
+  `rustmd-<version>-macos-arm64.dmg`；CI 的 macOS 编译同步改为 arm64。
+- README 中英文版、AGENTS、RELEASING、TESTING、AUDIT_REPORT 与 GitHub
+  项目文案明确标注 macOS 仅 Apple Silicon，下载表与校验示例改为 arm64 资产名。
+- 无 Rust/前端/权限/CSP/路径封闭/HTML 隔离/导出链路变化；仍由 release
+  workflow 的 macOS runner 构建、ad-hoc 签名并验证 DMG。
+
 
 ### v1.8.0 当前文件夹范围与范围搜索（功能 + 后端参数）
 
@@ -127,12 +142,12 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 | 静态检查 | ESLint 0 error；`cargo fmt --check`；clippy `-D warnings`；`npm run check` 全绿 |
 | 运行时回归 | `npm run selftest`：6 篇示例（含 HTML）`ok: true`、0 errors、1 条远程图 warning；矢量 PDF 字体、HTML iframe/本地资源与分段拼接断言均通过，`--require-html` 报告校验通过 |
 | UI 交互 | 浏览器 mock：当前目录/子树范围、范围搜索、文件夹计数、标签云、刷新后开关持久化，以及最近笔记库切换/移除/ESC/焦点/语言切换通过；排序、树、重命名等仍以纯函数单测 + 手动检查为主 |
-| macOS 编译 | 最终 ObjC 打印代码以 `cargo check --target x86_64-apple-darwin` 交叉编译通过（运行时需在 Mac 上自测） |
+| macOS 编译 | macOS arm64（`aarch64-apple-darwin`）CI 构建；Intel/universal 已移除，运行时仍需在 Apple Silicon Mac 上自测 |
 | Linux 运行 | GTK/WebKitGTK C 调用以 `libloading` 运行时解析；发布 workflow 在 Ubuntu + Xvfb 跑完整 selftest（含矢量 PDF `/Font` 断言） |
 | 依赖审计 | `npm audit --omit=dev` 0 vulnerabilities；开发期 ESLint/minimatch moderate 告警（不进入运行时） |
 | 许可证 | GPL-3.0-or-later（`LICENSE` / `package.json` / `Cargo.toml` / `tauri.conf.json`） |
 
-**结论**：v1.8.0 的当前目录范围开关只扩展了 `search_notes` 的可选参数，没有新增 IPC 命令，也没有放松权限、CSP、路径封闭、HTML 隔离或导出边界；范围目录仍经 `canonical_root` + `resolve_in_root` 校验。v1.5.0 的矢量 PDF 打印链路、HTML 笔记导出、内置 WebView 预览、路径/IPC/Origin/CSP 安全边界和发布流程继续通过审计。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
+**结论**：v1.8.1 只把 macOS 构建目标收窄为 Apple Silicon（arm64），没有修改应用代码、IPC 命令、权限、CSP、路径封闭、HTML 隔离或导出边界。v1.8.0 的当前目录范围与范围搜索继续通过审计；v1.5.0 的矢量 PDF 打印链路、内置 WebView 预览和发布流程保持有效。历史上 v1.0.0 / v1.2.0 的高危项（未消毒 HTML、路径逃逸、SSRF、任意写）仍保持修复状态。
 
 ---
 
@@ -217,7 +232,7 @@ npm run selftest → 6 篇示例（含 examples/html-page-demo.html）通过；r
 - 最近笔记库切换：一库/多库切换、MRU 更新、单条移除、ESC/外部点击关闭、ESC 关闭后焦点返回、中英文动态文案、900×560 最小窗口布局；最近目录只写 `localStorage`，不进入笔记库或网络。
 - 当前目录范围：默认只显示根目录直属 2 篇；根目录搜索不返回子目录命中；打开开关后 7 篇全部出现并命中子目录搜索；选中 `work` 后关闭开关只显示 3 篇直属笔记；刷新页面后开关状态保持。
 
-CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS universal DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
+CI：Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`；Linux Xvfb E2E；GitHub tag 触发 release workflow（verify 先跑 `npm run check` + Xvfb E2E + release-notes preflight），再生成 Windows zip、Linux deb/AppImage、macOS arm64 DMG，并由 `publish` 汇总 `SHA256SUMS.txt`。
 
 ---
 
@@ -236,12 +251,13 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 |---|---|---|
 | Windows 自签名 | SmartScreen 仍提示未知发布者 | 证书 + SHA256；支持真实 PFX secret |
 | macOS ad-hoc | 未公证，首次需手动放行 | Release 文案 + RELEASING 文档 |
+| macOS Intel | 1.8.1 起只提供 Apple Silicon（arm64）构建，Intel Mac 不受支持 | README/RELEASING/AUDIT 明确标注；如需 Intel 需回退到 1.8.0 或自行改 target 构建 |
 | 本地 HTML 字体/模块 | 字体按 `font` 目的放行；ES module（CORS `script`）仍可能受 Origin 限制 | 文档说明；如需要可改为 token 化资源协议 |
 | 非 UTF-8 笔记 | 不做编码转码，打开时提示先转 UTF-8 | 明确边界，避免静默损坏 |
 | Markdown 超长 PNG | 0.25× 下限；更长内容仍可能受 canvas 限制 | 建议 PDF；文档记录 |
 | DNS rebinding | 校验与连接解析之间无地址钉扎 | 记录；高保证环境用出口过滤 |
 | 无 macOS 运行时 CI | 只有编译 + 本地 Windows/Linux E2E | 记录；后续可加 macOS runner E2E |
-| macOS 打印运行时 | macOS 只做了交叉编译，尚未在真机跑打印；Linux 已由 Ubuntu Xvfb E2E 覆盖 | 发布前在 Mac 上跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
+| macOS 打印运行时 | macOS arm64 由 CI 构建，但尚未在真机跑打印；Linux 已由 Ubuntu Xvfb E2E 覆盖 | 发布前在 Apple Silicon Mac 上跑一次 `npm run selftest`；任何打印失败都会自动回退图片 PDF |
 | Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
 | 无 UI 自动化 | 排序/树/重命名/wrap/fullscreen 无浏览器级断言（当前目录范围与最近笔记库切换已做浏览器 mock 检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
@@ -252,4 +268,4 @@ CI：Windows / Ubuntu / macOS `npx tauri build --no-bundle`；Linux Xvfb E2E；G
 
 ## 7. 结论
 
-v1.8.0 可以发布。当前目录范围与范围搜索由前后端单测、真实 WebView 自测和浏览器 mock 交互检查共同覆盖；`search_notes` 的目录参数保持路径封闭。v1.5.0 的矢量打印链路、v1.6.x 的格式徽标与自测容错、v1.7.0 的最近笔记库切换保持有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.8.1 可以发布。macOS 构建目标已收窄为 Apple Silicon，README/AGENTS/RELEASING/TESTING 与 release workflow 保持一致；当前目录范围、范围搜索、矢量打印链路和最近笔记库切换继续有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

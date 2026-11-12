@@ -3,7 +3,7 @@
 三端发布由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 完成。签名策略参考同作者的 pythontdx 项目：
 
 - **Windows**：自签名 Authenticode（可选真实 PFX），绿色 zip；
-- **macOS**：ad-hoc 整包签名（可选 Developer ID + 公证），通用 DMG；
+- **macOS**：仅 Apple Silicon（arm64），ad-hoc 整包签名（可选 Developer ID + 公证），arm64 DMG；
 - **Linux**：deb + AppImage，SHA256 校验（Linux 桌面没有统一的发行者签名，校验和就是完整性凭证）。
 
 ## 1. 版本与发布说明
@@ -29,33 +29,33 @@
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.8.0
-node scripts/release-notes.mjs v1.8.0 >/dev/null
+node scripts/check-version.mjs v1.8.1
+node scripts/release-notes.mjs v1.8.1 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.8.0"
-git tag v1.8.0
+git commit -m "release: v1.8.1"
+git tag v1.8.1
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.8.0
+git push github v1.8.1
 git push origin master
-git push origin v1.8.0
+git push origin v1.8.1
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.8.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.8.1`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
 ```
 verify (Ubuntu, npm run check + Xvfb E2E + tag/version/release notes)
   ├─ windows  → target/release/rustmd.exe → 签名 → green zip → artifacts
-  ├─ macos    → universal .app → ad-hoc 签名 → dmg → artifacts
+  ├─ macos    → arm64 .app → ad-hoc 签名 → dmg → artifacts
   └─ linux    → deb + AppImage → SHA256SUMS-linux.txt → artifacts
 publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
@@ -70,7 +70,7 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 | Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`SECURITY.md`、`LICENSE`；自签名构建还含 `rustmd-selfsigned.cer` |
 | Linux | `rustmd_<version>_amd64.deb` | Debian/Ubuntu 安装包 |
 | Linux | `rustmd_<version>_amd64.AppImage` | 便携包（需要 FUSE，或 `--appimage-extract-and-run`） |
-| macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
+| macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 | 全部 | `SHA256SUMS.txt`；Windows/macOS 另有同名 `.sha256`，Linux 另有 `SHA256SUMS-linux.txt` | 完整性校验 |
 
 所有 bundle（deb / AppImage / DMG）通过 `bundle.licenseFile` 随附 `LICENSE`；
@@ -79,7 +79,7 @@ Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、README/CHANGELOG 
 Windows zip 的目录结构：
 
 ```
-rustmd-1.8.0-win-x64/
+rustmd-1.8.1-win-x64/
 ├── rustmd.exe
 ├── README.md / README.en.md
 ├── CHANGELOG.md
@@ -112,7 +112,7 @@ rustmd-1.8.0-win-x64/
 
 ## 5. macOS 签名
 
-Tauri 配置 `bundle.macOS.signingIdentity: "-"` → ad-hoc 签名。workflow 在构建 `.app` 后再次：
+macOS 只构建 `aarch64-apple-darwin`（Apple Silicon），不构建 Intel/universal。Tauri 配置 `bundle.macOS.signingIdentity: "-"` → ad-hoc 签名。workflow 在构建 `.app` 后再次：
 
 ```bash
 codesign --force --deep --sign - "$APP"
@@ -160,17 +160,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.8.0-macos-universal.dmg.sha256
+shasum -a 256 -c rustmd-1.8.1-macos-arm64.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.8.0-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.8.0-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.8.1-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.8.1-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.8.0-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.8.1-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：
@@ -187,7 +187,7 @@ npm ci
 npm run check
 npx tauri build --no-bundle       # 当前平台可执行文件
 # macOS:
-npx tauri build --target universal-apple-darwin --bundles app
+npx tauri build --target aarch64-apple-darwin --bundles app
 # Linux:
 npx tauri build --bundles deb,appimage
 ```

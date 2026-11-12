@@ -109,7 +109,7 @@ scripts/linux-headless-smoke.sh
 | Job | 内容 |
 | --- | --- |
 | `quality` | Ubuntu 22.04：安装 Tauri 依赖，`npm ci`，`npm run check`（含 lint/单测/仓库检查/Rust 测试/构建） |
-| `build` | Windows / Ubuntu / macOS 三端 `npx tauri build --no-bundle`，验证真实编译 |
+| `build` | Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`（Apple Silicon only），验证真实编译 |
 | `selftest` | Ubuntu + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测，校验 report，上传产物 |
 
 依赖 Linux 系统包：

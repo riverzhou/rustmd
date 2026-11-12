@@ -1,8 +1,8 @@
 # rustmd
 
-**Local-first Markdown and HTML notes for Windows, macOS and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown and HTML notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
-**本地优先、离线可用的 Markdown / HTML 笔记应用**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
+**本地优先、离线可用的 Markdown / HTML 笔记应用（macOS 仅 Apple Silicon）**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
 
 [English](README.en.md) · [简体中文](README.md)
 
@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.8.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.8.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -138,7 +138,7 @@
 | --- | --- | --- |
 | Windows | `rustmd-<version>-win-x64-portable.zip` | **绿色版**：解压后直接运行 `rustmd.exe`，不写注册表 |
 | Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu 安装包 / 便携 AppImage |
-| macOS | `rustmd-<version>-macos-universal.dmg` | Apple Silicon + Intel 通用包 |
+| macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 
 Windows / macOS 资产旁提供 `.sha256`；Linux 提供 `SHA256SUMS-linux.txt`；Release 里还有合并的 `SHA256SUMS.txt`（需要全部资产在同一目录才能校验）。只下载单平台时请用对应平台的校验文件。
 
@@ -164,7 +164,7 @@ AppImage 需要 FUSE；没有 FUSE 时使用 `--appimage-extract-and-run`。
 
 ### macOS
 
-DMG 内的 `.app` 使用 **ad-hoc 签名**（没有 Apple Developer ID，未公证）。首次打开会被 Gatekeeper 拦截：
+macOS 包仅支持 **Apple Silicon（arm64，M 系列）**，不支持 Intel Mac。DMG 内的 `.app` 使用 **ad-hoc 签名**（没有 Apple Developer ID，未公证）。首次打开会被 Gatekeeper 拦截：
 
 - 系统设置 → 隐私与安全性 → “仍要打开”；或
 - `xattr -dr com.apple.quarantine /Applications/rustmd.app`
@@ -270,7 +270,7 @@ dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF。M
 - 推 `v*` tag（或手动填 tag）触发；
 - Windows：绿色 zip + 自签名 Authenticode（可选真实 PFX secrets）；
 - Linux：deb + AppImage + SHA256；
-- macOS：universal DMG + ad-hoc 签名；
+- macOS：Apple Silicon（arm64）DMG + ad-hoc 签名；
 - 所有资产汇总 `SHA256SUMS.txt` 并创建 GitHub Release。
 
 签名策略与 secrets 配置见 [docs/RELEASING.md](docs/RELEASING.md)。
@@ -290,7 +290,7 @@ dev 窗口会渲染 `examples/` 下全部示例笔记，逐一导出 PNG/PDF。M
 Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性，没有购买商业代码签名/公证。校验 SHA256 后按系统提示放行即可。
 
 **Q：支持移动端吗？**
-当前只提供 Windows / macOS / Linux 桌面端。
+当前只提供 Windows / macOS / Linux 桌面端。macOS 构建仅支持 Apple Silicon（arm64），不支持 Intel Mac。
 
 **Q：笔记存在哪里？**
 只存在你打开的文件夹里；应用没有数据库、没有账号、不会上传笔记。

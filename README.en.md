@@ -1,6 +1,6 @@
 # rustmd
 
-**Local-first Markdown and HTML notes for Windows, macOS and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown and HTML notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.8.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.8.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -137,7 +137,7 @@ Get the latest from [GitHub Releases](https://github.com/riverzhou/rustmd/releas
 | --- | --- | --- |
 | Windows | `rustmd-<version>-win-x64-portable.zip` | Portable: unzip and run `rustmd.exe`, no installer |
 | Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu package / portable AppImage |
-| macOS | `rustmd-<version>-macos-universal.dmg` | Universal (Apple Silicon + Intel) |
+| macOS | `rustmd-<version>-macos-arm64.dmg` | Apple Silicon (arm64) only; Intel Macs are not supported |
 
 Windows and macOS assets have a `.sha256`; Linux ships `SHA256SUMS-linux.txt`; releases also include a combined `SHA256SUMS.txt` (it requires all release assets in one folder). For a single-platform download, use that platform’s checksum file.
 
@@ -161,7 +161,7 @@ AppImage needs FUSE; without it use `--appimage-extract-and-run`.
 
 ### macOS
 
-The `.app` is **ad-hoc signed** (no Apple Developer ID, not notarized). On first launch, allow it in System Settings → Privacy & Security → “Open Anyway”, or run:
+The macOS build supports **Apple Silicon (arm64, M-series) only**; Intel Macs are not supported. The `.app` is **ad-hoc signed** (no Apple Developer ID, not notarized). On first launch, allow it in System Settings → Privacy & Security → “Open Anyway”, or run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/rustmd.app
@@ -227,7 +227,7 @@ The dev window renders every note in `examples/`, exports PNG/PDF, and verifies 
 
 - Windows portable zip + self-signed Authenticode (optional real PFX secrets);
 - Linux deb + AppImage + SHA256;
-- macOS universal DMG + ad-hoc signing;
+- macOS Apple Silicon (arm64) DMG + ad-hoc signing;
 - a combined `SHA256SUMS.txt` and a GitHub Release.
 
 See [docs/RELEASING.md](docs/RELEASING.md) for signing and secrets.
@@ -247,7 +247,7 @@ Yes for plain `.md` and `.html` folders, folder hierarchy and Markdown front mat
 Windows uses a self-signed certificate and macOS uses ad-hoc signing. They prove integrity, not a purchased identity. Verify SHA256 and allow the app in the OS prompt.
 
 **Mobile support?**
-Desktop only: Windows, macOS and Linux.
+Desktop only: Windows, macOS (Apple Silicon only) and Linux.
 
 **Where are my notes?**
 Only in the folder you opened. No database, account or upload.

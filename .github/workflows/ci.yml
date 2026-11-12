@@ -97,7 +97,16 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Add the Apple Silicon Rust target
+        if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Compile macOS arm64 binary
+        if: matrix.os == 'macos-latest'
+        run: npx tauri build --target aarch64-apple-darwin --no-bundle
+
       - name: Compile desktop binary
+        if: matrix.os != 'macos-latest'
         run: npx tauri build --no-bundle
 
   selftest:

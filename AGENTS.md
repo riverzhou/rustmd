@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.8.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.8.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.8.1` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.8.1 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -39,7 +39,7 @@ this file is the developer/agent contract.
   (24 h default).
 - CI: `.github/workflows/ci.yml` (quality gate + three-platform compile +
   Linux Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
-  zip, Linux deb/AppImage, macOS universal DMG). Details: `docs/RELEASING.md`.
+  zip, Linux deb/AppImage, macOS Apple Silicon (arm64) DMG). Details: `docs/RELEASING.md`.
 - Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4
   backend); install/packaging/no-root sysroot notes live in `LINUX_BUILD.md`.
   `scripts/linux-headless-smoke.sh` can smoke-test the release binary on an
@@ -191,8 +191,8 @@ back to the html2canvas PDF. macOS uses the `objc2` crates; the print runs throu
 a print thread and the UI is not blocked — the command then polls for the
 finished PDF (`wait_for_printed_pdf`, 45 s) before stamping. Linux only needs
 the `webkit2gtk` wrapper for the raw `GtkWidget` pointer. The macOS code is
-compile-checked from Windows with `cargo check --target x86_64-apple-darwin`
-in a scratch crate; the Linux C calls are compiled on every host
+compile-checked by the macOS arm64 CI build (and historically in a scratch
+crate from Windows); the Linux C calls are compiled on every host
 (`linux_print_webview` is plain `libloading` FFI).
 
 ### Adding a Tauri command (3 touch points)

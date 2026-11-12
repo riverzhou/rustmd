@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.8.1] - 2026-11-12
+
+### 变更（Changed）
+
+- **macOS 只支持 Apple Silicon（arm64）**：发布与 CI 均改为
+  `aarch64-apple-darwin`，移除 `x86_64-apple-darwin` / `universal-apple-darwin`
+  目标，不再构建 universal DMG，也不再支持 Intel Mac。macOS 资产改名为
+  `rustmd-<version>-macos-arm64.dmg`。
+- README 中英文版、AGENTS、RELEASING、TESTING、AUDIT_REPORT 与 GitHub 项目文案
+  同步标注 macOS Apple Silicon 要求，更新下载表、校验示例和 CI 构建说明。
+- 应用代码与 1.8.0 相同（当前文件夹范围/范围搜索）；无 IPC、权限、CSP、
+  路径封闭、HTML 隔离或导出链路变化。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、28 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、59 个 Rust 测试（58 通过 + 1 个网络测试 ignored）、
+  Vite build 全部通过。
+- GitHub release workflow 在 macOS runner 上显式安装
+  `aarch64-apple-darwin` 并构建/签名 arm64 `.app`；1.8.0 的真实 WebView
+  selftest（6 篇示例、0 errors、1 条远程图 warning）仍适用于本版应用代码。
+
 ## [1.8.0] - 2026-11-12
 
 ### 新增（Added）

@@ -3363,7 +3363,7 @@ dependencies = [
 
 [[package]]
 name = "rustmd"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "getrandom 0.3.4",
  "libloading 0.8.9",
