@@ -7,7 +7,7 @@ import {
   captureHtmlPreview,
   setPreviewTheme,
   setImageContext,
-  inlineLocalImagesInHtml,
+  inlineLocalAssetsInHtml,
 } from './preview.js';
 import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
 import { bytesToDataUrl, dataUrlToBytes } from './imgutil.js';
@@ -1624,7 +1624,7 @@ async function runExport(kind) {
         // html2canvas in the hidden WebView requests local images in CORS
         // mode; inline them first so the strict rmd origin allowlist does not
         // drop vault images from the export.
-        const exportBody = await inlineLocalImagesInHtml(body);
+        const exportBody = await inlineLocalAssetsInHtml(body);
         const shot = await api.renderHtmlNote(
           state.dir,
           state.current,

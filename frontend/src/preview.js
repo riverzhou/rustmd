@@ -292,32 +292,57 @@ async function inlineLocalImagesForHtml(stage) {
   );
 }
 
-/// Inline local `<img>` sources before sending an HTML note to the hidden
-/// WebView renderer. The renderer's html2canvas uses `crossOrigin="anonymous"`,
-/// so its request would be CORS-mode from the rmdhtml origin; the strict `rmd`
-/// origin allowlist correctly rejects that. Data URLs are same-origin and
-/// preserve the image in PNG/PDF output.
-export async function inlineLocalImagesInHtml(source) {
+/// Inline local images, stylesheets and classic scripts before sending an
+/// HTML note to the hidden WebView renderer or the native preview iframe.
+///
+/// WebKitGTK/WKWebView send `Origin: null` for cross-origin classic scripts and
+/// stylesheets; the strict `rmd` origin allowlist intentionally rejects
+/// note-controlled origins. Inlining makes the page independent of those
+/// requests and works identically on WebView2/WebKitGTK/WKWebView.
+export async function inlineLocalAssetsInHtml(source) {
   const template = document.createElement('template');
   template.innerHTML = String(source || '');
-  const images = [...template.content.querySelectorAll('img')];
-  await Promise.all(
-    images.map(async (img) => {
-      const src = img.getAttribute('src') || '';
-      const abs = localImageAbsPath(src);
-      if (!abs) return;
-      try {
-        const image = await api.readLocalImage(abs);
-        img.removeAttribute('srcset');
-        img.setAttribute(
-          'src',
-          bytesToDataUrl(image.bytes, image.mime || guessImageMime(image.bytes))
-        );
-      } catch (err) {
-        console.warn('HTML 本地图片内联失败：', src, err);
-      }
-    })
-  );
+  const decode = (bytes) => new TextDecoder().decode(new Uint8Array(bytes));
+
+  const resolveAndRead = async (url) => {
+    const abs = localImageAbsPath(url);
+    if (!abs) return null;
+    return api.readLocalImage(abs);
+  };
+
+  // Stylesheets first (their order relative to scripts is preserved by
+  // replacing in place, but reading is independent).
+  for (const link of [...template.content.querySelectorAll('link[rel~="stylesheet"][href]')]) {
+    const file = await resolveAndRead(link.getAttribute('href') || '').catch(() => null);
+    if (!file) continue;
+    const style = document.createElement('style');
+    style.textContent = decode(file.bytes).replace(/<\/style/gi, '<\\/style');
+    link.replaceWith(style);
+  }
+
+  for (const script of [...template.content.querySelectorAll('script[src]')]) {
+    const src = script.getAttribute('src') || '';
+    const file = await resolveAndRead(src).catch(() => null);
+    if (!file) continue;
+    const inline = document.createElement('script');
+    for (const attr of [...script.attributes]) {
+      if (attr.name.toLowerCase() !== 'src') inline.setAttribute(attr.name, attr.value);
+    }
+    inline.textContent = decode(file.bytes).replace(/<\/script/gi, '<\\/script');
+    script.replaceWith(inline);
+  }
+
+  for (const img of [...template.content.querySelectorAll('img[src]')]) {
+    const src = img.getAttribute('src') || '';
+    const file = await resolveAndRead(src).catch(() => null);
+    if (!file) continue;
+    img.removeAttribute('srcset');
+    img.setAttribute(
+      'src',
+      bytesToDataUrl(file.bytes, file.mime || guessImageMime(file.bytes))
+    );
+  }
+
   return template.innerHTML;
 }
 
@@ -957,6 +982,7 @@ const HTML_NATIVE_LINK_SCRIPT = `<script>
 </script>`;
 
 async function buildNativeHtmlPreviewDocument(source) {
+  const prepared = await inlineLocalAssetsInHtml(source);
   const base = htmlPreviewBaseHref();
   const injection = [
     base ? `<base href="${escapeAttr(base)}">` : '',
@@ -965,7 +991,7 @@ async function buildNativeHtmlPreviewDocument(source) {
   ]
     .filter(Boolean)
     .join('\n');
-  return injectHtmlHead(source, injection);
+  return injectHtmlHead(prepared, injection);
 }
 
 /// Tauri path: render the note natively in a sandboxed iframe. This is fast

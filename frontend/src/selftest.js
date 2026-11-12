@@ -16,7 +16,7 @@ import {
   renderPreview,
   setImageContext,
   isRmdUrl,
-  inlineLocalImagesInHtml,
+  inlineLocalAssetsInHtml,
 } from './preview.js';
 import { exportPng, exportPdf, pdfFromPngDataUrl } from './export.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
@@ -438,7 +438,7 @@ export async function runSelfTest({ getState }) {
 
         try {
           const t1 = performance.now();
-          const exportBody = await inlineLocalImagesInHtml(body);
+          const exportBody = await inlineLocalAssetsInHtml(body);
           const shot = await api.renderHtmlNote(
             SELFTEST_EXAMPLES_DIR,
             meta.path,
