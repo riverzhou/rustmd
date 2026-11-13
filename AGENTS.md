@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.10.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.10.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.10.1` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.10.1 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -87,8 +87,11 @@ this file is the developer/agent contract.
   pinned vaults displayed first and never evicted), the current-folder/subfolder
   scope switch (`rustmd-include-subfolders`), multi-vault mode
   (`rustmd-multi-vault`: pinned vaults + the current one, aggregated note list,
-  per-vault folder trees), the 320 px sidebar with a draggable folders/tags ↔
-  note-list splitter (`rustmd-nav-height`), and the format badges (`MD` green /
+  per-vault folder trees), the resizable sidebar (320px default,
+  `rustmd-sidebar-width`, 220–680px) with a draggable right-edge handle, the
+  editor/preview divider (`rustmd-split`, 20–80%), the topbar
+  “reset layout widths” button, the folders/tags ↔ note-list splitter
+  (`rustmd-nav-height`), and the format badges (`MD` green /
   `HTML` blue / `CSV` amber / `TXT` grey / `JSON` violet) shown in both the note
   list and the topbar. The status bar shows the auto-detected encoding.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
@@ -108,6 +111,8 @@ this file is the developer/agent contract.
   a semantic per-type palette (group tints/rails, type/count pills, leaf
   type dots) and collapsible groups (no raw braces/commas). `main.js` imports the CSS; `preview.js`
   imports the raw string so exported files stay visually identical.
+- `frontend/src/layout.js` — pure bounds for the resizable sidebar width and
+  editor/preview split (covered by `node --test`).
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap 20, pinned entries that survive eviction, pinned-first display order,
   display name; covered by `node --test`).
@@ -306,12 +311,18 @@ If a new Tauri *plugin* is used:
   `read_meta`, `read_note`, `save_note_impl`, `create_note`, `rename_note`, the
   mock in `api.js`, and the per-note preview/export `kind` argument together.
   Data kinds share the no-front-matter compose path and the generic export
-  stage; keep `notelist.noteStemOf`, the smart alignment/width hints in
-  `dataformat.js`, the data display caps in `dataview.js`, and the badges in
-  `main.js`/`style.css` in sync. The export stage reuses the preview renderer,
-  so the caps (CSV 2000×100, TXT 5000×80, JSON 6000 nodes) apply to
-  HTML/PNG/PDF exports too; the visible truncation notice is part of the
-  contract.
+  stage; keep `notelist.noteStemOf`, the shared CSV/TXT table renderer,
+  `columnAlignments`/`columnWidthPlan`/`looksLikeHeaderRow` in `dataformat.js`,
+  and the badges in `main.js`/`style.css` in sync. There is intentionally no
+  row/column/node display cap: CSV/TXT/JSON render all content. `renderPreview`
+  gives data notes the `data-mode` class so they use the full preview width on
+  a 4K/200% viewport (about 1920×1080 CSS); narrow tables still shrink to content via
+  `.data-view { width: fit-content }`. Wide tables have synchronized top and
+  bottom horizontal scrollbars and a max-height scroll area with a sticky
+  header. In the app preview only, tables with at least 18 rows distribute spare
+  vertical viewport height across row heights; export/selftest containers must
+  stay content-sized. Exports must hide the top bar and must not inherit the
+  scroll box.
 - **Search**: `search_notes` searches body, heading, filename and tags, scoped
   by its `folder` argument (the selected/current folder; empty/null = vault
   root) and the `recursive` flag (the sidebar's “include subfolders” switch).
@@ -339,8 +350,10 @@ If a new Tauri *plugin* is used:
   (`inlineLocalAssetsInHtml`) before preview/export: WebKit sends
   `Origin: null` for CORS subresources and html2canvas uses CORS-mode image
   requests, both of which the strict `rmd` policy rejects.
-  `export.js` assumes the Markdown stage is 948 px wide (860 content + 2×44
-  padding) and adapts scale down to 0.25× for extremely tall notes.
+  `export.js` starts from a 948 px Markdown stage (860 content + 2×44 padding),
+  widens it to a data table's natural width, and adapts scale down to 0.25×
+  for extremely tall or wide captures; wide data tables deliberately fall back
+  from vector printing to the raster PDF.
   Markdown PDF export goes through `exportPdfVector` (`print_note_pdf`):
   keep the `.export-stage` markup print-friendly (the `@media print`
   block in `style.css` owns page hiding, page width and `break-inside`), and
@@ -392,8 +405,11 @@ If a new Tauri *plugin* is used:
   lives in `rustmd-multi-vault` (`on`/`off`). The aggregated list carries the
   note’s `vault`, and the folder sidebar renders one section per vault so equal
   relative folder paths stay independently selectable. The sidebar is 320 px
-  wide; the folders/tags block and the note list are separated by a draggable
-  grip. The folders/tags block is content-sized by default and capped at
+  wide by default and resizable with the handle on its right edge
+  (`rustmd-sidebar-width`, 220–680px, viewport-clamped); the editor/preview
+  split is resizable with the divider (`rustmd-split`, 20–80%). The topbar
+  reset button clears both preferences and restores 320px + 50/50. The
+  folders/tags block and the note list are separated by a draggable grip. The folders/tags block is content-sized by default and capped at
   `min(55%, 100vh - 274px)`, so the note list gets all remaining height; a
   drag/keyboard resize persists px as `rustmd-nav-height`, double-click or
   Enter resets to the content-sized default. Sort state is `rustmd-sort-key` +
@@ -464,7 +480,7 @@ If a new Tauri *plugin* is used:
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
   `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
-  script captures 1440×900 zh/en light/dark overview, the 320 px sidebar, a
+  script captures 1440×900 zh/en light/dark overview, a 336 px sidebar crop that includes the width handle, a
   900×900 multi-vault view and a 640×460 recent-vault switcher crop, plus
   full-window HTML/CSV/TXT/JSON and dark JSON format shots (`*-note*.png`, with
   `.en` variants). It seeds `rustmd-recent-dirs` with three demo folders (two

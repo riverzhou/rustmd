@@ -45,6 +45,14 @@ import {
   sortNotes,
 } from './notelist.js';
 import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SPLIT_DEFAULT_RATIO,
+  clampSidebarWidth,
+  clampSplitRatio,
+  parseStoredSplit,
+  sidebarWidthMax,
+} from './layout.js';
+import {
   RECENT_DIRS_MAX,
   addRecentDir,
   dirDisplayName,
@@ -148,6 +156,8 @@ const WINDOWS_PATHS = /windows/i.test(navigator.userAgent || '');
 const RECENT_DIRS_KEY = 'rustmd-recent-dirs';
 const NAV_HEIGHT_KEY = 'rustmd-nav-height';
 const NAV_MIN_HEIGHT = 96;
+const SIDEBAR_WIDTH_KEY = 'rustmd-sidebar-width';
+const SPLIT_KEY = 'rustmd-split';
 
 let recentDirs = loadRecentDirs();
 // Serialize root registration: overlapping loads must not leave an older
@@ -177,7 +187,9 @@ const onboardingEl = $('onboarding');
 const mainEl = $('main');
 const sidebarEl = document.querySelector('.sidebar');
 const sidebarNav = document.querySelector('.sidebar-nav');
+const sidebarResizer = $('sidebar-resizer');
 const navResizer = $('nav-resizer');
+const resetLayoutBtn = $('btn-reset-layout');
 const dirInput = $('dir-input');
 const onboardingError = $('onboarding-error');
 const recentDirsEl = $('recent-dirs');
@@ -385,6 +397,12 @@ $('btn-theme').addEventListener('click', () => {
 
 // ---------------- View mode ----------------
 
+function requestPreviewLayout() {
+  requestAnimationFrame(() => {
+    previewEl.dispatchEvent(new CustomEvent('rustmd:layout'));
+  });
+}
+
 function applyView(mode) {
   state.view = mode;
   workspace.dataset.mode = mode;
@@ -392,6 +410,7 @@ function applyView(mode) {
   for (const btn of $('view-switch').querySelectorAll('button')) {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   }
+  if (mode !== 'edit') requestPreviewLayout();
 }
 
 $('view-switch').addEventListener('click', (e) => {
@@ -632,6 +651,205 @@ function initNavResizer() {
       updateNavAria();
     }, 120);
   });
+}
+
+// ---------------- Horizontal layout widths ----------------
+
+function sidebarWidthNow() {
+  if (!sidebarEl) return SIDEBAR_DEFAULT_WIDTH;
+  const rect = sidebarEl.getBoundingClientRect().width;
+  if (rect > 0) return Math.round(rect);
+  const raw = Number.parseFloat(
+    getComputedStyle(mainEl).getPropertyValue('--sidebar-width')
+  );
+  return Number.isFinite(raw) ? Math.round(raw) : SIDEBAR_DEFAULT_WIDTH;
+}
+
+function applySidebarWidth(value, { persist = false, clamp = true } = {}) {
+  if (!sidebarEl) return SIDEBAR_DEFAULT_WIDTH;
+  const max = sidebarWidthMax(window.innerWidth);
+  const preferred = clamp
+    ? clampSidebarWidth(value, window.innerWidth)
+    : Math.max(220, Math.round(Number(value) || SIDEBAR_DEFAULT_WIDTH));
+  // Keep an oversized stored preference in the CSS variable so shrinking and
+  // then growing the window restores the user's width. CSS max-width clamps
+  // the displayed box; ARIA reports the clamped box, not the preference.
+  mainEl.style.setProperty('--sidebar-width', `${preferred}px`);
+  if (sidebarResizer) {
+    sidebarResizer.setAttribute('aria-valuemin', '220');
+    sidebarResizer.setAttribute('aria-valuemax', String(max));
+    sidebarResizer.setAttribute(
+      'aria-valuenow',
+      String(Math.min(preferred, max))
+    );
+  }
+  if (persist) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(preferred));
+  return preferred;
+}
+
+function resetSidebarWidth({ persist = true } = {}) {
+  localStorage.removeItem(SIDEBAR_WIDTH_KEY);
+  const width = applySidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+  if (persist) localStorage.removeItem(SIDEBAR_WIDTH_KEY);
+  return width;
+}
+
+function splitRatioNow() {
+  const basis = Number.parseFloat(editorHolder?.style.flexBasis || '');
+  if (Number.isFinite(basis)) return clampSplitRatio(basis / 100);
+  return SPLIT_DEFAULT_RATIO;
+}
+
+function applySplitRatio(value, { persist = false } = {}) {
+  const ratio = clampSplitRatio(value);
+  editorHolder.style.flexBasis = `${(ratio * 100).toFixed(2)}%`;
+  divider.setAttribute('aria-valuemin', '20');
+  divider.setAttribute('aria-valuemax', '80');
+  divider.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+  if (persist) localStorage.setItem(SPLIT_KEY, `${(ratio * 100).toFixed(2)}%`);
+  return ratio;
+}
+
+function resetSplitRatio({ persist = true } = {}) {
+  localStorage.removeItem(SPLIT_KEY);
+  const ratio = applySplitRatio(SPLIT_DEFAULT_RATIO);
+  if (persist) localStorage.removeItem(SPLIT_KEY);
+  return ratio;
+}
+
+function resetLayoutWidths() {
+  resetSidebarWidth();
+  resetSplitRatio();
+  toast(t('toast.layoutReset'));
+}
+
+let horizontalResizersReady = false;
+
+function initHorizontalResizers() {
+  if (horizontalResizersReady) return;
+  horizontalResizersReady = true;
+  if (sidebarResizer && sidebarEl) {
+    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    applySidebarWidth(
+      Number.isFinite(storedWidth) && storedWidth > 0
+        ? storedWidth
+        : SIDEBAR_DEFAULT_WIDTH,
+      { clamp: false }
+    );
+
+    sidebarResizer.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      sidebarResizer.focus({ preventScroll: true });
+      const startX = event.clientX;
+      const startWidth = sidebarEl.getBoundingClientRect().width;
+      let moved = false;
+      sidebarResizer.classList.add('dragging');
+      document.body.classList.add('sidebar-resizing');
+      const onMove = (ev) => {
+        if (!moved && Math.abs(ev.clientX - startX) <= 2) return;
+        moved = true;
+        applySidebarWidth(startWidth + ev.clientX - startX);
+      };
+      const onUp = () => {
+        sidebarResizer.classList.remove('dragging');
+        document.body.classList.remove('sidebar-resizing');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        if (moved) {
+          applySidebarWidth(sidebarWidthNow(), { persist: true });
+          requestPreviewLayout();
+        }
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+
+    sidebarResizer.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 48 : 16;
+      let next = null;
+      if (event.key === 'ArrowLeft') next = sidebarWidthNow() - step;
+      else if (event.key === 'ArrowRight') next = sidebarWidthNow() + step;
+      else if (event.key === 'Home' || event.key === 'Enter') {
+        event.preventDefault();
+        resetSidebarWidth();
+        return;
+      }
+      if (next === null) return;
+      event.preventDefault();
+      applySidebarWidth(next, { persist: true });
+    });
+
+    sidebarResizer.addEventListener('dblclick', () => resetSidebarWidth());
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!sidebarResizer) return;
+        sidebarResizer.setAttribute(
+          'aria-valuemax',
+          String(sidebarWidthMax(window.innerWidth))
+        );
+        sidebarResizer.setAttribute('aria-valuenow', String(sidebarWidthNow()));
+      }, 120);
+    });
+  }
+
+  if (editorHolder && divider) {
+    const savedSplit = parseStoredSplit(localStorage.getItem(SPLIT_KEY));
+    applySplitRatio(savedSplit ?? SPLIT_DEFAULT_RATIO);
+
+    divider.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      divider.focus({ preventScroll: true });
+      const rect = workspace.getBoundingClientRect();
+      const startX = event.clientX;
+      const startRatio = splitRatioNow();
+      let moved = false;
+      divider.classList.add('dragging');
+      document.body.classList.add('divider-resizing');
+      const onMove = (ev) => {
+        if (!moved && Math.abs(ev.clientX - startX) <= 2) return;
+        moved = true;
+        const ratio = (ev.clientX - rect.left) / rect.width;
+        applySplitRatio(ratio);
+      };
+      const onUp = () => {
+        divider.classList.remove('dragging');
+        document.body.classList.remove('divider-resizing');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        if (moved) applySplitRatio(splitRatioNow(), { persist: true });
+        else applySplitRatio(startRatio, { persist: true });
+        requestPreviewLayout();
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+
+    divider.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 0.05 : 0.02;
+      let next = null;
+      if (event.key === 'ArrowLeft') next = splitRatioNow() - step;
+      else if (event.key === 'ArrowRight') next = splitRatioNow() + step;
+      else if (event.key === 'Home' || event.key === 'Enter') {
+        event.preventDefault();
+        resetSplitRatio();
+        return;
+      }
+      if (next === null) return;
+      event.preventDefault();
+      applySplitRatio(next, { persist: true });
+    });
+
+    divider.addEventListener('dblclick', () => resetSplitRatio());
+  }
+
+  if (resetLayoutBtn) {
+    resetLayoutBtn.addEventListener('click', resetLayoutWidths);
+  }
 }
 
 // ---------------- Keyboard shortcuts ----------------
@@ -1102,6 +1320,7 @@ async function enterDir(dir, { toastErrors = false } = {}) {
     onboardingEl.classList.add('hidden');
     mainEl.classList.remove('hidden');
     initNavResizer();
+    initHorizontalResizers();
     // loadNotes rescans every active vault (multi-vault mode) and registers
     // the roots with the `rmd` image protocol.
     await loadNotes();
@@ -2804,32 +3023,6 @@ async function runExport(kind) {
 }
 
 $('btn-export').addEventListener('click', openExportMenu);
-
-// ---------------- Divider drag ----------------
-
-divider.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  divider.classList.add('dragging');
-  const content = mainEl.querySelector('.content');
-  const onMove = (ev) => {
-    const rect = content.getBoundingClientRect();
-    const ratio = (ev.clientX - rect.left) / rect.width;
-    const clamped = Math.min(0.75, Math.max(0.25, ratio));
-    editorHolder.style.flexBasis = `${clamped * 100}%`;
-  };
-  const onUp = () => {
-    divider.classList.remove('dragging');
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-    const basis = editorHolder.style.flexBasis;
-    if (basis) localStorage.setItem('rustmd-split', basis);
-  };
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-});
-
-const savedSplit = localStorage.getItem('rustmd-split');
-if (savedSplit) editorHolder.style.flexBasis = savedSplit;
 
 // ---------------- Unsaved changes guard ----------------
 

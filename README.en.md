@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.10.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.10.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -25,7 +25,7 @@ Dark theme and sidebar details:
 
 <img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, folders, sort buttons, format badges, filenames and tags" width="320">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, width handle, folders, sort buttons, format badges, filenames and tags" width="336">
 
 Multi-vault (pinned vaults + the current one, folder tree grouped per vault):
 
@@ -41,7 +41,7 @@ HTML notes render through the built-in WebView, including page styles, scripts, 
 
 <img src="docs/screenshots/html-note.en.png" alt="HTML note rendered in rustmd: HTML source on the left, full WebView page on the right" width="880">
 
-CSV tables: short and numeric columns shrink to content, long text columns take the remaining width; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable:
+CSV tables: short and numeric columns shrink to content, while long text columns widen up to a 64-character cap; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable:
 
 <img src="docs/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints" width="880">
 
@@ -101,7 +101,8 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
   (notes, folders, tags, search and counts) without a restart; an open note
   changed on disk is reloaded when clean, and a deleted note is closed safely
   (unsaved edits are kept).
-- **Adjustable sidebar split** — the sidebar is 320 px wide by default; the folders/tags area is content-sized and the note list takes all remaining height, with a draggable divider between them. Dragging adjusts it live, double-clicking or pressing Enter on the divider restores the content-sized default, and a custom height is remembered.
+- **Adjustable sidebar inner height** — the folders/tags area is content-sized and the note list takes all remaining height, with a draggable divider between them. Dragging adjusts it live, double-clicking or pressing Enter on the divider restores the content-sized default, and a custom height is remembered.
+- **Adjustable widths + one-click reset** — drag the sidebar’s right edge to resize the navigation (320px default, 220px minimum, viewport-aware, up to 680px on 4K), and drag the editor/preview divider to change the split (20%–80%, default 50/50). A topbar **Reset layout widths** button restores 320px + 50/50; both preferences persist locally.
 - **Current folder by default** — the note list, search, folder counts and tag cloud cover only notes directly in the selected folder (the vault root on launch); turn on **Include subfolders** below the search box to recurse into the whole subtree, and the choice is remembered.
 - **Folder tree** with nested folders, empty folders, collapse/expand.
 - **Subfolders collapsed by default**; the expanded state is remembered.
@@ -146,18 +147,18 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 ### CSV / TXT / JSON previews
 
 - `.csv` / `.txt` / `.json` appear with Markdown and HTML notes in the folder tree, note list, search results and folder counts, with **CSV (amber) / TXT (grey) / JSON (violet)** badges.
-- **CSV tables** sniff comma, tab, semicolon or pipe delimiters and support quoted fields, embedded newlines and doubled quotes. The first row is the header. Column widths adapt to content: numeric, date, boolean and short-label columns stay compact while long text columns get the remaining width. Alignment is inferred from the data (numbers, dates, currency and booleans; headers use the same alignment as their cells), with alternating row bands for horizontal scanning, subtle per-column ink tints for vertical tracking, thin separators and hover highlighting. Wide tables scroll horizontally.
-- **TXT tab alignment** splits each line at tab stops into aligned columns while preserving spaces. Lines without tabs span the full row; leading prose lines are skipped, and the first multi-column row is treated as the header for alignment inference. Smart column widths, alternating row bands and per-column ink tints, a monospace font and right-aligned numeric columns make plain text comfortable to scan.
+- **CSV tables** sniff comma, tab, semicolon or pipe delimiters and support quoted fields, embedded newlines and doubled quotes. The first row is the header. Column widths adapt to content: numeric, date, boolean and short-label columns stay compact while long text columns widen up to a 64-character cap (remaining width is not forcibly distributed). Alignment is inferred from the data (numbers, dates, currency and booleans; headers use the same alignment as their cells), with alternating row bands for horizontal scanning, subtle per-column ink tints for vertical tracking, thin separators and hover highlighting. Wide tables scroll horizontally.
+- **TXT tab alignment** splits each line at tab stops into aligned columns while preserving spaces. Lines without tabs span the full row, and leading prose lines are skipped. The first multi-column row becomes a header only when every cell is text and a later row contains a number/date/boolean; a first row with numeric values (such as stock-signal logs) stays a data row instead of being bolded. Smart column widths, alternating row bands and per-column ink tints, a monospace font and right-aligned numeric columns make plain text comfortable to scan.
 - **JSON inspector** shows the root type, key/item counts and node count, with collapsible object/array groups (semantic header tints, rails and type pills), key-and-value columns, type/count labels, and a dedicated color plus type dot for strings, numbers, booleans and null. Invalid JSON shows the parse error plus the raw source.
-- **Display caps**: to keep huge files responsive, previews (and exports rendered from them) show at most 2000 CSV rows / 100 columns, 5000 TXT lines / 80 tab columns, and 6000 JSON nodes. A visible truncation notice is included in the preview and in HTML/PNG/PDF exports.
+- **Complete data views**: CSV/TXT/JSON are no longer truncated. Data views use the full preview width; a 4K display at 200% scaling (about a 1920×1080 CSS viewport) can show many more columns, while narrow tables still shrink to content instead of forcing a full-width grid. Wide tables get synchronized horizontal scrollbars above and below the table; when there is spare height, tables with 18+ rows distribute it across row heights, while taller tables scroll inside the card with a sticky header.
 - **Automatic encoding detection** decodes BOM → UTF-8 → GBK → GB18030 and shows the detected encoding in the status bar. Valid UTF-8 always wins. A rare legacy GBK byte stream can itself be valid UTF-8 (roughly 1,920 common CJK pairs); such ambiguous short files are read as UTF-8, so convert them externally to UTF-8 if they look garbled. Saving keeps the original codec and BOM; a GBK file that gains a four-byte character (e.g. an emoji) is compatibly upgraded to GB18030 and the status bar updates. Repeated UTF-8 BOMs are normalized on read and never accumulate on save.
 - Data notes have no front matter and no tag editor. Rename keeps the extension, and the new-note menu offers all three data formats.
 
 ### Export
 
-- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); CSV/TXT/JSON exports keep the same smart widths, row-band/column-ink and JSON-inspector styling; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized. Data exports include the same truncation notice if a display cap was hit.
-- **PNG** — 3× rendering (~288 DPI) for Markdown, CSV, TXT and JSON (with adaptive scaling for very long content); HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
-- **PDF** — Markdown, CSV, TXT, JSON and HTML notes are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. Platforms without native printing fall back to the block-aware lossless PNG slices.
+- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); CSV/TXT/JSON exports keep the same smart widths, row-band/column-ink and JSON-inspector styling; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized. Data HTML exports keep the complete content.
+- **PNG** — Markdown renders at 3× (~288 DPI); data notes widen the off-screen stage to the table’s natural width and reduce scale when the canvas cap would otherwise clip right-hand columns; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
+- **PDF** — Markdown, HTML and narrow data tables are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. **Data tables wider than the ~640 CSS px printable area automatically fall back to a raster PDF on a widened stage**, preserving every column but not selectable text; platforms without native printing fall back to block-aware lossless PNG slices.
 - For PNG exports, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNGs are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched. PDFs go through the system print pipeline described above.
 - The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 

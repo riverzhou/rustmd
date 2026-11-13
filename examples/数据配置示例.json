@@ -1,12 +1,7 @@
 {
   "app": "rustmd",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "features": ["csv", "txt", "json"],
-  "limits": {
-    "rows": 2000,
-    "columns": 100,
-    "jsonNodes": 6000
-  },
   "theme": {
     "light": true,
     "dark": true

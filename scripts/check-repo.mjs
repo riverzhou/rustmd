@@ -36,6 +36,8 @@ const REQUIRED = [
   'frontend/src/editor.js',
   'frontend/src/notelist.js',
   'frontend/src/markdown.js',
+  'frontend/src/layout.js',
+  'frontend/src/layout.test.js',
   'frontend/src/dataformat.js',
   'frontend/src/dataformat.test.js',
   'frontend/src/dataview.js',

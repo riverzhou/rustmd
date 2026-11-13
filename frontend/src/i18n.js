@@ -44,6 +44,7 @@ export const MESSAGES = {
 
     'sidebar.newNote': 'New note',
     'sidebar.refresh': 'Refresh notes from disk',
+    'sidebar.resizeWidth': 'Drag to resize the sidebar; double-click or Enter to reset',
     'sidebar.changeDir': 'Switch notes vault',
     'sidebar.searchPlaceholder': 'Search title, filename, tag or content…',
     'sidebar.folders': 'Folders',
@@ -76,6 +77,7 @@ export const MESSAGES = {
 
     'topbar.titlePlaceholder': 'Untitled',
     'topbar.toggleSidebar': 'Show/hide note list (Ctrl+B)',
+    'topbar.resetLayout': 'Reset layout widths',
     'topbar.showSidebar': 'Show note list (Ctrl+B)',
     'topbar.move': 'Move to folder',
     'topbar.rename': 'Rename',
@@ -86,6 +88,7 @@ export const MESSAGES = {
     'topbar.wrapOff': 'Auto wrap: off (click to enable)',
     'topbar.fullscreenOn': 'Full screen (F11)',
     'topbar.fullscreenOff': 'Exit full screen (F11)',
+    'workspace.resizeSplit': 'Drag to resize editor/preview; double-click or Enter to reset',
 
     'view.edit': 'Edit',
     'view.split': 'Split',
@@ -195,6 +198,7 @@ export const MESSAGES = {
     'toast.exportingPng': 'Generating PNG…',
     'toast.exportingPdf': 'Generating PDF…',
     'toast.exportFailed': 'Export failed: {msg}',
+    'toast.layoutReset': 'Default layout widths restored',
     'toast.downloadStarted': 'Download started',
     'toast.exportedTo': 'Exported to {path}',
 
@@ -223,6 +227,7 @@ export const MESSAGES = {
     'data.txtColumns': (v) =>
       `${v.cols} tab ${v.cols === 1 ? 'column' : 'columns'}`,
     'data.tableLabel': 'Data table',
+    'data.tableScroll': 'Horizontal table scroll',
     'data.empty': 'Empty file',
     'data.emptyHint':
       'This file has no content yet. Type in the editor to preview it.',
@@ -283,6 +288,7 @@ export const MESSAGES = {
 
     'sidebar.newNote': '新建笔记',
     'sidebar.refresh': '从磁盘刷新笔记列表',
+    'sidebar.resizeWidth': '拖动调整左侧栏宽度；双击或 Enter 恢复默认',
     'sidebar.changeDir': '切换笔记库',
     'sidebar.searchPlaceholder': '搜索标题、文件名、标签或内容…',
     'sidebar.folders': '文件夹',
@@ -311,6 +317,7 @@ export const MESSAGES = {
 
     'topbar.titlePlaceholder': '无标题',
     'topbar.toggleSidebar': '隐藏/显示笔记列表 (Ctrl+B)',
+    'topbar.resetLayout': '恢复默认布局宽度',
     'topbar.showSidebar': '显示笔记列表 (Ctrl+B)',
     'topbar.move': '移动到文件夹',
     'topbar.rename': '重命名',
@@ -321,6 +328,7 @@ export const MESSAGES = {
     'topbar.wrapOff': '自动折行：关（点击开启）',
     'topbar.fullscreenOn': '全屏 (F11)',
     'topbar.fullscreenOff': '退出全屏 (F11)',
+    'workspace.resizeSplit': '拖动调整编辑/预览宽度；双击或 Enter 恢复默认',
 
     'view.edit': '编辑',
     'view.split': '分栏',
@@ -422,6 +430,7 @@ export const MESSAGES = {
     'toast.exportingPng': '正在生成 PNG…',
     'toast.exportingPdf': '正在生成 PDF…',
     'toast.exportFailed': '导出失败：{msg}',
+    'toast.layoutReset': '已恢复默认布局宽度',
     'toast.downloadStarted': '已开始下载',
     'toast.exportedTo': '已导出到 {path}',
 
@@ -446,6 +455,7 @@ export const MESSAGES = {
     'data.txtSummary': (v) => `${v.lines} 行`,
     'data.txtColumns': (v) => `${v.cols} 个制表符列`,
     'data.tableLabel': '数据表格',
+    'data.tableScroll': '表格横向滚动',
     'data.empty': '空文件',
     'data.emptyHint': '文件还没有内容，在编辑器中输入后即可预览。',
     'data.truncatedRows': (v) => `仅显示前 ${v.shown} 行，共 ${v.total} 行。`,

@@ -145,6 +145,7 @@ localStorage.setItem('rustmd-wrap', 'on');
 localStorage.setItem('rustmd-theme', 'light');
 localStorage.setItem('rustmd-lang', 'zh-CN');
 localStorage.removeItem('rustmd-split');
+localStorage.removeItem('rustmd-sidebar-width');
 localStorage.removeItem('rustmd-dir');
 localStorage.removeItem('rustmd-multi-vault');
 localStorage.removeItem('rustmd-nav-height');
@@ -244,7 +245,7 @@ async function captureFormats(suffix) {
 await setLang('zh-CN');
 await setTheme('light');
 await capture('overview', null);
-await capture('sidebar', { x: 0, y: 0, width: 320, height: 900 });
+await capture('sidebar', { x: 0, y: 0, width: 336, height: 900 });
 await setTheme('dark');
 await capture('dark', null);
 
@@ -253,7 +254,7 @@ await captureFormats('');
 await setLang('en');
 await openNote(NOTE, 'markdown');
 await capture('overview.en', null);
-await capture('sidebar.en', { x: 0, y: 0, width: 320, height: 900 });
+await capture('sidebar.en', { x: 0, y: 0, width: 336, height: 900 });
 await setTheme('dark');
 await capture('dark.en', null);
 await setTheme('light');

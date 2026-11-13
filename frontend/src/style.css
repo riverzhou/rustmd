@@ -581,6 +581,7 @@ body[data-theme='dark'] .btn.primary:hover {
 
 /* ============ Layout ============ */
 .layout {
+  --sidebar-width: 320px;
   display: flex;
   height: 100vh;
 }
@@ -602,19 +603,71 @@ body[data-theme='dark'] .btn.primary:hover {
 
 /* ============ Sidebar ============ */
 .sidebar {
-  width: 320px;
-  min-width: 260px;
-  max-width: 460px;
+  flex: 0 0 var(--sidebar-width, 320px);
+  width: var(--sidebar-width, 320px);
+  min-width: 220px;
+  max-width: min(680px, 42vw);
   display: flex;
   flex-direction: column;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
 }
 
+.sidebar-resizer {
+  position: relative;
+  flex: 0 0 5px;
+  width: 5px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  z-index: 4;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 38px;
+  border-radius: 2px;
+  background: var(--border);
+  transform: translate(-50%, -50%);
+  transition: background 0.12s, height 0.12s;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer.dragging::after {
+  height: 72px;
+  background: var(--accent);
+}
+
+.sidebar-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.sidebar-resizing .html-preview-frame {
+  pointer-events: none;
+}
+
+.layout.sidebar-collapsed .sidebar-resizer {
+  display: none;
+}
+
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 4px;
   padding: 12px 14px 8px;
 }
 
@@ -635,6 +688,8 @@ body[data-theme='dark'] .btn.primary:hover {
 .header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
 }
 
@@ -1397,7 +1452,16 @@ mark {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.topbar-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .view-switch {
@@ -1497,9 +1561,23 @@ mark {
 .divider {
   flex: 0 0 5px;
   cursor: col-resize;
+  touch-action: none;
   background: transparent;
   border-left: 1px solid var(--border);
   transition: background 0.15s;
+}
+
+.divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+body.divider-resizing {
+  user-select: none;
+}
+
+body.divider-resizing .html-preview-frame {
+  pointer-events: none;
 }
 
 .divider:hover,
@@ -1809,7 +1887,8 @@ mark {
   padding: 0;
 }
 
-.markdown-body.html-mode {
+.markdown-body.html-mode,
+.markdown-body.data-mode {
   max-width: none;
 }
 
@@ -1838,6 +1917,10 @@ mark {
   color: #7a1f1f;
   font-size: 12.5px;
   line-height: 1.6;
+}
+
+.markdown-body.data-mode {
+  margin: 0;
 }
 
 .html-static-body {
@@ -2137,4 +2220,20 @@ mark {
 .modal-item.current {
   color: var(--text-faint);
   cursor: default;
+}
+
+/* Narrow desktop windows (Tauri minimum is 900px): the topbar actions are
+   wider than the remaining content when the sidebar is expanded. Put them on
+   a second row instead of clipping the last buttons; the action strip can
+   still scroll if a future control makes it even wider. */
+@media (max-width: 1100px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .topbar-actions {
+    flex: 1 0 100%;
+    justify-content: flex-end;
+  }
 }

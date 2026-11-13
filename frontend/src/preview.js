@@ -1198,6 +1198,7 @@ export async function captureHtmlPreview(source) {
  */
 export function renderPreview(source, container, kind = 'markdown') {
   ensureMermaid();
+  container.classList.remove('data-mode');
   if (kind === 'html') {
     return api.isTauri
       ? renderHtmlNativeInto(container, source)
@@ -1209,9 +1210,14 @@ export function renderPreview(source, container, kind = 'markdown') {
     htmlRenderSeq += 1;
     disposeNativeHtmlPreview(container);
     disposeHtmlControl(container);
+    // Data notes are the one view that should consume the whole preview pane:
+    // on a 4K display an 18-column table otherwise wastes most of the window.
+    // Narrow tables still shrink to content via `.data-view { width: fit-content }`.
+    container.classList.add('data-mode');
     renderDataView(container, kind, source);
     return undefined;
   }
+  container.classList.remove('data-mode');
   return renderMarkdownInto(container, source);
 }
 

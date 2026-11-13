@@ -5,11 +5,13 @@ import {
   buildTextRows,
   columnAlignments,
   columnWidthHints,
+  columnWidthPlan,
   detectDelimiter,
   displayWidth,
   formatBytes,
   isNumericCell,
   jsonStats,
+  looksLikeHeaderRow,
   parseDelimited,
 } from './dataformat.js';
 
@@ -146,5 +148,62 @@ test('column width hints compact numbers/short labels and widen text', () => {
   assert.deepEqual(
     columnWidthHints([], [['a\nb']], 1, ['left']),
     ['wide']
+  );
+});
+
+test('column width plan pads content and caps prose columns', () => {
+  const header = ['代码', '名称', '价格', '信号'];
+  const rows = [
+    ['SZ300473', '德尔股份', '0.8607', '20日+63.2% · 截面·成交额95% · 成交额14.4亿'],
+    ['SH688585', '上纬新材', '0.8701', '日内低点-11.4% · 截面·股价95% · 成交额33.5亿'],
+  ];
+  const widths = columnWidthPlan(header, rows, 4, [
+    'left',
+    'left',
+    'right',
+    'left',
+  ]);
+  assert.equal(widths.length, 4);
+  assert.ok(widths[0] >= displayWidth('SZ300473') + 2);
+  assert.ok(widths[1] >= displayWidth('德尔股份') + 2);
+  assert.ok(widths[2] <= 22);
+  assert.ok(widths[3] <= 64);
+  assert.ok(widths[3] >= 20);
+});
+
+test('compact numeric/date columns fit long header labels and timestamps', () => {
+  const header = ['累计成交额（亿元）', '更新时间'];
+  const rows = [
+    ['123.45', '2026-11-13 10:42:31'],
+    ['98.7', '2026-11-12 23:59:59'],
+  ];
+  const widths = columnWidthPlan(header, rows, 2, ['right', 'right']);
+  assert.ok(widths[0] >= displayWidth(header[0]) + 1);
+  assert.ok(widths[1] >= displayWidth(rows[0][1]) + 1);
+  assert.ok(widths.every((width) => width <= 22));
+});
+
+test('TXT header detection ignores stock data but recognizes a text header', () => {
+  const stock = [
+    ['SZ300473', '德尔股份', '0.8607', 'xgboost'],
+    ['SH688585', '上纬新材', '0.8701', 'lightgbm'],
+  ];
+  assert.equal(looksLikeHeaderRow(stock, 0, 4), false);
+  const table = [
+    ['名称', '数量', '启用'],
+    ['苹果', '12', 'true'],
+    ['香蕉', '8', 'false'],
+  ];
+  assert.equal(looksLikeHeaderRow(table, 0, 3), true);
+  assert.equal(
+    looksLikeHeaderRow(
+      [
+        ['甲', '乙'],
+        ['丙', '丁'],
+      ],
+      0,
+      2
+    ),
+    false
   );
 });

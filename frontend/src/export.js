@@ -18,15 +18,21 @@ const CONTENT_WIDTH = 860; // matches .markdown-body max-width
 const PAD_TOP = 48; // .export-stage top padding (48px 44px 64px)
 const SCALE = 3; // 3 * 96 px/in ≈ 288 DPI
 const MAX_CANVAS_HEIGHT = 30000; // device-px cap; below WebView canvas limits
+const MAX_CANVAS_WIDTH = 30000;
 const MIN_SCALE = 0.25; // very long notes stay usable instead of failing
 const PDF_PAGE_HEIGHT = 1340; // css px per PDF page (A4-ish aspect at 948 px wide)
 
 /// Export raster scale, reduced for very long notes to keep the canvas under
 /// MAX_CANVAS_HEIGHT device pixels.
-function exportScale(cssHeight) {
-  return cssHeight * SCALE > MAX_CANVAS_HEIGHT
-    ? Math.max(MIN_SCALE, MAX_CANVAS_HEIGHT / cssHeight)
-    : SCALE;
+function exportScale(cssHeight, cssWidth = 0) {
+  let scale = SCALE;
+  if (cssHeight > 0 && cssHeight * scale > MAX_CANVAS_HEIGHT) {
+    scale = MAX_CANVAS_HEIGHT / cssHeight;
+  }
+  if (cssWidth > 0 && cssWidth * scale > MAX_CANVAS_WIDTH) {
+    scale = Math.min(scale, MAX_CANVAS_WIDTH / cssWidth);
+  }
+  return Math.max(MIN_SCALE, scale);
 }
 
 function buildStage(source, kind) {
@@ -241,8 +247,18 @@ async function renderToCanvas(source, kind = 'markdown') {
     normalizeTaskCheckboxes(stage);
     // Pin the article width explicitly (defensive): the stage lives outside
     // .content, so don't rely on the cascade — CONTENT_WIDTH matches
-    // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding.
-    stage.firstElementChild.style.maxWidth = `${CONTENT_WIDTH}px`;
+    // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding. A wide
+    // data table is allowed to widen the whole capture; otherwise html2canvas
+    // would clip every column past the first ~860 CSS px.
+    const dataTable = stage.querySelector('.data-table');
+    const contentWidth = dataTable
+      ? Math.max(
+          CONTENT_WIDTH,
+          Math.ceil(dataTable.getBoundingClientRect().width)
+        )
+      : CONTENT_WIDTH;
+    stage.style.width = `${contentWidth + 88}px`;
+    stage.firstElementChild.style.maxWidth = `${contentWidth}px`;
     // WebKitGTK can leave an intrinsic-width image unconstrained in the
     // off-screen stage, which crops wide charts at the canvas edge. Pin every
     // image to the content width before html2canvas measures the page.
@@ -257,12 +273,15 @@ async function renderToCanvas(source, kind = 'markdown') {
     // SVG images must be bitmaps before html2canvas draws them (see above).
     // Rasterize at the scale the canvas will use; the frozen image boxes keep
     // the stage height unchanged, but measure again in case of rounding.
-    await rasterizeSvgImages(stage, exportScale(stage.offsetHeight));
+    await rasterizeSvgImages(
+      stage,
+      exportScale(stage.offsetHeight, stage.offsetWidth)
+    );
     await freezeImagesAsCanvas(stage);
     const cssWidth = stage.offsetWidth;
     const cssHeight = stage.offsetHeight;
     // Keep the canvas bounded for very long notes (scale may drop below 3).
-    const scale = exportScale(cssHeight);
+    const scale = exportScale(cssHeight, cssWidth);
     const canvas = await html2canvas(stage, {
       scale,
       backgroundColor: getComputedStyle(stage).backgroundColor,
@@ -370,6 +389,13 @@ export async function exportPdfVector(source, kind = 'markdown', title = '') {
   try {
     await ready;
     normalizeTaskCheckboxes(stage);
+    const dataTable = stage.querySelector('.data-table');
+    if (dataTable && dataTable.getBoundingClientRect().width > 640) {
+      // A4 portrait cannot hold a 10–18 column data table without clipping.
+      // Let exportNote fall back to the raster PDF, whose stage can widen to
+      // the table instead of cutting columns off.
+      throw new Error('wide data table uses the raster PDF path');
+    }
     // Vault/remote images become data URLs (same-origin, already decoded), so
     // the print snapshot never races the network or the `rmd` protocol.
     await inlineRemoteImages(stage);

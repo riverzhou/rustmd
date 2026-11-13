@@ -4,6 +4,8 @@
 
 .data-view {
   margin: 0 0 20px;
+  width: fit-content;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -59,29 +61,108 @@
 }
 
 .data-view .data-table-scroll {
-  overflow-x: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 170px);
+  overflow: auto;
+  overscroll-behavior: contain;
   outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-faint) transparent;
 }
 
-.data-view .data-table-scroll:focus-visible {
+.data-view .data-table-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.data-view .data-table-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+.data-view .data-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.data-view .data-table-scroll:focus-visible,
+.data-view .data-hscroll:focus-visible {
   box-shadow: inset 0 0 0 2px var(--accent-soft-2);
+}
+
+/* On 4K-at-200% (about 1920 CSS px) a little more type and row height keeps
+   the card from ending in a large empty strip while remaining comfortable. */
+@media (min-width: 1680px) {
+  .data-view .data-table {
+    font-size: 14.5px;
+  }
+
+  .data-view .data-table th,
+  .data-view .data-table td {
+    padding: 9px 10px;
+  }
+
+  .markdown-body.data-mode .data-view {
+    margin-bottom: 0;
+  }
+}
+
+/* Top horizontal scrollbar (kept in sync with the table's bottom bar by JS). */
+.data-view .data-hscroll {
+  height: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-faint) transparent;
+}
+
+.data-view .data-hscroll[hidden] {
+  display: none;
+}
+
+.data-view .data-hscroll-spacer {
+  height: 1px;
+}
+
+.data-view .data-hscroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.data-view .data-hscroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+.data-view .data-hscroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .data-view .data-table {
   display: table;
-  width: 100%;
-  min-width: max(100%, calc(var(--data-cols, 4) * 72px));
+  width: max-content;
+  min-width: 0;
+  table-layout: fixed;
   margin: 0;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 13px;
+  font-size: clamp(13px, 0.72vw, 14.5px);
   line-height: 1.55;
+}
+
+.data-view-txt .data-table {
+  font-family: var(--font-mono);
+  font-size: clamp(12.5px, 0.7vw, 14px);
 }
 
 .data-view .data-table th,
 .data-view .data-table td {
-  max-width: 420px;
-  padding: 8px 14px;
+  max-width: none;
+  padding: 6px 10px;
   border: 0;
   border-bottom: 1px solid var(--data-grid);
   text-align: left;
@@ -92,32 +173,14 @@
 }
 
 .data-view .data-table th {
-  max-width: 320px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
   color: var(--text);
   background: var(--code-bg);
   border-bottom-color: var(--border);
   font-weight: 650;
   white-space: nowrap;
-}
-
-/* Numbers, dates, booleans and short labels keep a compact footprint; the
-   remaining width goes to long-text columns. `width: 1%` is the standard
-   auto-layout trick for "shrink to content, leave the rest to auto". */
-.data-view .data-table .col-compact,
-.data-view .txt-table .col-compact {
-  width: 1%;
-  white-space: pre;
-}
-
-.data-view .data-table .col-compact,
-.data-view .txt-table .col-compact {
-  padding-left: 10px;
-  padding-right: 10px;
-}
-
-.data-view .data-table .col-wide,
-.data-view .txt-table .col-wide {
-  min-width: 16ch;
 }
 
 .data-view .data-table th + th,
@@ -133,8 +196,6 @@
   background: var(--accent-soft);
 }
 
-/* Column identity comes from the ink, not a painted column: a tight four-step
-   cycle keeps wide tables scannable without turning the grid into a rainbow. */
 .data-view .data-table th:nth-child(4n + 1),
 .data-view .data-table td:nth-child(4n + 1) {
   color: var(--data-ink-1);
@@ -168,74 +229,14 @@
   border-bottom: 0;
 }
 
-.data-view .txt-table {
-  display: table;
-  width: 100%;
-  min-width: max(100%, calc(var(--data-cols, 3) * 60px));
-  margin: 0;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: auto;
+.data-view .data-txt-prose {
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--data-grid);
+  color: var(--text);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.7;
-}
-
-.data-view .txt-table th,
-.data-view .txt-table td {
-  padding: 2px 14px;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  text-align: left;
-  vertical-align: top;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: transparent;
-}
-
-.data-view .txt-table th {
-  font-weight: 650;
-}
-
-.data-view .txt-table tr > * + * {
-  border-left: 1px solid var(--data-grid);
-}
-
-.data-view .txt-table tbody tr:nth-child(even) > * {
-  background: var(--data-row-even);
-}
-
-.data-view .txt-table tbody tr:hover > * {
-  background: var(--accent-soft);
-}
-
-.data-view .txt-table tr > :nth-child(4n + 1) {
-  color: var(--data-ink-1);
-}
-
-.data-view .txt-table tr > :nth-child(4n + 2) {
-  color: var(--data-ink-2);
-}
-
-.data-view .txt-table tr > :nth-child(4n + 3) {
-  color: var(--data-ink-3);
-}
-
-.data-view .txt-table tr > :nth-child(4n) {
-  color: var(--data-ink-4);
-}
-
-.data-view .txt-table .align-right {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.data-view .txt-table .align-center {
-  text-align: center;
-}
-
-.data-view .txt-table tbody tr:last-child > * {
-  border-bottom: 0;
 }
 
 .data-view .data-note {
@@ -344,7 +345,7 @@
   position: relative;
   display: flex;
   align-items: baseline;
-  flex: 0 0 min(220px, 38%);
+  flex: 0 0 min(260px, 50%);
   min-width: 0;
   padding-left: 18px;
 }
@@ -362,7 +363,9 @@
 .data-view .json-key {
   min-width: 0;
   color: var(--json-key);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .data-view .json-index {
@@ -504,26 +507,19 @@
   overflow-wrap: anywhere;
 }
 
-/* Off-screen PNG/PDF stage: the page cannot scroll, so fit wide tables to the
-   fixed 860 px content column instead of clipping them. */
-.export-stage .data-view .data-table,
-.export-stage .data-view .txt-table,
+/* Off-screen PNG/PDF stage: keep the same fixed/colgroup geometry as the
+   preview, but let the page flow instead of scrolling inside the card. */
 .export-stage .data-view {
-  width: 100%;
+  max-width: none;
 }
 
-.export-stage .data-view .data-table,
-.export-stage .data-view .txt-table {
+.export-stage .data-view .data-table {
   min-width: 0;
-  /* Keep auto layout so the compact/wide hints still shape columns in
-     exported PNG/PDF instead of forcing every column to equal width. */
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 .export-stage .data-view .data-table th,
-.export-stage .data-view .data-table td,
-.export-stage .data-view .txt-table th,
-.export-stage .data-view .txt-table td {
+.export-stage .data-view .data-table td {
   max-width: none;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -531,9 +527,18 @@
 
 /* The off-screen export must not inherit preview scroll boxes: overflow
    creates monolithic boxes that the print engine cannot paginate. */
-.export-stage .data-view,
-.export-stage .data-table-scroll {
+.export-stage .data-view .data-table-scroll,
+.rmd-export .data-view .data-table-scroll {
+  max-height: none;
+}
+
+.export-stage .data-view .data-table-scroll {
   overflow: visible;
+}
+
+.export-stage .data-view .data-hscroll,
+.rmd-export .data-view .data-hscroll {
+  display: none;
 }
 
 .export-stage .data-view .data-raw,
@@ -542,22 +547,23 @@
   overflow: visible;
 }
 
-.export-stage .data-view .data-table .col-compact,
-.export-stage .data-view .txt-table .col-compact {
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-/* Vector PDF: repeat long CSV headers and never split a row across pages. */
+/* Vector PDF: repeat long table headers and never split a row across pages. */
 @media print {
   .data-view {
+    width: auto;
+    max-width: none;
     overflow: visible;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
   .data-table-scroll {
+    max-height: none;
     overflow: visible;
+  }
+
+  .data-hscroll {
+    display: none;
   }
 
   .data-view .data-raw {
@@ -569,8 +575,8 @@
     break-after: avoid;
   }
 
-  .data-view .data-table,
-  .data-view .txt-table {
+  .data-view .data-table {
+    width: max-content;
     break-inside: auto;
   }
 
@@ -578,8 +584,7 @@
     display: table-header-group;
   }
 
-  .data-view .data-table tr,
-  .data-view .txt-table tr {
+  .data-view .data-table tr {
     break-inside: avoid;
   }
 

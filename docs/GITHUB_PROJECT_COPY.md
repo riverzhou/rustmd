@@ -2,7 +2,7 @@
 
 本文件给出可直接粘贴到 GitHub 仓库设置里的文案，以及提升搜索/点击率的建议。仓库 slug：`riverzhou/rustmd`。
 
-> 2026-11-13：已通过 `gh repo edit` 与 GitHub Topics API 应用 v1.10.0 About 描述和 20 个 topics（含 `csv`、`json`、`txt`、`data-viewer`、`gbk`）。
+> 2026-11-13：已通过 `gh repo edit` 与 GitHub Topics API 应用 v1.10.0 五格式 About 描述和 20 个 topics（含 `csv`、`json`、`txt`、`data-viewer`、`gbk`）；v1.10.1 沿用。
 
 ## 1. About 描述（英文，推荐）
 

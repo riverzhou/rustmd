@@ -7,20 +7,15 @@ import {
   analyzeJson,
   buildTextRows,
   columnAlignments,
-  columnWidthHints,
+  columnWidthPlan,
   delimiterKey,
   detectDelimiter,
   jsonTypeOf,
+  looksLikeHeaderRow,
   parseDelimited,
 } from './dataformat.js';
 
 export { DATA_VIEW_CSS };
-
-const MAX_CSV_DATA_ROWS = 2000;
-const MAX_CSV_COLS = 100;
-const MAX_TXT_LINES = 5000;
-const MAX_TXT_COLS = 80;
-const MAX_JSON_NODES = 6000;
 
 const KIND_LABEL = { csv: 'CSV', txt: 'TXT', json: 'JSON' };
 
@@ -66,14 +61,159 @@ function alignmentClass(align) {
   return 'align-left';
 }
 
-function tableCell(tag, text, align = 'left', widthHint = 'auto') {
-  const classes = [alignmentClass(align)];
-  if (widthHint !== 'auto') classes.push(`col-${widthHint}`);
-  const cell = make(tag, classes.join(' '));
+function tableCell(tag, text, align = 'left') {
+  const cell = make(tag, alignmentClass(align));
   cell.textContent = text === '' ? '\u00a0' : text;
   return cell;
 }
 
+/**
+ * Shared CSV/TXT table geometry. Both kinds use the same alignment inference,
+ * the same per-column `ch` width plan, the same colgroup/fixed layout, the
+ * same sticky header and the same scroll container. Headerless TXT rows are
+ * data, not a synthetic bold first row.
+ */
+function renderTable(
+  container,
+  kind,
+  { header, body, columns, stats, prose = [], notices = [] }
+) {
+  const align = columnAlignments(
+    body.map((row) => row.slice(0, columns)),
+    columns
+  );
+  const widths = columnWidthPlan(header || [], body, columns, align);
+  const view = createView(container, kind, stats);
+  for (const line of prose) {
+    view.appendChild(make('div', 'data-txt-prose', line));
+  }
+  if (!body.length && !header) {
+    view.appendChild(make('p', 'data-empty', t('data.emptyHint')));
+  } else {
+    const scroll = createScroll();
+    scroll.setAttribute('aria-label', t('data.tableLabel'));
+    // A second, always-visible horizontal scrollbar above the table. The
+    // native bottom bar of a 24-row table is still on-screen now, but when a
+    // table is taller than its card the top bar removes the "scroll to the
+    // bottom first" discovery problem.
+    const topScroll = make('div', 'data-hscroll');
+    topScroll.tabIndex = 0;
+    topScroll.hidden = true;
+    topScroll.setAttribute('aria-label', t('data.tableScroll'));
+    const topSpacer = make('div', 'data-hscroll-spacer');
+    topScroll.appendChild(topSpacer);
+    view.appendChild(topScroll);
+    const table = make('table', 'data-table');
+    table.style.setProperty('--data-cols', String(columns));
+    const colgroup = make('colgroup');
+    for (const width of widths) {
+      const col = document.createElement('col');
+      col.style.width = `${width}ch`;
+      colgroup.appendChild(col);
+    }
+    table.appendChild(colgroup);
+    if (header) {
+      const thead = make('thead');
+      const tr = make('tr');
+      for (let c = 0; c < columns; c += 1) {
+        const cell = tableCell('th', String(header[c] ?? ''), align[c]);
+        cell.scope = 'col';
+        tr.appendChild(cell);
+      }
+      thead.appendChild(tr);
+      table.appendChild(thead);
+    }
+    const tbody = make('tbody');
+    for (const row of body) {
+      if (!row.length) continue;
+      const tr = make('tr');
+      if (kind === 'txt' && row.length < columns) {
+        for (let c = 0; c < row.length; c += 1) {
+          const last = c === row.length - 1;
+          const span = last ? columns - row.length + 1 : 1;
+          const cell = tableCell(
+            'td',
+            String(row[c] ?? ''),
+            span === 1 ? align[c] : 'left'
+          );
+          if (span > 1) cell.colSpan = span;
+          tr.appendChild(cell);
+        }
+      } else {
+        for (let c = 0; c < columns; c += 1) {
+          tr.appendChild(tableCell('td', String(row[c] ?? ''), align[c]));
+        }
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    view.appendChild(scroll);
+    const syncTopScroll = () => {
+      const overflow = scroll.scrollWidth - scroll.clientWidth > 1;
+      topScroll.hidden = !overflow;
+      // The upper bar has no vertical scrollbar, so matching its box to the
+      // table viewport (not the full card) keeps both max scrollLeft values
+      // identical; otherwise the last ~10px can never be reached.
+      if (overflow && scroll.clientWidth > 0) {
+        topScroll.style.width = `${scroll.clientWidth}px`;
+      }
+      topSpacer.style.width = `${scroll.scrollWidth}px`;
+      if (!overflow && topScroll.scrollLeft !== 0) topScroll.scrollLeft = 0;
+    };
+    topScroll.addEventListener('scroll', () => {
+      if (scroll.scrollLeft !== topScroll.scrollLeft) {
+        scroll.scrollLeft = topScroll.scrollLeft;
+      }
+    });
+    scroll.addEventListener('scroll', () => {
+      if (topScroll.scrollLeft !== scroll.scrollLeft) {
+        topScroll.scrollLeft = scroll.scrollLeft;
+      }
+    });
+    const fitRows = () => {
+      // Re-measure from natural row heights every time the preview becomes
+      // visible or its width changes; the previous stretch must not compound.
+      const rows = [...tbody.children];
+      for (const tr of rows) tr.style.removeProperty('height');
+      if (body.length < 18 || !container.closest('.preview-holder')) return;
+      if (!table.offsetHeight) return;
+      const target = window.innerHeight - 170;
+      const extra = target - table.offsetHeight;
+      if (extra > 0 && rows.length) {
+        const add = extra / rows.length;
+        for (const tr of rows) {
+          tr.style.height = `${Math.ceil(tr.getBoundingClientRect().height + add)}px`;
+        }
+      }
+    };
+    if (container.__dataFitRows) {
+      container.removeEventListener('rustmd:layout', container.__dataFitRows);
+    }
+    container.__dataFitRows = fitRows;
+    container.addEventListener('rustmd:layout', fitRows);
+    requestAnimationFrame(() => {
+      fitRows();
+      syncTopScroll();
+    });
+    // Window resizing changes the clamp()-based font/table width; keep the
+    // top bar geometry in sync on both 1440×900 and 4K/200% viewports.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => requestAnimationFrame(syncTopScroll));
+      ro.observe(scroll);
+    } else {
+      window.addEventListener('resize', syncTopScroll);
+    }
+  }
+  for (const notice of notices) addNotice(view, notice.text, notice.tone);
+}
+
+function renderPlainText(container, kind, rows, stats) {
+  const view = createView(container, kind, stats);
+  for (const row of rows) {
+    view.appendChild(make('div', 'data-txt-prose', row.join('\t')));
+  }
+}
 function renderEmpty(container, kind) {
   const view = createView(container, kind, [t('data.empty')]);
   view.appendChild(make('p', 'data-empty', t('data.emptyHint')));
@@ -96,20 +236,12 @@ function renderCsv(container, source) {
     }
     return;
   }
-  // Do not spread every row into Math.max: a CSV with tens of thousands of
-  // records would exceed the argument limit and throw before rendering.
   let totalColumns = 1;
   for (const row of rows) {
     if (row.length > totalColumns) totalColumns = row.length;
   }
-  const columns = Math.min(totalColumns, MAX_CSV_COLS);
   const header = rows[0];
-  const body = rows.slice(1, MAX_CSV_DATA_ROWS + 1);
-  const align = columnAlignments(
-    body.map((row) => row.slice(0, columns)),
-    columns
-  );
-  const widthHints = columnWidthHints(header, body, columns, align);
+  const body = rows.slice(1);
   const dkey = delimiterKey(delimiter);
   const stats = [
     t('data.csvSummary', {
@@ -118,127 +250,54 @@ function renderCsv(container, source) {
       delimiter: t(`data.delimiter${dkey.charAt(0).toUpperCase()}${dkey.slice(1)}`),
     }),
   ];
-  const view = createView(container, 'csv', stats);
-  const scroll = createScroll();
-  scroll.setAttribute('aria-label', t('data.tableLabel'));
-  const table = make('table', 'data-table');
-  table.style.setProperty('--data-cols', String(columns));
-  const thead = make('thead');
-  const headRow = make('tr');
-  for (let i = 0; i < columns; i += 1) {
-    const cell = tableCell(
-      'th',
-      String(header[i] ?? ''),
-      align[i],
-      widthHints[i]
-    );
-    cell.scope = 'col';
-    headRow.appendChild(cell);
-  }
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-  const tbody = make('tbody');
-  for (let r = 0; r < body.length; r += 1) {
-    const tr = make('tr');
-    for (let c = 0; c < columns; c += 1) {
-      tr.appendChild(
-        tableCell('td', String(body[r][c] ?? ''), align[c], widthHints[c])
-      );
-    }
-    tbody.appendChild(tr);
-  }
-  table.appendChild(tbody);
-  scroll.appendChild(table);
-  view.appendChild(scroll);
-  if (rows.length - 1 > body.length) {
-    addNotice(
-      view,
-      t('data.truncatedRows', { shown: body.length, total: rows.length - 1 })
-    );
-  }
-  if (totalColumns > columns) {
-    addNotice(
-      view,
-      t('data.truncatedColumns', { shown: columns, total: totalColumns })
-    );
-  }
-  if (parsed.unclosedQuote) addNotice(view, t('data.csvUnclosedQuote'), 'warning');
+  const notices = parsed.unclosedQuote
+    ? [{ text: t('data.csvUnclosedQuote'), tone: 'warning' }]
+    : [];
+  renderTable(container, 'csv', {
+    header,
+    body,
+    columns: totalColumns,
+    stats,
+    notices,
+  });
 }
 
 function renderTxt(container, source) {
   const viewData = buildTextRows(source, {
-    maxLines: MAX_TXT_LINES,
-    maxCols: MAX_TXT_COLS,
+    maxLines: Infinity,
+    maxCols: Infinity,
   });
   if (!viewData.rows.length) {
     renderEmpty(container, 'txt');
     return;
   }
+  const rows = viewData.rows;
   const columns = viewData.columns;
-  // The first tab-separated row is normally the column header. There may be
-  // introductory prose rows before it (and those are rendered as colspan
-  // lines), so find the first row with multiple cells and skip only that
-  // header row for type inference. The header then takes the same alignment
-  // as its data (numbers right, booleans centered) instead of forcing text.
-  const firstMultiCell = viewData.rows.findIndex((row) => row.length > 1);
-  const alignRows =
-    firstMultiCell >= 0
-      ? viewData.rows.slice(firstMultiCell + 1)
-      : viewData.rows;
-  const align = columnAlignments(alignRows, columns);
-  // Rows with one cell are rendered as a colspan line (prose paragraph), not
-  // as a value in column 0; exclude them from column width inference.
-  const widthRows =
-    columns > 1 ? viewData.rows.filter((row) => row.length > 1) : viewData.rows;
-  const widthHints = columnWidthHints([], widthRows, columns, align);
   const stats = [t('data.txtSummary', { lines: viewData.totalLines })];
   if (columns > 1) stats.push(t('data.txtColumns', { cols: columns }));
-  const view = createView(container, 'txt', stats);
-  const scroll = createScroll();
-  scroll.setAttribute('aria-label', t('data.tableLabel'));
-  const table = make('table', 'txt-table');
-  table.style.setProperty('--data-cols', String(columns));
-  const tbody = make('tbody');
-  for (let r = 0; r < viewData.rows.length; r += 1) {
-    const row = viewData.rows[r];
-    const tr = make('tr');
-    const headerRow = r === firstMultiCell;
-    for (let c = 0; c < row.length; c += 1) {
-      const last = c === row.length - 1;
-      const span = last ? columns - row.length + 1 : 1;
-      const cell = tableCell(
-        headerRow ? 'th' : 'td',
-        String(row[c] ?? ''),
-        span === 1 ? align[c] : 'left',
-        span === 1 ? widthHints[c] : 'auto'
-      );
-      if (headerRow) cell.scope = 'col';
-      if (span > 1) cell.colSpan = span;
-      tr.appendChild(cell);
-    }
-    tbody.appendChild(tr);
+  if (columns <= 1) {
+    renderPlainText(container, 'txt', rows, stats);
+    return;
   }
-  table.appendChild(tbody);
-  scroll.appendChild(table);
-  view.appendChild(scroll);
-  if (viewData.truncatedLines) {
-    addNotice(
-      view,
-      t('data.truncatedLines', {
-        shown: viewData.rows.length,
-        total: viewData.totalLines,
-      })
-    );
-  }
-  if (viewData.truncatedColumns) {
-    addNotice(
-      view,
-      t('data.truncatedColumns', {
-        shown: columns,
-        total: viewData.totalColumns,
-      })
-    );
-  }
+  const firstMulti = rows.findIndex((row) => row.length > 1);
+  const headerIndex =
+    firstMulti >= 0 && looksLikeHeaderRow(rows, firstMulti, columns)
+      ? firstMulti
+      : -1;
+  const header = headerIndex >= 0 ? rows[headerIndex] : null;
+  const proseEnd = headerIndex >= 0 ? headerIndex : firstMulti;
+  const prose = rows
+    .slice(0, proseEnd)
+    .filter((row) => row.length === 1)
+    .map((row) => String(row[0] ?? ''));
+  const body = rows.slice(headerIndex >= 0 ? headerIndex + 1 : firstMulti);
+  renderTable(container, 'txt', {
+    header,
+    body,
+    columns,
+    stats,
+    prose,
+  });
 }
 
 function jsonEntries(value) {
@@ -251,7 +310,11 @@ function jsonKeyCell(key, index, caret = false) {
   const cell = make('span', index !== null ? 'json-key-cell index' : 'json-key-cell');
   if (caret) cell.appendChild(make('span', 'json-caret'));
   if (index !== null) cell.appendChild(make('span', 'json-index', String(index)));
-  else cell.appendChild(make('span', 'json-key', String(key ?? '')));
+  else {
+    const keyEl = make('span', 'json-key', String(key ?? ''));
+    keyEl.title = String(key ?? '');
+    cell.appendChild(keyEl);
+  }
   return cell;
 }
 
@@ -316,19 +379,18 @@ function jsonEmptyRow(type, key, index) {
   return row;
 }
 
-function buildJsonNode(value, key, index, ctx) {
-  if (ctx.built >= MAX_JSON_NODES) {
-    ctx.truncated = true;
-    return null;
-  }
+/// Build one JSON row/group shell without descending. `buildJsonNode` walks
+/// these shells with an explicit queue so deeply nested documents cannot
+/// overflow the JS call stack after the node cap was removed.
+function jsonNodeShell(value, key, index) {
   const type = jsonTypeOf(value);
   if (type !== 'object' && type !== 'array') {
-    ctx.built += 1;
-    return jsonScalarRow(value, type, key, index);
+    return { el: jsonScalarRow(value, type, key, index), entries: null };
   }
   const entries = jsonEntries(value);
-  ctx.built += 1;
-  if (!entries.length) return jsonEmptyRow(type, key, index);
+  if (!entries.length) {
+    return { el: jsonEmptyRow(type, key, index), entries: null };
+  }
 
   const details = document.createElement('details');
   details.className = `json-group ${type}`;
@@ -343,18 +405,24 @@ function buildJsonNode(value, key, index, ctx) {
 
   const body = make('div', `json-group-body ${type}`);
   const fields = make('div', 'json-fields');
-  for (let i = 0; i < entries.length; i += 1) {
-    if (ctx.built >= MAX_JSON_NODES) {
-      ctx.truncated = true;
-      break;
-    }
-    const entry = entries[i];
-    const child = buildJsonNode(entry.value, entry.key, entry.index, ctx);
-    if (child) fields.appendChild(child);
-  }
   body.appendChild(fields);
   details.appendChild(body);
-  return details;
+  return { el: details, entries, fields };
+}
+
+function buildJsonNode(value, key, index) {
+  const root = jsonNodeShell(value, key, index);
+  if (!root.entries) return root.el;
+  const queue = [root];
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const frame = queue[cursor];
+    for (const entry of frame.entries) {
+      const child = jsonNodeShell(entry.value, entry.key, entry.index);
+      frame.fields.appendChild(child.el);
+      if (child.entries) queue.push(child);
+    }
+  }
+  return root.el;
 }
 
 function renderJson(container, source) {
@@ -382,7 +450,6 @@ function renderJson(container, source) {
   stats.push(t('data.jsonNodes', { n: data.nodes }));
   const view = createView(container, 'json', stats);
   const inspector = make('div', 'json-inspector');
-  const ctx = { built: 0, truncated: false };
   if (data.rootType === 'object' || data.rootType === 'array') {
     const entries = jsonEntries(data.value);
     if (!entries.length) {
@@ -390,12 +457,7 @@ function renderJson(container, source) {
     } else {
       const fields = make('div', 'json-fields');
       for (const entry of entries) {
-        if (ctx.built >= MAX_JSON_NODES) {
-          ctx.truncated = true;
-          break;
-        }
-        const child = buildJsonNode(entry.value, entry.key, entry.index, ctx);
-        if (child) fields.appendChild(child);
+        fields.appendChild(buildJsonNode(entry.value, entry.key, entry.index));
       }
       inspector.appendChild(fields);
     }
@@ -403,9 +465,6 @@ function renderJson(container, source) {
     inspector.appendChild(jsonScalarRow(data.value, data.rootType, null, null));
   }
   view.appendChild(inspector);
-  if (ctx.truncated) {
-    addNotice(view, t('data.jsonTruncated', { n: MAX_JSON_NODES }), 'warning');
-  }
 }
 
 /** Render one of the data note kinds into a preview/export container. */

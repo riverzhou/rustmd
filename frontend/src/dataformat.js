@@ -319,6 +319,60 @@ export function columnAlignments(rows, columns) {
   return out;
 }
 
+/**
+ * Per-column width target in `ch`, including a little breathing room. This is
+ * shared by CSV and TXT so the same content gets the same table geometry.
+ * Compact numeric/date/boolean columns cap tighter than prose columns.
+ */
+export function columnWidthPlan(
+  header,
+  rows,
+  columns,
+  alignments,
+  { compactMax = 22, textMax = 64, min = 5, paddingCh = 3 } = {}
+) {
+  const widths = [];
+  for (let i = 0; i < columns; i += 1) {
+    let max = 0;
+    const consider = (value) => {
+      for (const line of String(value ?? '').split('\n')) {
+        const width = displayWidth(line);
+        if (width > max) max = width;
+      }
+    };
+    consider(header[i]);
+    for (const row of rows) consider(row[i]);
+    const compact = alignments[i] === 'right' || alignments[i] === 'center';
+    const cap = compact ? compactMax : textMax;
+    const floor = compact ? Math.min(min, cap) : Math.max(6, min);
+    // `ch` is content width; add room for the 10px horizontal cell padding so
+    // codes and numbers like SZ300473 / 0.8607 never wrap into two lines.
+    widths.push(Math.max(floor, Math.min(max + paddingCh, cap)));
+  }
+  return widths;
+}
+
+/**
+ * TXT has no formal header row. Detect a conservative one: every cell must be
+ * text (not a number/date/boolean) and at least one later row must contain a
+ * typed cell. The stock-signal logs have a numeric score in their first data
+ * row, so they correctly render without a synthetic bold header.
+ */
+export function looksLikeHeaderRow(rows, index, columns) {
+  const header = rows[index];
+  if (!header || header.length < 2) return false;
+  const cells = header.slice(0, columns).map((cell) => String(cell ?? '').trim());
+  if (!cells.some(Boolean)) return false;
+  if (cells.some((cell) => isNumericCell(cell) || isDateCell(cell) || isBooleanCell(cell))) {
+    return false;
+  }
+  return rows.slice(index + 1).some((row) =>
+    row
+      .slice(0, columns)
+      .some((cell) => isNumericCell(cell) || isDateCell(cell) || isBooleanCell(cell))
+  );
+}
+
 export function jsonTypeOf(value) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';

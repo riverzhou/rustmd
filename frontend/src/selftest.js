@@ -673,18 +673,12 @@ export async function runSelfTest({ getState }) {
           kind === 'csv'
             ? [...box.querySelectorAll('.data-table thead th')]
             : kind === 'txt'
-              ? [
-                  ...([...box.querySelectorAll('.txt-table tbody tr')].find(
-                    (tr) => tr.children.length > 1
-                  )?.children || []),
-                ]
+              ? [...box.querySelectorAll('.data-view-txt .data-table thead th')]
               : [];
         const dataRender = {
           view: Boolean(view),
           className: view ? String(view.className) : '',
-          rows: box.querySelectorAll(
-            '.data-table tbody tr, .txt-table tbody tr'
-          ).length,
+          rows: box.querySelectorAll('.data-table tbody tr').length,
           groups: box.querySelectorAll('.json-group').length,
           values: box.querySelectorAll('.json-value').length,
           injected: box.querySelectorAll(
@@ -904,7 +898,11 @@ export async function runSelfTest({ getState }) {
           pdf = await exportPdfVector(body, kind, meta.title);
           vector = true;
         } catch (e) {
-          report.errors.push(`${meta.path}: vector PDF export failed: ${e}`);
+          // Wide data tables intentionally fall back to the raster PDF so
+          // every column is visible; that is not a failure.
+          if (!String(e).includes('wide data table uses the raster PDF path')) {
+            report.errors.push(`${meta.path}: vector PDF export failed: ${e}`);
+          }
         }
       }
       if (!pdf) pdf = await exportPdf(body, kind);
@@ -947,7 +945,7 @@ export async function runSelfTest({ getState }) {
       'txt'
     );
     const csvTh = [...alignCsv.querySelectorAll('.data-table thead th')];
-    const txtTh = [...alignTxt.querySelectorAll('.txt-table th')];
+    const txtTh = [...alignTxt.querySelectorAll('.data-view-txt .data-table th')];
     report.dataAlignment = {
       csv:
         csvTh.some((cell) => cell.classList.contains('align-right')) &&
