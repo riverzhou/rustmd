@@ -1,7 +1,7 @@
 {
   "name": "rustmd",
   "private": true,
-  "version": "1.10.1",
+  "version": "1.10.2",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.js",
@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "npm run test:unit && npm run test:rust",
-    "test:unit": "node --test frontend/src/notelist.test.js frontend/src/markdown.test.js frontend/src/i18n.test.js frontend/src/vaultlist.test.js frontend/src/dataformat.test.js frontend/src/layout.test.js",
+    "test:unit": "node --test frontend/src/notelist.test.js frontend/src/markdown.test.js frontend/src/i18n.test.js frontend/src/vaultlist.test.js frontend/src/dataformat.test.js frontend/src/layout.test.js frontend/src/pdfgeom.test.js",
     "test:rust": "node scripts/cargo.mjs test",
     "check:version": "node scripts/check-version.mjs",
     "check:repo": "node scripts/check-repo.mjs",

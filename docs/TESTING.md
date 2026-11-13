@@ -11,7 +11,7 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探/数字列对齐/列宽提示、TXT 制表符列、JSON 统计/校验、侧栏/分屏宽度边界与持久化解析（恢复默认按钮由手工回归覆盖）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探/数字列对齐/列宽提示、TXT 制表符列、JSON 统计/校验、侧栏/分屏宽度边界与持久化解析（恢复默认按钮由手工回归覆盖）、PDF 页面方向（宽表 landscape）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 与 CSV/TXT/JSON 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 及 `package-lock.json` / `Cargo.lock` 根包版本一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
@@ -56,7 +56,7 @@ npm run selftest
 
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
 2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；CSV/TXT/JSON 检查表格/检查器结构、智能表头对齐、笔记文本不注入 DOM，并断言 GBK 示例的编码识别；另外用合成 CSV/TXT 表格独立验证数字右对齐、布尔居中与 `scope=col`。导出前本地图片必须被内联为 data URL；
-3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；PDF 优先走平台打印管线（Markdown/窄数据表 `print_note_pdf`、HTML `print_html_note`，矢量文字、A4 分页；Windows WebView2 / macOS WKWebView / Linux WebKitGTK）；宽数据表自动回退扩宽舞台的图片 PDF，不支持打印时也回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源走 `rmd` base；超长页面分段拼接）；
+3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；PDF 优先走平台打印管线（Markdown/窄数据表 `print_note_pdf`、HTML `print_html_note`，矢量文字、A4 分页；Windows WebView2 / macOS WKWebView / Linux WebKitGTK）；宽数据表自动回退扩宽舞台的横向图片 PDF，不支持打印时也回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源走 `rmd` base；超长页面分段拼接）；
 4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；走矢量打印路径的 PDF 条目要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；宽数据表/回退图片 PDF 不要求；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
 5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色（html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；同时校验 HTML 导出会移除遗留的 GBK charset、保留 script 内文本、在 doctype 后写入 UTF-8 声明；
 6. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。

@@ -78,11 +78,16 @@ function renderTable(
   kind,
   { header, body, columns, stats, prose = [], notices = [] }
 ) {
+  // TXT prose/blank rows are rendered as full-width cells (colspan), not as a
+  // huge first column. Keep them out of width/alignment inference; otherwise
+  // a long prose line makes 名称 hundreds of px wider than its data.
+  const measureRows =
+    kind === 'txt' ? body.filter((row) => row.length >= columns) : body;
   const align = columnAlignments(
-    body.map((row) => row.slice(0, columns)),
+    measureRows.map((row) => row.slice(0, columns)),
     columns
   );
-  const widths = columnWidthPlan(header || [], body, columns, align);
+  const widths = columnWidthPlan(header || [], measureRows, columns, align);
   const view = createView(container, kind, stats);
   for (const line of prose) {
     view.appendChild(make('div', 'data-txt-prose', line));
@@ -126,6 +131,9 @@ function renderTable(
     const tbody = make('tbody');
     for (const row of body) {
       if (!row.length) continue;
+      // A blank physical line in a TXT note is a separator, not a table row
+      // with an invisible full-width cell.
+      if (row.every((cell) => !String(cell ?? '').trim())) continue;
       const tr = make('tr');
       if (kind === 'txt' && row.length < columns) {
         for (let c = 0; c < row.length; c += 1) {

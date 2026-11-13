@@ -5,6 +5,29 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.2] - 2026-11-13
+
+### 修复（Fixed）
+
+- **宽数据表 PDF 导出错乱**：1.10.1 的宽表栅格 PDF 把数据表按普通 Markdown
+  表格的 `width:100%` 规则压回 A4 宽度，再被 jsPDF 以固定 portrait 方向二次
+  旋转，结果变成一张竖长、列被挤压且右侧裁切的页面。现在导出舞台让数据表保持
+  `max-content` 自然宽度，且按页面实际宽高选择 landscape/portrait；TXT/CSV 宽表
+  输出为一张完整横向页面，18 列不再换行/裁切。新增 `pdfgeom.js` 纯函数与单测。
+- **通用表格规则不再污染数据表**：导出舞台只对 Markdown 表格应用 100% 宽度；
+  数据表保留 colgroup 固定列宽，避免数字、代码和中文长文本被逐字折行。
+- **TXT 列宽异常**：整行说明/空行不再参与列宽推断，也不会渲染成空表格行；
+  3 列 TXT 示例的「名称」列不再被说明文字撑到数百像素。README 的 TXT
+  截图已重新生成。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、51 个前端单测、仓库/版本检查、fmt、clippy
+  `-D warnings`、75 个 Rust 测试、Vite build。
+- 真实 GBK 股票信号文件：24 行 × 18 列，PNG 8505×2847；PDF 页面
+  `2126.25×711 pt`（landscape），完整 18 列，无裁切；selftest 10 篇示例通过。
+- 本地 Windows 1.10.2 绿色版重新构建、签名并校验 SHA-256。
+
 ## [1.10.1] - 2026-11-13
 
 ### 新增（Added）

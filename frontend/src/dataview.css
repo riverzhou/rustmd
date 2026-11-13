@@ -514,8 +514,18 @@
 }
 
 .export-stage .data-view .data-table {
+  /* The generic .export-stage .markdown-body table rule sets width:100% for
+     prose tables. Data tables must keep their computed max-content width so
+     their columns are neither squeezed nor wrapped in PNG/PDF exports. */
+  width: max-content;
   min-width: 0;
   table-layout: fixed;
+}
+
+.export-stage .data-view .data-table th,
+.export-stage .data-view .data-table td {
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .export-stage .data-view .data-table th,

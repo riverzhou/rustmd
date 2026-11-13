@@ -1,10 +1,37 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-13（v1.10.1 全量复核；v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.1（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计日期**：2026-11-13（v1.10.2 全量复核；v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.2（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；独立子代理审计 + 针对最新工作区的复核；多轮静态检查与运行时回归；针对 HTML 渲染、数据视图、编码、可调布局、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 自测（10 篇示例、HTML/PNG/PDF）+ 真实 GBK 股票信号文件 + 浏览器 mock/拖拽/截图回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
 
-## v1.10.1 可调布局与宽表优化（当前版本）
+## v1.10.2 宽数据表 PDF 修复（当前版本）
+
+本版只修复 v1.10.1 的宽数据表 PDF 导出错乱，不改变 UI 与数据读取逻辑。
+
+### 根因与修复
+
+- **根因 1**：通用导出规则 `.export-stage .markdown-body table { width:100% }`
+  也命中了数据表，把 18 列 TXT 表压回 860 CSS px，导致列逐字换行、表格变得
+  又窄又高。
+- **根因 2**：栅格 PDF 固定使用 `orientation:'p'`，jsPDF 会把宽页的
+  `format:[2126,711]` 交换为 711×2126 的竖页，再把宽画布拉伸进去。
+- **修复**：导出舞台让 `.data-table` 保持 `max-content`，不继承 Markdown 表格的
+  100% 宽度/逐字断行；`pdfgeom.js` 按页面实际宽高选择 landscape/portrait，宽表
+  输出为完整横向页面。
+- **回归验证**：真实 GBK 股票信号文件 PDF 页面为 `2126.25×711 pt`，内嵌图像
+  8505×2844，18 列完整；PNG 8505×2847。新增 `pdfgeom.js` 单测。
+- **TXT 列宽**：整行说明/空行不参与列宽推断，也不渲染为空行；README 的 3 列
+  TXT 截图列宽恢复正常。
+
+### 验证
+
+- `npm run check`：ESLint、51 个前端单测、仓库/版本检查、fmt、clippy
+  `-D warnings`、75 个 Rust 测试、Vite build 全通过。
+- `npm run selftest`：真实 WebView 10 篇示例全部通过。
+- 1.10.1 的可调布局、4K/200%、无上限数据视图、GBK/GB18030、HTML charset
+  等行为不变。
+
+## v1.10.1 可调布局与宽表优化（历史）
 
 本版在 v1.10.0 五格式数据视图基础上，集中修复宽表/大屏布局，并补齐可调布局宽度。
 

@@ -13,6 +13,7 @@
 import { renderPreview, isRmdUrl, rmdUrlPath } from './preview.js';
 import { api } from './api.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
+import { pdfPageOrientation } from './pdfgeom.js';
 
 const CONTENT_WIDTH = 860; // matches .markdown-body max-width
 const PAD_TOP = 48; // .export-stage top padding (48px 44px 64px)
@@ -428,10 +429,16 @@ export async function exportPdf(source, kind = 'markdown') {
     cuts.pop();
   }
   const bounds = [0, ...cuts, total];
+  const firstHeightPt = (bounds[1] - bounds[0]) * 0.75;
+  // jsPDF's `format` is [width, height], but an explicit portrait orientation
+  // makes it swap a landscape format back to portrait. A wide data table has a
+  // page wider than it is tall, so pick orientation from the page geometry;
+  // otherwise the raster is squeezed/rotated into an A4 portrait page.
+  const orientation = pdfPageOrientation(wPt, firstHeightPt);
   const doc = new jsPDF({
-    orientation: 'p',
+    orientation,
     unit: 'pt',
-    format: [wPt, (bounds[1] - bounds[0]) * 0.75],
+    format: [wPt, firstHeightPt],
     // jsPDF defaults to compress:false, which stores image streams raw —
     // a full-page canvas would bloat the PDF by 30x. Flate keeps it sane.
     compress: true,
@@ -457,7 +464,7 @@ export async function exportPdf(source, kind = 'markdown') {
       slice.height
     );
     const hPt = (y1 - y0) * 0.75;
-    if (i > 0) doc.addPage([wPt, hPt]);
+    if (i > 0) doc.addPage([wPt, hPt], orientation);
     // PNG (not JPEG): no compression halo around text.
     doc.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, wPt, hPt);
   }

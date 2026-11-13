@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.10.1` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.10.1 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.10.2` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.10.2 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -113,6 +113,8 @@ this file is the developer/agent contract.
   imports the raw string so exported files stay visually identical.
 - `frontend/src/layout.js` — pure bounds for the resizable sidebar width and
   editor/preview split (covered by `node --test`).
+- `frontend/src/pdfgeom.js` — pure raster-PDF page orientation helper (covered
+  by `node --test`); wide data-table PDFs use landscape pages.
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap 20, pinned entries that survive eviction, pinned-first display order,
   display name; covered by `node --test`).
@@ -353,7 +355,8 @@ If a new Tauri *plugin* is used:
   `export.js` starts from a 948 px Markdown stage (860 content + 2×44 padding),
   widens it to a data table's natural width, and adapts scale down to 0.25×
   for extremely tall or wide captures; wide data tables deliberately fall back
-  from vector printing to the raster PDF.
+  from vector printing to the raster PDF, with natural table width and a
+  landscape custom page so no columns are clipped or rotated into portrait.
   Markdown PDF export goes through `exportPdfVector` (`print_note_pdf`):
   keep the `.export-stage` markup print-friendly (the `@media print`
   block in `style.css` owns page hiding, page width and `break-inside`), and

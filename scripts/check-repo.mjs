@@ -38,6 +38,8 @@ const REQUIRED = [
   'frontend/src/markdown.js',
   'frontend/src/layout.js',
   'frontend/src/layout.test.js',
+  'frontend/src/pdfgeom.js',
+  'frontend/src/pdfgeom.test.js',
   'frontend/src/dataformat.js',
   'frontend/src/dataformat.test.js',
   'frontend/src/dataview.js',

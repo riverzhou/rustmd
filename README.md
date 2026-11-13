@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.10.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.10.2** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -156,7 +156,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 
 - **HTML**：Markdown 笔记导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；CSV/TXT/JSON 导出包含同样的智能列宽、隔行底色/列文字色和 JSON 检查器样式；HTML 笔记输出 UTF-8 独立文件并规范化遗留 charset。数据 HTML 导出保留完整内容。
 - **PNG**：Markdown 使用 3× 渲染（约 288 DPI）；数据笔记的离屏舞台会按表格自然宽度扩宽，超宽表触到画布上限时自动降采样，保证右侧列不被裁掉；HTML 笔记按页面高度在 1–3× 间自适应（短页面 3×，超长报告目标高度约 48k 设备像素），整页保持。
-- **PDF**：Markdown、HTML 和窄数据表走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出的是**矢量文字**，可选中、可搜索、任意放大都清晰，A4 排版，由引擎按 CSS 规则分页（不会把一行文字切成两半，也不会出现只有几像素的尾页），文件通常比图片版小一个数量级。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚，不添加浏览器地址栏信息。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。**宽度超过约 640 CSS px 可打印区的数据表会自动回退为扩宽舞台的栅格 PDF**，保证所有列完整，但文字不可选中；某个平台或环境不支持原生打印时也会回退为按块边界分页的无损 PNG 切片。
+- **PDF**：Markdown、HTML 和窄数据表走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出的是**矢量文字**，可选中、可搜索、任意放大都清晰，A4 排版，由引擎按 CSS 规则分页（不会把一行文字切成两半，也不会出现只有几像素的尾页），文件通常比图片版小一个数量级。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚，不添加浏览器地址栏信息。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。**宽度超过约 640 CSS px 可打印区的数据表会自动回退为扩宽舞台的横向栅格 PDF**，保证所有列完整，但文字不可选中；某个平台或环境不支持原生打印时也会回退为按块边界分页的无损 PNG 切片。
 - PNG 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图；HTML 笔记的 PNG 由内置 WebView 整页渲染（超长报告按高度自适应分段截取并拼接为单图），PDF 则走上面的系统打印管线。
 - 导出目标路径由系统保存对话框选择，前端不能任意写文件。
 
