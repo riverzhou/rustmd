@@ -1262,6 +1262,7 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
     if (prev !== null) setPreviewTheme(prev);
   }
   const isDark = theme === 'dark';
+  const dataExport = isDataKind(kind);
   const css = `
  :root {
    color-scheme: ${isDark ? 'dark' : 'light'};
@@ -1320,6 +1321,18 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
    color: ${isDark ? '#e7eaf0' : '#1f2430'};
    background: ${isDark ? '#14161b' : '#ffffff'};
    word-wrap: break-word;
+ }
+ body.data-export {
+   max-width: none;
+   padding: 28px 32px 56px;
+ }
+ /* Data cards keep their content width (narrow tables stay narrow); a wide
+    table's max-width:100% makes the card consume the full viewport instead of
+    the 820px reading column used by Markdown. */
+ body.data-export .data-table-scroll {
+   max-height: none;
+   overflow-x: auto;
+   overflow-y: visible;
  }
  h1, h2, h3, h4 { font-weight: 700; line-height: 1.35; margin: 1.5em 0 0.6em; }
  h1 { font-size: 1.9em; padding-bottom: .3em; border-bottom: 1px solid ${isDark ? '#262a33' : '#e2e5ec'}; }
@@ -1398,7 +1411,7 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
 <style>${css}
 ${DATA_VIEW_CSS}</style>
 </head>
-<body class="rmd-export">
+<body class="rmd-export${dataExport ? ' data-export' : ''}">
 ${body}
 <footer>${escapeHtml(t('export.footer', { date }))}</footer>
 </body>

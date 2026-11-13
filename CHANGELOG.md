@@ -5,6 +5,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.3] - 2026-11-13
+
+### 优化（Changed）
+
+- **数据笔记 HTML 导出全宽**：CSV/TXT/JSON 导出不再套用 Markdown 的 820px
+  阅读栏宽，改为占满浏览器可用宽度；数据卡片保留 `fit-content`，窄表仍按内容
+  收缩，宽表使用整个视口并保留横向滚动。导出页面不再继承预览的
+  `max-height` 内部滚动，长表直接随页面滚动。
+- CSV/TXT 继续共用同一套 `data-export` 类、列宽、对齐、表头与滚动规则；JSON
+  检查器同样全宽。
+- README 中英文的导出说明同步更新；截图重新生成到 1.10.3。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、51 个前端单测、仓库/版本检查、fmt、clippy
+  `-D warnings`、75 个 Rust 测试、Vite build。
+- 真实 WebView selftest 10 篇示例全部通过；浏览器打开导出的 18 列 TXT HTML，
+  1440/1920 视口卡片宽度分别约为 1374/1856 CSS px，横向滚动可访问全部列。
+
 ## [1.10.2] - 2026-11-13
 
 ### 修复（Fixed）

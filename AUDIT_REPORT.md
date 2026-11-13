@@ -1,10 +1,25 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-13（v1.10.2 全量复核；v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.2（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计日期**：2026-11-13（v1.10.3 全量复核；v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.3（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
 **审计方式**：全量阅读 Rust/前端/脚本/配置/文档；独立子代理审计 + 针对最新工作区的复核；多轮静态检查与运行时回归；针对 HTML 渲染、数据视图、编码、可调布局、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 自测（10 篇示例、HTML/PNG/PDF）+ 真实 GBK 股票信号文件 + 浏览器 mock/拖拽/截图回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
 
-## v1.10.2 宽数据表 PDF 修复（当前版本）
+## v1.10.3 数据 HTML 导出全宽（当前版本）
+
+本版只调整 CSV/TXT/JSON 的独立 HTML 导出布局，表格内容与 PNG/PDF 逻辑不变。
+
+- **根因**：独立 HTML 文档的 `body` 固定 `max-width:820px`，且数据导出没有
+  独立布局类；18 列 TXT 表被限制在阅读栏内，无法利用浏览器宽度。
+- **修复**：数据导出加 `body.data-export`；取消 820px 上限、缩小左右边距，
+  保留数据卡片 `fit-content`，宽表使用整个视口并横向滚动；移除导出页的
+  `max-height` 内部纵向滚动。Markdown 仍保持 820px 阅读栏宽。
+- **CSV/TXT 一致性**：两者都走同一个 `isDataKind` → `data-export` 分支和同一套
+  `dataview.css`；JSON 检查器同样全宽。
+- **验证**：真实 GBK 股票 TXT 导出的 HTML 在 1440/1920 视口下卡片宽度约
+  1374/1856 CSS px，全部 18 列可通过横向滚动访问；CSV 导出使用同一布局；
+  selftest 10 篇通过，前端 51 个单测通过。
+
+## v1.10.2 宽数据表 PDF 修复（历史）
 
 本版只修复 v1.10.1 的宽数据表 PDF 导出错乱，不改变 UI 与数据读取逻辑。
 

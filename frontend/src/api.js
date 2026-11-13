@@ -321,7 +321,7 @@ const mockNotes = new Map([
       tags: [],
       body: `{
   "name": "rustmd",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "features": ["csv", "txt", "json"],
   "preview": {
     "theme": "light",
