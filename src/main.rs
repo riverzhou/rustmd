@@ -5297,11 +5297,12 @@ Real text here
             assert!(resolve_in_root(&dir, "C:\\evil.md").is_err());
         }
         let ok = resolve_in_root(&dir, "sub/note.md").unwrap();
-        assert!(ok.starts_with(&dir));
-        // Existing paths come back canonicalized (junctions resolved), so
-        // compare against a canonicalized root.
-        let ok_dot = resolve_in_root(&dir, ".").unwrap();
+        // Windows CI can hand us an 8.3 short temp path (RUNNER~1); the
+        // resolver intentionally returns paths based on the canonical root,
+        // so compare against that canonical path rather than the input.
         let canon_dir = strip_extended_prefix(&fs::canonicalize(&dir).unwrap());
+        assert!(ok.starts_with(&canon_dir));
+        let ok_dot = resolve_in_root(&dir, ".").unwrap();
         assert!(ok_dot.starts_with(&canon_dir));
         cleanup(&dir);
     }
