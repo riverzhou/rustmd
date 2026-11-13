@@ -1,4 +1,5 @@
 import './style.css';
+import './dataview.css';
 import { api } from './api.js';
 import { createEditor } from './editor.js';
 import {
@@ -8,6 +9,7 @@ import {
   setPreviewTheme,
   setImageContext,
   inlineLocalAssetsInHtml,
+  ensureUtf8HtmlCharset,
 } from './preview.js';
 import {
   exportPng,
@@ -37,6 +39,7 @@ import {
   folderInScope,
   folderOf,
   normalizeSortState,
+  isDataKind,
   noteKindOf,
   noteStemOf,
   sortNotes,
@@ -99,7 +102,10 @@ const state = {
   // Absolute directory of the open note. In multi-vault mode the note may
   // live in a pinned vault while `state.dir` stays the primary one.
   currentDir: null,
-  currentKind: 'markdown', // "markdown" | "html"
+  currentKind: 'markdown', // "markdown" | "html" | "csv" | "txt" | "json"
+  // Encoding auto-detected by Rust; shown in the status bar. Saving writes
+  // the file back in this encoding.
+  currentEncoding: '',
   currentHash: '',
   currentMtime: 0,
   tagsOfCurrent: [],
@@ -202,6 +208,7 @@ const divider = $('divider');
 const statusSave = $('status-save');
 const statusPath = $('status-path');
 const statusCounts = $('status-counts');
+const statusEncoding = $('status-encoding');
 const toastEl = $('toast');
 
 // ---------------- Utils ----------------
@@ -310,23 +317,37 @@ function stemOf(path) {
   return noteStemOf(path);
 }
 
-/** Format badge in the topbar; HTML notes also hide the Markdown tag editor. */
+const KIND_UI = {
+  markdown: { label: 'MD', title: 'note.kindMarkdownTitle', aria: 'note.kindMarkdown' },
+  html: { label: 'HTML', title: 'note.kindHtmlTitle', aria: 'note.kindHtml' },
+  csv: { label: 'CSV', title: 'note.kindCsvTitle', aria: 'note.kindCsv' },
+  txt: { label: 'TXT', title: 'note.kindTxtTitle', aria: 'note.kindTxt' },
+  json: { label: 'JSON', title: 'note.kindJsonTitle', aria: 'note.kindJson' },
+};
+
+function kindUi(kind) {
+  return KIND_UI[kind] || KIND_UI.markdown;
+}
+
+/** Format badge in the topbar; only Markdown notes carry front-matter tags. */
 function updateKindBadge(kind = state.currentKind) {
-  const isHtml = kind === 'html';
+  const current = KIND_UI[kind] ? kind : 'markdown';
+  const ui = kindUi(current);
   if (noteKind) {
-    noteKind.textContent = isHtml ? 'HTML' : 'MD';
-    noteKind.classList.toggle('html', isHtml);
-    noteKind.classList.toggle('markdown', !isHtml);
-    noteKind.title = t(
-      isHtml ? 'note.kindHtmlTitle' : 'note.kindMarkdownTitle'
-    );
-    noteKind.setAttribute(
-      'aria-label',
-      isHtml ? t('note.kindHtml') : t('note.kindMarkdown')
-    );
+    noteKind.textContent = ui.label;
+    for (const name of Object.keys(KIND_UI)) {
+      noteKind.classList.toggle(name, name === current);
+    }
+    noteKind.title = t(ui.title);
+    noteKind.setAttribute('aria-label', t(ui.aria));
   }
-  // HTML notes have no front matter; a tag editor would silently do nothing.
-  tagEditor.classList.toggle('hidden', isHtml);
+  tagEditor.classList.toggle('hidden', current !== 'markdown');
+}
+
+function updateStatusEncoding() {
+  const encoding = state.current && state.currentEncoding;
+  statusEncoding.textContent = encoding || '';
+  statusEncoding.classList.toggle('hidden', !encoding);
 }
 
 const FOLDER_SVG =
@@ -1055,6 +1076,7 @@ async function enterDir(dir, { toastErrors = false } = {}) {
     state.current = null;
     state.currentDir = null;
     state.currentKind = 'markdown';
+    state.currentEncoding = '';
     state.currentHash = '';
     state.currentMtime = 0;
     state.tagsOfCurrent = [];
@@ -1073,6 +1095,7 @@ async function enterDir(dir, { toastErrors = false } = {}) {
     renderTagEditor();
     updateCounts();
     updateKindBadge('markdown');
+    updateStatusEncoding();
     setSaveStatus('saved');
     editorPane.classList.remove('visible');
     emptyState.classList.remove('hidden');
@@ -1823,14 +1846,14 @@ function renderNoteList() {
     for (const t of n.tags.slice(0, 3)) {
       metaBits.push(`<span class="mini-tag">${esc(t)}</span>`);
     }
-    const kind = (n.kind || noteKindOf(n.path)) === 'html' ? 'html' : 'markdown';
-    // Both formats carry the same kind badge in the list; the topbar mirrors
-    // it for the open note. Allowlist the class name as defense in depth.
-    const kindLabel = kind === 'html' ? 'HTML' : 'MD';
-    const kindTitle = t(
-      kind === 'html' ? 'note.kindHtmlTitle' : 'note.kindMarkdownTitle'
-    );
-    const kindBadge = `<span class="kind-badge ${kind}" title="${esc(kindTitle)}">${kindLabel}</span>`;
+    const kind = KIND_UI[n.kind] ? n.kind : noteKindOf(n.path);
+    // Every format carries the same kind badge in the list; the topbar
+    // mirrors it for the open note. Allowlist the class name (defense in
+    // depth, even though `kind` comes from the backend).
+    const ui = kindUi(kind);
+    const kindBadge = `<span class="kind-badge ${kind}" title="${esc(
+      t(ui.title)
+    )}">${ui.label}</span>`;
     item.innerHTML = `
       <div class="title">${highlightText(n.title, state.filter.query)}</div>
       <div class="file-line"><span class="file-name">${highlightText(fileNameOf(n.path), state.filter.query)}</span>${kindBadge}</div>
@@ -2037,6 +2060,10 @@ function saveCurrent(force = false) {
     if (state.current === path && state.currentDir === dir) {
       state.currentHash = meta.hash;
       state.currentMtime = meta.mtime;
+      if (meta.encoding) {
+        state.currentEncoding = meta.encoding;
+        updateStatusEncoding();
+      }
       if (state.docRevision === revision) {
         state.pendingSave = false;
         state.saveFailed = false;
@@ -2113,6 +2140,7 @@ function applyNoteContent(
   // Local images resolve relative to THIS note's folder in THIS vault.
   setImageContext(vault, path);
   state.currentKind = content.kind || noteKindOf(path);
+  state.currentEncoding = content.encoding || 'UTF-8';
   editor.setLanguage(state.currentKind);
   state.tagsOfCurrent = content.tags || [];
   // Loading must not mark the note dirty (a spurious save right after opening
@@ -2138,6 +2166,7 @@ function applyNoteContent(
   noteTitle.value = stemOf(path);
   renderTagEditor();
   updateKindBadge(state.currentKind);
+  updateStatusEncoding();
   updateCounts();
   updateStatusPath();
   setSaveStatus('saved');
@@ -2157,6 +2186,7 @@ function clearCurrentNote() {
   state.current = null;
   state.currentDir = null;
   state.currentKind = 'markdown';
+  state.currentEncoding = '';
   state.currentHash = '';
   state.currentMtime = 0;
   state.tagsOfCurrent = [];
@@ -2170,6 +2200,7 @@ function clearCurrentNote() {
   noteTitle.value = '';
   renderTagEditor();
   updateKindBadge('markdown');
+  updateStatusEncoding();
   updateCounts();
   setSaveStatus('saved');
   statusPath.textContent = '';
@@ -2295,8 +2326,9 @@ $('btn-rename').addEventListener('click', () => {
 
 function renderTagEditor() {
   tagEditor.innerHTML = '';
-  // HTML notes have no front matter; updateKindBadge hides the container.
-  if (state.currentKind === 'html') return;
+  // Only Markdown notes have front matter; updateKindBadge also hides it for
+  // HTML/CSV/TXT/JSON.
+  if (state.currentKind !== 'markdown') return;
   for (const tag of state.tagsOfCurrent) {
     const chip = document.createElement('span');
     chip.className = 'tag-chip';
@@ -2391,9 +2423,9 @@ function openNewNoteMenu() {
   const rect = $('btn-new-note').getBoundingClientRect();
   const menu = document.createElement('div');
   menu.className = 'export-menu new-note-menu';
-  for (const kind of ['markdown', 'html']) {
+  for (const kind of ['markdown', 'html', 'csv', 'txt', 'json']) {
     const button = document.createElement('button');
-    button.textContent = t(kind === 'html' ? 'new.html' : 'new.markdown');
+    button.textContent = t(`new.${kind}`);
     button.addEventListener('click', () => {
       closeNewNoteMenu();
       void createNewNote(kind);
@@ -2651,7 +2683,7 @@ async function runExport(kind) {
         // An HTML note is already a standalone document: export it verbatim
         // so its scripts, styles and charts keep working outside the app.
         payload = {
-          data: new TextEncoder().encode(body),
+          data: new TextEncoder().encode(ensureUtf8HtmlCharset(body)),
           ext: 'html',
           mime: 'text/html',
           filterName: t('export.filterHtml'),
@@ -2852,8 +2884,13 @@ onLanguageChange(() => {
   syncMultiVaultButton();
   updateFullscreenButton();
   updateKindBadge();
+  updateStatusEncoding();
   updateCounts();
   setSaveStatus(state.saveStatus);
+  // Data previews contain translated headers/stats; refresh the open one.
+  if (state.current && editor && isDataKind(state.currentKind)) {
+    renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
+  }
   applySidebar(isSidebarCollapsed());
   closeExportMenu();
   closeNewNoteMenu();

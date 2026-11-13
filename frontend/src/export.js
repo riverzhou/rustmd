@@ -361,8 +361,10 @@ async function settleImages(stage) {
 /// back to `exportPdf`.
 /** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
 export async function exportPdfVector(source, kind = 'markdown', title = '') {
-  if (kind !== 'markdown') {
-    throw new Error('vector PDF export only supports Markdown notes');
+  // HTML notes use the hidden-WebView pipeline (`print_html_note`); every
+  // in-document rendering (Markdown, CSV, TXT, JSON) can use this print stage.
+  if (kind === 'html') {
+    throw new Error('HTML notes use the hidden-WebView print pipeline');
   }
   const { stage, ready } = buildStage(source, kind);
   try {

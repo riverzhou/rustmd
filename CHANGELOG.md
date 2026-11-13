@@ -5,6 +5,80 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.0] - 2026-11-13
+
+### 新增（Added）
+
+- **五种笔记格式**：新增 CSV、TXT、JSON（同时保留 Markdown、HTML），扩展名
+  `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json`；侧栏、文件名卡片和顶栏
+  统一显示 `MD` / `HTML` / `CSV` / `TXT` / `JSON` 格式徽标，“新建”菜单可直接
+  创建对应类型。CSV/TXT/JSON 不写 front matter、不产生标签。
+- **CSV 表格预览**：引号字段、字段内换行、双引号转义；逗号/制表符/分号/竖线
+  分隔符嗅探；首行表头；按列内容识别数字、日期、货币和布尔值并智能对齐；
+  短列/数字列收紧、长文本列占余宽；隔行底色 + 按列文字色 + 细分隔线 + 悬停高亮，
+  宽表横向滚动。
+- **TXT 制表符对齐**：按制表符拆列并保留空格；无制表符行整行显示；自动跳过
+  前置说明行、取第一行多列文本作为表头参与对齐判断；等宽字体、智能列宽、
+  隔行底色和列文字色。
+- **JSON 检查器**：根类型、键/项数量、节点数；键值分列对齐；对象/数组分组
+  浅底、侧边轨和同色系标签；字符串/数字/布尔/null 独立语义色与类型圆点；
+  可折叠分组；非法 JSON 显示错误和完整原文。浅色/深色两套配色。
+- **编码支持**：BOM → UTF-8 → GBK → GB18030 自动解码，状态栏显示当前编码；
+  保存沿用原编码和 BOM；GBK 文件写入 GB18030 可表示的四字节字符（如 emoji）时
+  兼容升级为 GB18030；重复 UTF-8 BOM 归一化，不会在连续保存中累积；状态栏在
+  保存后同步更新。`NoteMeta` 也返回编码。
+- **所有格式可导出**：CSV/TXT/JSON 复用 Markdown 的离屏导出舞台，支持 HTML、
+  PNG、PDF；数据 HTML 导出包含同样的表格/检查器样式；HTML 笔记导出统一为
+  UTF-8 独立文件并规范化遗留 `<meta charset="gbk">`。PNG/PDF 导出会解除预览
+  的滚动/最大高度限制，长内容按页面分页。
+- **文档与截图**：README 中英文新增 HTML/CSV/TXT/JSON 实际渲染截图（含英文与
+  深色变体），更新功能、编码、导出、测试、安全与发布文档；新增 4 个数据示例
+  作为自测夹具。
+
+### 变更（Changed）
+
+- 表格视觉从“列底色”调整为“隔行底色 + 按列文字色”，并加入智能列宽提示
+  （`col-compact` / `col-wide`）；JSON 调色板、分组层次和列宽同步优化。
+- 编辑器为 JSON 启用 `@codemirror/lang-json`；CSV/TXT 保持纯文本。
+- 自测扩展到 HTML、CSV、TXT、JSON 和 GBK CSV；报告检查新增
+  `--require-data`、数据表头对齐、HTML 文本不注入 DOM、数据 HTML 导出和
+  HTML charset 断言；完整自测的 CI 超时放宽到 1200 秒。
+- README 的格式徽标、代码树、示例数量、测试说明和 GitHub 推广文案同步更新。
+
+### 修复（Fixed）
+
+- 修复 CSV 行数极大时 `Math.max(...rows.map(...))` 触发调用栈/参数上限崩溃。
+- 修复分隔符嗅探被文本内逗号误导（分号/竖线/两列表格）的问题，并补回归用例。
+- 修复 TXT 前置说明行导致表头参与类型判断、数字列被左对齐的问题。
+- 修复打印/导出时数据视图像素被 `overflow:hidden` / `overflow-x:auto` 裁剪。
+- 修复非法 JSON `.data-raw` 在导出中只保留 520px 的问题。
+- 修复 Windows 保留名（`CON.md` 等）和前导点文件名重命名；Unix 反斜杠文件名
+  不再被错误改写为路径分隔符（改为安全跳过）。
+- 修复 HTML 笔记导出保留旧 charset 导致独立文件乱码。
+- 修复重复 UTF-8 BOM 在保存时累积的问题。
+- 修复 GB18030 四字节文件被标为 GBK、以及 GBK 文件无法追加 emoji 的问题。
+
+### 验证（Verified）
+
+- `npm run check`：ESLint、45 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、75 个 Rust 测试（Windows：74 个，73 通过 + 1 个网络测试
+  ignored；Linux/macOS：75 个，74 通过 + 1 ignored，额外 1 个 Unix 路径测试）、
+  Vite build 全部通过。
+- `npm run selftest`：真实 WebView 渲染 10 篇示例（Markdown、HTML、CSV×2、
+  TXT、JSON 等），逐篇导出 HTML/PNG/PDF，`report.ok: true`、
+  `check-selftest-report --require-html --require-data` 通过。
+- 浏览器 mock 与真实 WebView 复核格式徽标、新建菜单、编码状态、表格对齐/
+  列宽/配色、JSON 浅色深色、HTML 导出 charset、数据导出和长内容分页；额外用
+  300 行长 CSV 验证矢量 PDF 分页（13 页）与智能列宽，临时夹具不进入仓库。
+
+### 边界（Limits）
+
+- 数据视图为防止超大文件卡死，预览及由其生成的导出最多显示 CSV 2000 行 /
+  100 列、TXT 5000 行 / 80 列、JSON 6000 节点；超出时有明确截断提示。
+- 约 1920 个常用汉字的 GBK 两字节序列也是合法 UTF-8；检测器按“合法 UTF-8
+  优先”读取。此类字节级歧义无法在无用户编码选择时消除，遇到乱码请先在外部
+  转为 UTF-8。
+
 ## [1.9.0] - 2026-11-13
 
 ### 新增（Added）

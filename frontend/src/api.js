@@ -290,6 +290,51 @@ const mockNotes = new Map([
     },
   ],
   [
+    'data/示例数据.csv',
+    {
+      tags: [],
+      body: `名称,数量,单价,备注
+苹果,12,5.5,"红富士，脆甜"
+香蕉,8,3.2,
+"葡萄, 阳光玫瑰",4,18.8,"带, 逗号"
+`,
+      mtime: Date.now() / 1000 - 5 * 86400,
+    },
+  ],
+  [
+    'data/说明.txt',
+    {
+      tags: [],
+      body: `rustmd 文本示例
+名称	数量	状态
+苹果	12	已入库
+香蕉	8	待补货
+
+这一行没有制表符，会作为整行显示。
+`,
+      mtime: Date.now() / 1000 - 5 * 86400 - 60,
+    },
+  ],
+  [
+    'data/配置.json',
+    {
+      tags: [],
+      body: `{
+  "name": "rustmd",
+  "version": "1.10.0",
+  "features": ["csv", "txt", "json"],
+  "preview": {
+    "theme": "light",
+    "columnBands": true,
+    "maxRows": 2000
+  },
+  "offline": true
+}
+`,
+      mtime: Date.now() / 1000 - 5 * 86400 - 120,
+    },
+  ],
+  [
     'guides/html-page.html',
     {
       tags: [],
@@ -301,7 +346,7 @@ const mockNotes = new Map([
 </head>
 <body>
   <h1>HTML 页面示例</h1>
-  <p>这是一个 <strong>HTML</strong> 笔记：编辑器里是源码，右侧是消毒后的实时预览。</p>
+  <p>这是一个 <strong>HTML</strong> 笔记：编辑器里是源码，右侧是沙箱隔离的实时预览。</p>
   <ul>
     <li>支持标题、列表、表格、图片和链接</li>
     <li>脚本、事件属性和 iframe 会被移除</li>
@@ -416,6 +461,10 @@ function mockSnippet(body) {
     .slice(0, 100);
 }
 
+function mockPlainSnippet(body) {
+  return String(body).replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+
 function mockHtmlDoc(source) {
   if (typeof DOMParser === 'undefined') return null;
   try {
@@ -455,15 +504,26 @@ function mockMeta(notes, path) {
   const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
   const name = noteStemOf(path);
   const kind = noteKindOf(path);
-  const html = kind === 'html';
+  const markdown = kind === 'markdown';
   return {
     path,
     folder,
-    title: html ? mockHtmlTitle(n.body, name) : mockTitle(n.body, name),
-    tags: html ? [] : [...n.tags],
-    snippet: html ? mockHtmlText(n.body).slice(0, 100) : mockSnippet(n.body),
+    title:
+      kind === 'html'
+        ? mockHtmlTitle(n.body, name)
+        : markdown
+          ? mockTitle(n.body, name)
+          : name,
+    tags: markdown ? [...n.tags] : [],
+    snippet:
+      kind === 'html'
+        ? mockHtmlText(n.body).slice(0, 100)
+        : markdown
+          ? mockSnippet(n.body)
+          : mockPlainSnippet(n.body),
     mtime: n.mtime,
     kind,
+    encoding: 'UTF-8',
     hash: mockHash(n.body),
   };
 }
@@ -501,7 +561,9 @@ function mockSearch(notes, query, scope = null, recursive = true) {
     const body =
       meta.kind === 'html'
         ? mockHtmlText(n.body)
-        : stripMockFrontMatter(n.body);
+        : meta.kind === 'markdown'
+          ? stripMockFrontMatter(n.body)
+          : n.body;
     const bodyLower = body.toLowerCase();
     const titleLower = meta.title.toLowerCase();
     const fileStem = noteStemOf(path);
@@ -601,11 +663,12 @@ function mockInvoke(command, args) {
             if (!n) throw new Error('note not found');
             const kind = noteKindOf(args.path);
             return resolve({
-              tags: kind === 'html' ? [] : [...n.tags],
+              tags: kind === 'markdown' ? [...n.tags] : [],
               body: n.body,
               mtime: n.mtime,
               hash: mockHash(n.body),
               kind,
+              encoding: 'UTF-8',
             });
           }
           case 'save_note': {
@@ -626,7 +689,9 @@ function mockInvoke(command, args) {
             }
             notes.set(savePath, {
               tags:
-                noteKindOf(savePath) === 'html' ? [] : [...args.args.tags],
+                noteKindOf(savePath) === 'markdown'
+                  ? [...args.args.tags]
+                  : [],
               body: args.args.body,
               mtime: Date.now() / 1000,
             });
@@ -637,7 +702,15 @@ function mockInvoke(command, args) {
               ? mockRelativePath(args.folder, 'folder')
               : '';
             const folder = folderPath ? `${folderPath}/` : '';
-            const ext = args.kind === 'html' || args.kind === 'htm' ? 'html' : 'md';
+            const extByName = {
+              markdown: 'md',
+              html: 'html',
+              htm: 'html',
+              csv: 'csv',
+              txt: 'txt',
+              json: 'json',
+            };
+            const ext = extByName[args.kind] || 'md';
             let candidate = `${folder}untitled.${ext}`;
             let i = 1;
             while (notes.has(candidate)) {
@@ -658,9 +731,9 @@ function mockInvoke(command, args) {
               ? args.path.slice(0, args.path.lastIndexOf('/') + 1)
               : '';
             // Preserve the current format (mirrors Rust rename_note).
-            const ext = (args.path.match(/\.(md|html|htm)$/i) || ['.md'])[0].toLowerCase();
+            const ext = (args.path.match(/\.(md|html|htm|csv|txt|json)$/i) || ['.md'])[0].toLowerCase();
             const clean = sanitizeMockName(args.name).replace(
-              /\.(?:md|html|htm)$/i,
+              /\.(?:md|html|htm|csv|txt|json)$/i,
               ''
             );
             const name = `${clean || 'untitled'}.${ext}`;

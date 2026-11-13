@@ -98,6 +98,8 @@ export const MESSAGES = {
     'status.unsaved': 'Unsaved…',
     'status.saveFailed': 'Save failed',
     'status.conflict': 'Conflict — not saved',
+    'status.encodingTitle':
+      'Text encoding detected on disk; saving keeps this encoding',
 
     'empty.normal':
       'Choose a note on the left, or create one to start writing',
@@ -121,11 +123,22 @@ export const MESSAGES = {
     'note.kindMarkdownTitle': 'Markdown note · rendered preview',
     'note.kindHtmlTitle':
       'HTML note · isolated live preview (scripts and styles run in a sandbox)',
+    'note.kindCsv': 'CSV table',
+    'note.kindTxt': 'Plain-text note',
+    'note.kindJson': 'JSON document',
+    'note.kindCsvTitle': 'CSV note · aligned table preview',
+    'note.kindTxtTitle':
+      'Text note · tab-aligned text with row bands and column ink tints',
+    'note.kindJsonTitle':
+      'JSON note · collapsible inspector with keys, types and counts',
     'note.counts': (v) =>
       `${v.words} ${v.words === 1 ? 'word' : 'words'} · ` +
       `${v.chars} ${v.chars === 1 ? 'character' : 'characters'}`,
     'new.markdown': 'Markdown note',
     'new.html': 'HTML page',
+    'new.csv': 'CSV table',
+    'new.txt': 'Text file',
+    'new.json': 'JSON file',
 
     'tag.remove': 'Remove',
     'tag.addPlaceholder': '+ tag',
@@ -198,6 +211,43 @@ export const MESSAGES = {
     'preview.htmlNoRenderer':
       'HTML rendering failed ({msg}). Showing a sanitized static preview without scripts or charts.',
     'export.footer': 'Exported by rustmd · {date}',
+
+    'data.csvSummary': (v) =>
+      `${v.rows} ${v.rows === 1 ? 'row' : 'rows'} · ` +
+      `${v.cols} ${v.cols === 1 ? 'column' : 'columns'} · ${v.delimiter}`,
+    'data.delimiterComma': 'comma-separated',
+    'data.delimiterTab': 'tab-separated',
+    'data.delimiterSemicolon': 'semicolon-separated',
+    'data.delimiterPipe': 'pipe-separated',
+    'data.txtSummary': (v) => `${v.lines} ${v.lines === 1 ? 'line' : 'lines'}`,
+    'data.txtColumns': (v) =>
+      `${v.cols} tab ${v.cols === 1 ? 'column' : 'columns'}`,
+    'data.tableLabel': 'Data table',
+    'data.empty': 'Empty file',
+    'data.emptyHint':
+      'This file has no content yet. Type in the editor to preview it.',
+    'data.truncatedRows': (v) =>
+      `Showing the first ${v.shown} of ${v.total} rows.`,
+    'data.truncatedColumns': (v) =>
+      `Showing the first ${v.shown} of ${v.total} columns.`,
+    'data.truncatedLines': (v) =>
+      `Showing the first ${v.shown} of ${v.total} lines.`,
+    'data.csvUnclosedQuote':
+      'A quoted field is never closed; showing the parsed text.',
+    'data.jsonInvalid': 'Invalid JSON: {msg}',
+    'data.invalidShort': 'Invalid JSON',
+    'data.jsonKeys': (v) => `${v.n} ${v.n === 1 ? 'key' : 'keys'}`,
+    'data.jsonItems': (v) => `${v.n} ${v.n === 1 ? 'item' : 'items'}`,
+    'data.jsonNodes': (v) => `${v.n} ${v.n === 1 ? 'node' : 'nodes'}`,
+    'data.jsonTruncated': (v) => `Inspector truncated after ${v.n} nodes.`,
+    'data.jsonEmptyObject': 'empty object',
+    'data.jsonEmptyArray': 'empty array',
+    'data.typeObject': 'Object',
+    'data.typeArray': 'Array',
+    'data.typeString': 'String',
+    'data.typeNumber': 'Number',
+    'data.typeBoolean': 'Boolean',
+    'data.typeNull': 'Null',
   },
 
   'zh-CN': {
@@ -283,6 +333,7 @@ export const MESSAGES = {
     'status.unsaved': '未保存…',
     'status.saveFailed': '保存失败',
     'status.conflict': '冲突未保存',
+    'status.encodingTitle': '从磁盘自动识别的文本编码，保存时沿用该编码',
 
     'empty.normal': '从左侧选择一篇笔记，或新建一篇开始写作',
     'empty.collapsed': '点击左上角按钮显示笔记列表，或按 Ctrl+B',
@@ -305,9 +356,18 @@ export const MESSAGES = {
     'note.kindMarkdownTitle': 'Markdown 笔记 · 渲染预览',
     'note.kindHtmlTitle':
       'HTML 笔记 · 隔离的实时预览（脚本和样式在 sandbox 中运行）',
+    'note.kindCsv': 'CSV 表格',
+    'note.kindTxt': '纯文本笔记',
+    'note.kindJson': 'JSON 文档',
+    'note.kindCsvTitle': 'CSV 笔记 · 对齐表格预览',
+    'note.kindTxtTitle': '文本笔记 · 制表符对齐、隔行底色 + 列文字色',
+    'note.kindJsonTitle': 'JSON 笔记 · 可折叠检查器（键、类型、计数）',
     'note.counts': (v) => `${v.words} 字 · ${v.chars} 字符`,
     'new.markdown': 'Markdown 笔记',
     'new.html': 'HTML 页面',
+    'new.csv': 'CSV 表格',
+    'new.txt': '纯文本文件',
+    'new.json': 'JSON 文件',
 
     'tag.remove': '移除',
     'tag.addPlaceholder': '+ 标签',
@@ -377,6 +437,36 @@ export const MESSAGES = {
     'preview.htmlNoRenderer':
       'HTML 渲染失败（{msg}）。当前显示消毒后的静态预览（脚本与图表不可用）。',
     'export.footer': '由 rustmd 导出 · {date}',
+
+    'data.csvSummary': (v) => `${v.rows} 行 · ${v.cols} 列 · ${v.delimiter}`,
+    'data.delimiterComma': '逗号分隔',
+    'data.delimiterTab': '制表符分隔',
+    'data.delimiterSemicolon': '分号分隔',
+    'data.delimiterPipe': '竖线分隔',
+    'data.txtSummary': (v) => `${v.lines} 行`,
+    'data.txtColumns': (v) => `${v.cols} 个制表符列`,
+    'data.tableLabel': '数据表格',
+    'data.empty': '空文件',
+    'data.emptyHint': '文件还没有内容，在编辑器中输入后即可预览。',
+    'data.truncatedRows': (v) => `仅显示前 ${v.shown} 行，共 ${v.total} 行。`,
+    'data.truncatedColumns': (v) =>
+      `仅显示前 ${v.shown} 列，共 ${v.total} 列。`,
+    'data.truncatedLines': (v) => `仅显示前 ${v.shown} 行，共 ${v.total} 行。`,
+    'data.csvUnclosedQuote': '存在未闭合的引号字段，当前按已解析内容显示。',
+    'data.jsonInvalid': 'JSON 无效：{msg}',
+    'data.invalidShort': 'JSON 无效',
+    'data.jsonKeys': (v) => `${v.n} 个键`,
+    'data.jsonItems': (v) => `${v.n} 项`,
+    'data.jsonNodes': (v) => `${v.n} 个节点`,
+    'data.jsonTruncated': (v) => `检查器已在 ${v.n} 个节点后截断。`,
+    'data.jsonEmptyObject': '空对象',
+    'data.jsonEmptyArray': '空数组',
+    'data.typeObject': '对象',
+    'data.typeArray': '数组',
+    'data.typeString': '字符串',
+    'data.typeNumber': '数字',
+    'data.typeBoolean': '布尔',
+    'data.typeNull': 'Null',
   },
 };
 

@@ -1,0 +1,6 @@
+rustmd 文本预览
+名称	数量	状态	备注
+苹果	12	true	红富士, 脆甜
+香蕉	8	false	
+这一行没有制表符，会占满整行。
+字面 HTML 文本：<img src=x onerror=alert(1)>，不应被执行。

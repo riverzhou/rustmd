@@ -11,11 +11,11 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、笔记格式识别、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
-| 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
+| 前端单测 | `npm run test:unit` | 排序、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探/数字列对齐/列宽提示、TXT 制表符列、JSON 统计/校验、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 与 CSV/TXT/JSON 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 及 `package-lock.json` / `Cargo.lock` 根包版本一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
-| Rust 单测 | `node scripts/cargo.mjs test` | 64 个测试（63 通过 + 1 个网络测试默认 ignored；含 PDF 页码戳记与多库根包含性单测） |
+| Rust 单测 | `node scripts/cargo.mjs test` | 75 个测试（Windows：74 个，73 通过 + 1 个网络测试默认 ignored；Linux/macOS：75 个，74 通过 + 1 ignored，额外 1 个 Unix 反斜杠路径测试。含 GBK/GB18030/BOM 往返、CSV/TXT/JSON 识别、数据保存/冲突/重命名、PDF 页码戳记与多库根包含性单测） |
 | 前端构建 | `npm run build` | Vite 生产构建 |
 
 `scripts/cargo.mjs` 会找 `$CARGO`、`~/.cargo/bin/cargo`、PATH。CI 里直接使用 rustup 安装的 stable。
@@ -34,7 +34,7 @@ npm run check
 - 文件夹：空文件夹和嵌套；
 - 重命名/移动：冲突自动后缀；HTML 扩展名保留；
 - 图片：MIME、`rmd` 路径、缓存 mtime、SSRF 私有地址拒绝；
-- HTML 渲染：base URL（Windows 盘符/Unix/UNC 分隔符）、`strip_base_tags`/`insert_after_head` 标签边界、`serve_rmd` Origin 白名单（null/rmdhtml 拒绝，font 放行）、`serve_html_preview` token/CSP/404、PNG 分段拼接格式校验、非 UTF-8 HTML 可见但打开报错、字面 `<` 文本；
+- HTML/数据渲染：base URL（Windows 盘符/Unix/UNC 分隔符）、`strip_base_tags`/`insert_after_head` 标签边界、`serve_rmd` Origin 白名单（null/rmdhtml 拒绝，font 放行）、`serve_html_preview` token/CSP/404、PNG 分段拼接格式校验、不支持的编码仍可见但打开报错、GBK/GB18030/UTF-8 BOM（含双 BOM 不累积）往返、GBK 四字节升级、CSV/TXT/JSON 识别/保存/冲突/重命名、字面 `<` 文本；
 - 网络拉取：`#[ignore]`，显式 `cargo test -- --ignored` 时运行。
 
 ## 前端单测
@@ -55,24 +55,23 @@ npm run selftest
 等价于设置 `RUSTMD_SELFTEST=1` 后启动 `scripts/launch-dev.mjs`，dev 窗口会：
 
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
-2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；导出前本地图片必须被内联为 data URL；
+2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；CSV/TXT/JSON 检查表格/检查器结构、智能表头对齐、笔记文本不注入 DOM，并断言 GBK 示例的编码识别；另外用合成 CSV/TXT 表格独立验证数字右对齐、布尔居中与 `scope=col`。导出前本地图片必须被内联为 data URL；
 3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`；PDF 统一走平台打印管线（Markdown `print_note_pdf`、HTML `print_html_note`，均为矢量文字、A4 分页；Windows WebView2 / macOS WKWebView / Linux WebKitGTK），不支持时回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源走 `rmd` base；超长页面分段拼接）；
 4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；走矢量打印路径的 PDF 条目要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；回退图片 PDF 不要求；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
-5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色
-   （html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；
+5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色（html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；同时校验 HTML 导出会移除遗留的 GBK charset、保留 script 内文本、在 doctype 后写入 UTF-8 声明；
 6. 写 `report.json`，通过 `selftest_finish` 以 0/1 退出。
 
-`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML 覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、24 小时新鲜度检查；报告校验：
+`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML/数据覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、HTML 导出 charset、24 小时新鲜度检查；报告校验：
 
 ```bash
 RUSTMD_SELFTEST_OUT=/path/to/rustmd-selftest npm run selftest:check
-# CI 要求报告里至少有一个 HTML 条目；报告默认拒绝 24h 前的旧结果
-node scripts/check-selftest-report.mjs "<out>/report.json" --require-html
+# CI 要求至少一个 HTML + CSV/TXT/JSON 条目；报告默认拒绝 24h 前的旧结果
+node scripts/check-selftest-report.mjs "<out>/report.json" --require-html --require-data
 # 需要检查旧报告时显式放宽：
 RUSTMD_SELFTEST_MAX_AGE_HOURS=168 node scripts/check-selftest-report.mjs "<out>/report.json"
 ```
 
-远程图片探测失败会记为 `report.warnings` 并跳过该图的导出断言，不会阻塞发布；报告校验脚本会打印这些警告。本地图片、HTML iframe/本地脚本和矢量 PDF 断言仍然严格。HTML 笔记的 CDN 图表脚本需要网络，离线时相关 HTML 示例可能无法通过渲染断言。
+远程图片探测失败会记为 `report.warnings` 并跳过该图的导出断言，不会阻塞发布；报告校验脚本会打印这些警告。本地图片、HTML iframe/本地脚本、数据结构和矢量 PDF 断言仍然严格。CSV/TXT/JSON 的显示上限（CSV 2000 行/100 列、TXT 5000 行/80 列、JSON 6000 节点）同时作用于导出，报告只覆盖上限内的示例；超限截断提示由预览/DOM 检查兜底。发布前额外用 300 行长 CSV 验证了矢量 PDF 分页（13 页）与导出列宽，测试夹具不进入仓库。HTML 笔记的 CDN 图表脚本需要网络，离线时相关 HTML 示例可能无法通过渲染断言。
 
 可用真实报告库验证 HTML 图表导出与超长分段拼接（不需要外部浏览器）：
 
@@ -87,7 +86,7 @@ RUSTMD_SELFTEST_EXAMPLES="<你的报告库>" npm run selftest
 - 输出目录：`%TEMP%\rustmd-selftest`（Windows）或 `$TMPDIR/rustmd-selftest`；用 `RUSTMD_SELFTEST_OUT` 覆盖。
 - 示例目录：用 `RUSTMD_SELFTEST_EXAMPLES` 覆盖。
 - 如果窗口白屏/无产物：先用 `npm run dev` 复现前端异常；Linux CI 下用 `xvfb-run`、`WEBKIT_DISABLE_COMPOSITING_MODE=1`、`LIBGL_ALWAYS_SOFTWARE=1`。
-- 如果应用没有退出但 report 已写入：CI 用 `timeout 600` 兜底，并以 report 校验为准。
+- 如果应用没有退出但 report 已写入：CI 用 `timeout 1200` 兜底，并以 report 校验为准。离线环境下远程图片会拖慢导出，这是测试环境的预期行为。
 - release 构建不包含 `selftest.js`，`selftest_*` 命令返回错误。
 
 ## Linux headless release smoke
@@ -123,8 +122,8 @@ localStorage 迁移：
 | Job | 内容 |
 | --- | --- |
 | `quality` | Ubuntu 22.04：安装 Tauri 依赖，`npm ci`，`npm run check`（含 lint/单测/仓库检查/Rust 测试/构建） |
-| `build` | Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`（Apple Silicon only），验证真实编译 |
-| `selftest` | Ubuntu + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测，校验 report，上传产物 |
+| `build` | Windows / Ubuntu 构建（Windows 额外跑 `cargo test` 覆盖保留名/路径规则）；macOS 构建 `aarch64-apple-darwin`（Apple Silicon only），验证真实编译 |
+| `selftest` | Ubuntu + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
 
 依赖 Linux 系统包：
 
@@ -133,11 +132,11 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libssl-dev li
   patchelf libxdo-dev build-essential curl file xdg-utils xvfb fonts-noto-cjk
 ```
 
-发布 workflow 的 `verify` job 也会在 Ubuntu + Xvfb 跑 `npm run selftest` 并用 `--require-html` 校验报告；详见 [RELEASING.md](RELEASING.md)。
+发布 workflow 的 `verify` job 也会在 Ubuntu + Xvfb 跑 `npm run selftest`，并用 `--require-html --require-data` 校验报告；详见 [RELEASING.md](RELEASING.md)。
 
 ## 加测试的原则
 
-- 纯逻辑放 `notelist.js` / `vaultlist.js` / `markdown.js`，用 `node --test`；不要为了测试把 DOM 逻辑塞进去。
+- 纯逻辑放 `notelist.js` / `vaultlist.js` / `markdown.js` / `dataformat.js`，用 `node --test`；不要为了测试把 DOM 逻辑塞进去。数据渲染器本身由真实 WebView 自测覆盖。
 - 每个修过的 bug 至少补一个回归测试（多行公式、junction 逃逸、hash 冲突、`file:///` 等）。
 - 不要放宽 `resolve_in_root` / `resolve_vault_file` / SSRF 检查来让测试通过。
 - 网络测试默认 `#[ignore]`；E2E 才承担真实网络链路验证。

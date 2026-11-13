@@ -1,10 +1,71 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-13（v1.9.0 全量复核；v1.8.1 与 v1.8.0 于 2026-11-12）
-**审计对象**：`rustmd` v1.9.0（Rust + Tauri 2，Markdown + HTML 笔记）
-**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；多轮静态检查与运行时回归；针对 HTML 渲染、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 端到端自测 + 浏览器 mock 状态回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+**审计日期**：2026-11-13（v1.10.0 全量复核；v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.0（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；两轮独立子代理审计 + 针对最新工作区的复核；多轮静态检查与运行时回归；针对 HTML 渲染、数据视图、编码、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 自测（10 篇示例、HTML/PNG/PDF）+ 浏览器 mock 与截图回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
 
-### v1.9.0 最近库置顶 / 多库同开 / 侧栏布局（当前版本）
+## v1.10.0 五格式数据视图与编码（当前版本）
+
+本版在 v1.9.0 基础上新增 CSV/TXT/JSON 三种数据笔记，并把 Markdown/HTML 的预览、
+导出、编码、徽标和文档体系扩展到五种格式。以下为对最新工作区的全量审计结论。
+
+### 本轮修复
+
+- **CSV**：解析器支持引号、字段内换行和双引号转义；分隔符嗅探加入覆盖率权重，
+  修正分号/竖线/两列表格被文本内逗号误导；列宽提示优先长/多行文本，数字/日期/
+  布尔列智能对齐；修复大行数 `Math.max(...rows.map(...))` 崩溃。
+- **TXT**：跳过前置整行说明，取第一行多列文本作为表头；表头与数据同列对齐，
+  数字右对齐、布尔居中；保留行内空格与整行说明。
+- **JSON**：键值分列、分组浅底/侧边轨、类型/数量标签、类型圆点、可折叠、语义
+  调色板；非法 JSON 的完整原文在导出/打印中不再被 520px 高度裁剪。
+- **编码**：BOM → 合法 UTF-8 → GBK → GB18030；GB18030 四字节序列按字节形态
+  识别并标为 GB18030；GBK 文件新增四字节字符时兼容升级，`NoteMeta.encoding`
+  返回新标签，保存后状态栏同步；重复 UTF-8 BOM 归一化，修复双 BOM 累积。
+- **导出**：CSV/TXT/JSON 复用 Markdown 的 HTML/PNG/PDF 管线；补 `--font-body`
+  与深色 `--card` 导出变量；打印/导出解除数据视图 `overflow`/`max-height`；
+  HTML 笔记导出统一 UTF-8 并规范化遗留 `<meta charset="gbk">`。
+- **路径/命名**：Windows 保留名按扩展名前的主干检查（`CON.md` → `_CON.md`），
+  去掉前导点；Unix 反斜杠文件不再被错误改写为 `/`，扫描时安全跳过。
+- **安全/可访问性**：数据视图全部经 `textContent` 构建；提高数据统计、JSON
+  空值、警告/错误小字的对比度；删除临时截图和 `data-*` 孤儿图片。
+
+### 独立审计结论与取舍
+
+- **编码歧义（残余，已降级文档承诺）**：约 1920 个常用汉字的 GBK 两字节序列
+  也构成合法 UTF-8。审计中曾尝试“短文本优先 GBK”的启发式，但复核发现它会
+  破坏合法的短 UTF-8 俄文/emoji/假名等笔记，已删除。最终策略为合法 UTF-8 优先，
+  并在 README/SECURITY/ARCHITECTURE 明确这是一个字节级歧义边界；没有每文件
+  编码选择器。此类文件需在外部转为 UTF-8。
+- **数据导出上限（已文档化）**：CSV 2000 行/100 列、TXT 5000 行/80 列、JSON
+  6000 节点同时约束预览和导出，预览与 HTML 导出带截断提示；不做无上限导出，
+  避免超大 PNG/PDF 卡死。该取舍已写入 README、AGENTS、ARCHITECTURE、SECURITY。
+- **混合换行/单独 CR**：既有行为是统一为首个换行风格，并恢复原 CRLF/LF；
+  本轮未改，作为既有边界记录。
+- **并发 TOCTOU**：保存的 hash 校验与写入、重命名/移动的存在性检查与 `rename`
+  之间仍有极窄窗口；本地单用户应用接受该风险，未在本版引入文件锁。
+- **大文件读取**：`read_meta`/搜索仍会整文件读取并解码；数据笔记可能有几十 MB，
+  UI 列表性能是已知上限，后续可做前缀读取/流式 hash。
+- **其他既有低风险**：搜索摘要 Rust 按 UTF-8 字节窗口（裁剪到字符边界）、mock
+  按 UTF-16 code unit；不支持的 Shift-JIS/Big5 可能被 GBK 解码为乱码而非报错；
+  `read_note` 等命令只校验根目录包含性、不限制扩展名；`serve_rmd` 接受任意
+  localhost Origin；IPv4-compatible IPv6 的 SSRF 边界；Windows `read_pdf_stream`
+  只检查 `%PDF-` 前缀。这些均记录为后续加固项，不影响本版数据格式发布。
+
+### 验证
+
+- `npm run check`：ESLint、45 个前端单测、仓库/版本检查、`cargo fmt`、
+  clippy `-D warnings`、75 个 Rust 测试（Windows 74：73 通过 + 1 ignored；
+  Linux/macOS 75：74 通过 + 1 ignored，额外 1 个 Unix 路径测试）、Vite build。
+- `npm run selftest`：真实 WebView 渲染 10 篇示例（Markdown、HTML、CSV×2、
+  TXT、JSON），逐篇导出 HTML/PNG/PDF；报告含数据表头对齐、HTML 文本不注入 DOM、
+  数据 HTML 导出、GBK 识别与 charset 归一化断言；
+  `check-selftest-report --require-html --require-data` 通过。
+- 浏览器 mock / 截图回归：格式徽标、新建菜单、编码状态、表格智能列宽/对齐/
+  隔行底色/列文字色、JSON 浅色深色、数据导出与长内容分页。
+- 额外以 300 行长 CSV（临时夹具，不提交）验证矢量 PDF 分页为 13 页，导出列宽
+  仍按紧凑/长文本提示分配，而不是等宽裁剪。
+
+### v1.9.0 最近库置顶 / 多库同开 / 侧栏布局（历史）
 
 本版在 v1.8.1 基础上完成一轮“笔记库管理 + 侧栏空间”升级，并做全量代码/文档复核：
 

@@ -17,6 +17,8 @@ import {
   setImageContext,
   isRmdUrl,
   inlineLocalAssetsInHtml,
+  buildExportHtml,
+  ensureUtf8HtmlCharset,
 } from './preview.js';
 import {
   exportPng,
@@ -416,15 +418,34 @@ export async function runSelfTest({ getState }) {
     errors: [],
     warnings: [],
   };
+  let progressText = '';
+  async function progress(stage, path = '') {
+    progressText += `${new Date().toISOString()} ${stage}${path ? ` ${path}` : ''}\n`;
+    try {
+      await api.selftestWrite(
+        'progress.log',
+        new TextEncoder().encode(progressText)
+      );
+    } catch {
+      // Progress logging must never change the verdict.
+    }
+  }
+
   // Serve the examples vault through the `rmd` image protocol for this
   // run (local-image regression); restore the user's root afterwards.
   await api.setNotesRoot(SELFTEST_EXAMPLES_DIR);
   try {
     const notes = await api.listNotes(SELFTEST_EXAMPLES_DIR);
     for (const meta of notes) {
+      await progress('note:start', meta.path);
       const entry = { path: meta.path, remoteImagesInSource: null };
-      const { body, kind } = await api.readNote(SELFTEST_EXAMPLES_DIR, meta.path);
+      const { body, kind, encoding } = await api.readNote(
+        SELFTEST_EXAMPLES_DIR,
+        meta.path
+      );
       entry.kind = kind;
+      entry.encoding = encoding;
+      await progress('note:read', meta.path);
       if (kind === 'html') {
         // HTML notes render in the built-in WebView; this branch is a
         // render/capture smoke test (the cross-origin iframe cannot be
@@ -438,6 +459,7 @@ export async function runSelfTest({ getState }) {
         const t0 = performance.now();
         try {
           await renderPreview(body, box, 'html');
+          await progress('note:html-preview', meta.path);
           const frame = box.querySelector('iframe.html-preview-frame');
           entry.render = {
             ms: Math.round(performance.now() - t0),
@@ -589,6 +611,11 @@ export async function runSelfTest({ getState }) {
         console.log('[selftest] done', meta.path);
         continue;
       }
+      // Data notes have no Markdown images and no HTML parser. Keeping
+      // `imageSrcs` empty also avoids running the Markdown image regex over
+      // arbitrary CSV/TXT/JSON text.
+      const isData =
+        kind === 'csv' || kind === 'txt' || kind === 'json';
       // Mirror preview.js's image resolution for both note formats. For HTML
       // notes remember an explicit width attribute so the PNG presence check
       // searches for the size html2canvas actually rendered.
@@ -608,8 +635,9 @@ export async function runSelfTest({ getState }) {
           htmlWidthBySrc.set(src, width);
         }
       }
-      const imageSrcs =
-        kind === 'html'
+      const imageSrcs = isData
+        ? []
+        : kind === 'html'
           ? htmlImages
               .map((img) => img.getAttribute('src') || '')
               .filter(Boolean)
@@ -635,6 +663,94 @@ export async function runSelfTest({ getState }) {
       document.body.appendChild(box);
       const t0 = performance.now();
       await renderPreview(body, box, kind);
+      await progress('note:rendered', meta.path);
+
+      if (isData) {
+        const view = box.querySelector('.data-view');
+        // The TXT header is the first tab-separated row, which may come
+        // after a prose/introduction line rendered with colspan.
+        const firstRowCells =
+          kind === 'csv'
+            ? [...box.querySelectorAll('.data-table thead th')]
+            : kind === 'txt'
+              ? [
+                  ...([...box.querySelectorAll('.txt-table tbody tr')].find(
+                    (tr) => tr.children.length > 1
+                  )?.children || []),
+                ]
+              : [];
+        const dataRender = {
+          view: Boolean(view),
+          className: view ? String(view.className) : '',
+          rows: box.querySelectorAll(
+            '.data-table tbody tr, .txt-table tbody tr'
+          ).length,
+          groups: box.querySelectorAll('.json-group').length,
+          values: box.querySelectorAll('.json-value').length,
+          injected: box.querySelectorAll(
+            'b, img, script, iframe, object, embed'
+          ).length,
+          headerRight: firstRowCells.some((cell) =>
+            cell.classList.contains('align-right')
+          ),
+          headerCenter: firstRowCells.some((cell) =>
+            cell.classList.contains('align-center')
+          ),
+        };
+        entry.dataRender = dataRender;
+        if (!view || !view.classList.contains(`data-view-${kind}`)) {
+          report.errors.push(`${meta.path}: data preview view is missing`);
+        }
+        if ((kind === 'csv' || kind === 'txt') && dataRender.rows === 0) {
+          report.errors.push(`${meta.path}: data table has no rows`);
+        }
+        if (kind === 'json' && (dataRender.groups === 0 || dataRender.values === 0)) {
+          report.errors.push(`${meta.path}: JSON inspector is empty`);
+        }
+        if (dataRender.injected !== 0) {
+          report.errors.push(
+            `${meta.path}: note text injected HTML into the data preview`
+          );
+        }
+        if (!encoding) {
+          report.errors.push(`${meta.path}: data note has no detected encoding`);
+        }
+        if (
+          meta.path.endsWith('数据表格示例-GBK.csv') &&
+          encoding !== 'GBK'
+        ) {
+          report.errors.push(
+            `${meta.path}: expected GBK, got ${encoding || 'none'}`
+          );
+        }
+        try {
+          const exportHtml = await buildExportHtml(
+            meta.title,
+            body,
+            'light',
+            kind
+          );
+          const htmlBytes = new TextEncoder().encode(exportHtml);
+          const htmlExport = {
+            bytes: htmlBytes.length,
+            dataView: exportHtml.includes(`data-view-${kind}`),
+            escapedMarkup: !/<(?:b|img|script)[\s>]/i.test(exportHtml),
+          };
+          entry.htmlExport = htmlExport;
+          if (!htmlExport.dataView) {
+            report.errors.push(`${meta.path}: exported HTML has no data view`);
+          }
+          if (!htmlExport.escapedMarkup) {
+            report.errors.push(
+              `${meta.path}: note markup was not escaped in exported HTML`
+            );
+          }
+          await api.selftestWrite(`${meta.path}.html`, htmlBytes);
+          await progress('note:html-export', meta.path);
+        } catch (e) {
+          report.errors.push(`${meta.path}: data HTML export failed: ${e}`);
+        }
+      }
       // Remote + local imgs: renderPreview only guarantees DOM + math +
       // mermaid are done, NOT that <img> fetches settled — wait for
       // load/error before snapshotting (the old immediate check raced and
@@ -660,6 +776,7 @@ export async function runSelfTest({ getState }) {
             })
         )
       );
+      await progress('note:image-wait', meta.path);
       // Local images must actually decode in the preview — a broken
       // rmd URL (wrong origin form, path-escape rejection, …) would
       // otherwise only surface in the export check.
@@ -682,6 +799,7 @@ export async function runSelfTest({ getState }) {
       const remoteFetch = remoteFetchResults.map(({ url, ok, error, bytes }) =>
         bytes ? { url, ok, bytes: bytes.length } : { url, ok, error }
       );
+      await progress('note:remote-fetch', meta.path);
       const remoteRefs = remoteFetchResults
         .filter((r) => r.ok)
         .map((r) => ({ ...r, cssWidth: htmlWidthBySrc.get(r.url) }));
@@ -716,8 +834,10 @@ export async function runSelfTest({ getState }) {
           );
         }
       }
+      await progress('note:local-refs', meta.path);
       entry.render = {
         ms: Math.round(performance.now() - t0),
+        data: entry.dataRender || null,
         mermaidDiagrams: box.querySelectorAll('.mermaid-diagram').length,
         mermaidErrors: box.querySelectorAll('.mermaid-error').length,
         mjxTypeset: box.querySelectorAll('mjx-container').length,
@@ -755,6 +875,7 @@ export async function runSelfTest({ getState }) {
 
       // 2) PNG export (remote images → fetch_image_bytes, local vault
       //    images → read_local_image in Rust)
+      await progress('note:png-start', meta.path);
       const t1 = performance.now();
       const png = await exportPng(body, kind);
       entry.png = {
@@ -769,6 +890,7 @@ export async function runSelfTest({ getState }) {
         );
       }
       await api.selftestWrite(`${meta.path}.png`, png.data);
+      await progress('note:png', meta.path);
 
       // 3) PDF export. On Windows the real path is the WebView print
       //    pipeline: assert the result is TEXT (embedded fonts) instead of
@@ -804,11 +926,69 @@ export async function runSelfTest({ getState }) {
         );
       }
       await api.selftestWrite(`${meta.path}.pdf`, pdf.data);
+      await progress('note:pdf', meta.path);
 
       report.entries.push(entry);
       console.log('[selftest] done', meta.path);
     }
-    // 4) Inline-SVG PNG regression (viewBox-only image must not be cropped
+
+    // 4) Synthetic alignment check: the example fixtures are allowed to be
+    //    text-only, so verify a known numeric/boolean table explicitly.
+    const alignCsv = document.createElement('div');
+    const alignTxt = document.createElement('div');
+    await renderPreview(
+      '名称,数量,启用\n苹果,12,true\n香蕉,8,false\n',
+      alignCsv,
+      'csv'
+    );
+    await renderPreview(
+      '说明\n名称\t数量\t启用\n苹果\t12\ttrue\n香蕉\t8\tfalse\n',
+      alignTxt,
+      'txt'
+    );
+    const csvTh = [...alignCsv.querySelectorAll('.data-table thead th')];
+    const txtTh = [...alignTxt.querySelectorAll('.txt-table th')];
+    report.dataAlignment = {
+      csv:
+        csvTh.some((cell) => cell.classList.contains('align-right')) &&
+        csvTh.some((cell) => cell.classList.contains('align-center')) &&
+        csvTh.every((cell) => cell.scope === 'col'),
+      txt:
+        txtTh.some((cell) => cell.classList.contains('align-right')) &&
+        txtTh.some((cell) => cell.classList.contains('align-center')) &&
+        txtTh.every((cell) => cell.scope === 'col'),
+    };
+    if (!report.dataAlignment.csv || !report.dataAlignment.txt) {
+      report.errors.push(
+        'CSV/TXT smart header alignment or column scope is missing'
+      );
+    }
+
+    // 5) Standalone HTML export must declare UTF-8, even when the source
+    //    HTML note still carries a legacy GBK meta charset.
+    const legacyCharsetHtml =
+      '<html><head><meta charset="gbk"><title>Legacy</title></head>' +
+      '<body>中文</body></html>';
+    const normalizedCharset = ensureUtf8HtmlCharset(legacyCharsetHtml);
+    const scriptCharsetHtml =
+      '<!doctype html><html><head><meta charset="gbk">' +
+      '<script>const sample = "<meta charset=\\"gbk\\">";</script>' +
+      '</head><body>ok</body></html>';
+    const normalizedScript = ensureUtf8HtmlCharset(scriptCharsetHtml);
+    const doctypeCharsetHtml = ensureUtf8HtmlCharset('<!doctype html><p>fragment</p>');
+    report.htmlCharset = {
+      ok:
+        normalizedCharset.includes('<meta charset="utf-8">') &&
+        !/charset\s*=\s*["']?(?:gbk|gb2312)/i.test(normalizedCharset) &&
+        normalizedScript.includes('<script>const sample = "<meta charset=\\"gbk\\">";</script>') &&
+        /^<!doctype html>\s*<html>/i.test(doctypeCharsetHtml),
+      sample: normalizedCharset.slice(0, 180),
+    };
+    if (!report.htmlCharset.ok) {
+      report.errors.push('HTML export did not normalize a legacy charset to UTF-8');
+    }
+
+    // 6) Inline-SVG PNG regression (viewBox-only image must not be cropped
     //    by html2canvas's drawImage source rectangle).
     report.inlineSvg = await verifyInlineSvgExport();
     if (!report.inlineSvg.ok) {
@@ -817,7 +997,7 @@ export async function runSelfTest({ getState }) {
           `(red=${report.inlineSvg.redPixels}, blue=${report.inlineSvg.bluePixels})`
       );
     }
-    // 5) WebView2 export pipeline probe — one remote URL is enough to
+    // 7) WebView2 export pipeline probe — one remote URL is enough to
     //    localize which stage (blob decode / drawImage / html2canvas)
     //    drops the image from the export.
     const probeUrl = report.entries

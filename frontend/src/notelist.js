@@ -45,17 +45,40 @@ export function fileNameOf(path) {
 
 export const NOTE_KIND_MARKDOWN = 'markdown';
 export const NOTE_KIND_HTML = 'html';
+export const NOTE_KIND_CSV = 'csv';
+export const NOTE_KIND_TXT = 'txt';
+export const NOTE_KIND_JSON = 'json';
 
-/** `"html"` for `.html`/`.htm`, `"markdown"` otherwise (mirrors Rust). */
+const NOTE_KIND_BY_EXT = {
+  html: NOTE_KIND_HTML,
+  htm: NOTE_KIND_HTML,
+  csv: NOTE_KIND_CSV,
+  txt: NOTE_KIND_TXT,
+  json: NOTE_KIND_JSON,
+};
+
+/**
+ * Kind from the extension (mirrors Rust `note_kind`). `.md` and unknown
+ * names fall back to Markdown, but only known note extensions are ever
+ * listed by the backend.
+ */
 export function noteKindOf(path) {
-  return /\.(?:html|htm)$/i.test(fileNameOf(path))
-    ? NOTE_KIND_HTML
-    : NOTE_KIND_MARKDOWN;
+  const name = fileNameOf(path);
+  const dot = name.lastIndexOf('.');
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+  return NOTE_KIND_BY_EXT[ext] || NOTE_KIND_MARKDOWN;
 }
 
-/** File name without the note extension (`.md`, `.html`, `.htm`). */
+/** True for the plain/structured data previews (CSV, TXT, JSON). */
+export function isDataKind(kind) {
+  return (
+    kind === NOTE_KIND_CSV || kind === NOTE_KIND_TXT || kind === NOTE_KIND_JSON
+  );
+}
+
+/** File name without the note extension (`.md`, `.html`, `.csv`, …). */
 export function noteStemOf(path) {
-  return fileNameOf(path).replace(/\.(?:md|html|htm)$/i, '');
+  return fileNameOf(path).replace(/\.(?:md|html|htm|csv|txt|json)$/i, '');
 }
 
 export function folderOf(path) {

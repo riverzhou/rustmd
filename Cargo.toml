@@ -1,6 +1,6 @@
 [package]
 name = "rustmd"
-version = "1.9.0"
+version = "1.10.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 authors = ["River"]
@@ -15,6 +15,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 # Percent-decoding the `rmd` image-protocol URL paths.
 percent-encoding = "2"
+# Decode text notes on open (UTF-8/GBK/GB18030) and re-encode them on save.
+encoding_rs = "0.8"
 # Blocking client for fetching remote images during export (rustls: no
 # OpenSSL needed on Windows).
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }

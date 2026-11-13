@@ -105,6 +105,10 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npx tauri build --target aarch64-apple-darwin --no-bundle
 
+      - name: Rust tests (Windows-specific path rules)
+        if: matrix.os == 'windows-latest'
+        run: node scripts/cargo.mjs test
+
       - name: Compile desktop binary
         if: matrix.os != 'macos-latest'
         run: npx tauri build --no-bundle
@@ -162,10 +166,10 @@ jobs:
         # stops a wedged WebKit/tauri-dev process. The report below is the
         # authoritative verdict.
         continue-on-error: true
-        run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
+        run: timeout 1200 xvfb-run -a node scripts/launch-dev.mjs
 
       - name: Verify self-test report
-        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html
+        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html --require-data
 
       - name: Upload self-test artifacts
         if: always()

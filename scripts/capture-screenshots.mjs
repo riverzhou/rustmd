@@ -8,8 +8,9 @@
 //        --window-size=1440,900 http://127.0.0.1:5173/
 //   3) node scripts/capture-screenshots.mjs
 //
-// Outputs docs/screenshots/{overview,dark,sidebar,multi-vault,vault-switcher}.png
-// and the .en variants. The script drives the mock vault that ships in
+// Outputs docs/screenshots/{overview,dark,sidebar,multi-vault,vault-switcher,
+// html-note,csv-note,txt-note,json-note,json-note-dark}.png and the .en
+// variants. The script drives the mock vault that ships in
 // frontend/src/api.js, so it works without the Rust backend. CDP/APP can be
 // overridden with env vars.
 import { writeFileSync } from 'node:fs';
@@ -195,6 +196,51 @@ await waitFor("document.querySelectorAll('.mermaid-diagram svg').length > 0", 20
 await waitFor("document.querySelectorAll('mjx-container').length > 0", 20000);
 await sleep(800);
 
+async function openNote(path, kind) {
+  await js(`(() => {
+    const item = [...document.querySelectorAll('.note-item')].find(
+      (el) => el.dataset.path === ${JSON.stringify(path)}
+    );
+    item?.click();
+    return !!item;
+  })()`);
+  await waitFor(
+    `(() => {
+      const active = document.querySelector('.note-item.active');
+      return active && active.dataset.path === ${JSON.stringify(path)};
+    })()`
+  );
+  if (kind === 'html') {
+    await waitFor("!!document.querySelector('iframe.html-preview-frame')");
+    await sleep(1800);
+  } else if (kind === 'csv' || kind === 'txt' || kind === 'json') {
+    await waitFor(`!!document.querySelector('.data-view-${kind}')`);
+    await sleep(500);
+  } else {
+    await waitFor("document.querySelectorAll('.mermaid-diagram svg').length > 0");
+    await waitFor("document.querySelectorAll('mjx-container').length > 0");
+  }
+  await js(
+    "document.querySelector('.note-item.active')?.scrollIntoView({ block: 'center' })"
+  );
+  await sleep(350);
+}
+
+async function captureFormats(suffix) {
+  await setTheme('light');
+  await openNote('guides/html-page.html', 'html');
+  await capture(`html-note${suffix}`, null);
+  await openNote('data/示例数据.csv', 'csv');
+  await capture(`csv-note${suffix}`, null);
+  await openNote('data/说明.txt', 'txt');
+  await capture(`txt-note${suffix}`, null);
+  await openNote('data/配置.json', 'json');
+  await capture(`json-note${suffix}`, null);
+  await setTheme('dark');
+  await capture(`json-note-dark${suffix}`, null);
+  await setTheme('light');
+}
+
 await setLang('zh-CN');
 await setTheme('light');
 await capture('overview', null);
@@ -203,11 +249,15 @@ await setTheme('dark');
 await capture('dark', null);
 
 await setTheme('light');
+await captureFormats('');
 await setLang('en');
+await openNote(NOTE, 'markdown');
 await capture('overview.en', null);
 await capture('sidebar.en', { x: 0, y: 0, width: 320, height: 900 });
 await setTheme('dark');
 await capture('dark.en', null);
+await setTheme('light');
+await captureFormats('.en');
 
 // Recent-vault switcher (640×460 crop keeps the popover readable in the
 // README without another full-window screenshot).
@@ -227,6 +277,7 @@ async function captureVaultSwitcher(name) {
 // folder section per vault and the aggregated note list.
 await setTheme('light');
 await setLang('zh-CN');
+await openNote(NOTE, 'markdown');
 await js("document.getElementById('btn-multi-vault').click(); true");
 await waitFor("document.querySelectorAll('.nav-vault').length === 2");
 await sleep(700);

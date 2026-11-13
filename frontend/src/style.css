@@ -24,6 +24,31 @@ body[data-theme='light'] {
   --mark-text: #4a3b00;
   --kind-md: #157a4c;
   --kind-md-soft: rgba(21, 122, 76, 0.1);
+  --kind-csv: #a15d00;
+  --kind-csv-soft: rgba(161, 93, 0, 0.1);
+  --kind-txt: #5c6675;
+  --kind-txt-soft: rgba(92, 102, 117, 0.1);
+  --kind-json: #7048c8;
+  --kind-json-soft: rgba(112, 72, 200, 0.1);
+  --data-row-even: rgba(20, 24, 40, 0.028);
+  --data-grid: rgba(20, 24, 40, 0.07);
+  --data-ink-1: #1f2430;
+  --data-ink-2: #235c94;
+  --data-ink-3: #8a4b0f;
+  --data-ink-4: #663a99;
+  --json-key: #4859c6;
+  --json-object: #1f63c9;
+  --json-object-soft: rgba(47, 111, 219, 0.11);
+  --json-object-wash: rgba(47, 111, 219, 0.06);
+  --json-array: #6a3bc0;
+  --json-array-soft: rgba(123, 75, 211, 0.11);
+  --json-array-wash: rgba(123, 75, 211, 0.06);
+  --json-string: #0f7a55;
+  --json-number: #b35c00;
+  --json-boolean: #c0266b;
+  --json-null: #5f6b7f;
+  --data-warning: #8a4b0f;
+  --data-danger: #b42318;
   --cm-bg: #ffffff;
   --cm-fg: #262b38;
   --cm-selection: rgba(79, 109, 245, 0.18);
@@ -62,6 +87,31 @@ body[data-theme='dark'] {
   --mark-text: #ffe9a8;
   --kind-md: #63d29a;
   --kind-md-soft: rgba(99, 210, 154, 0.14);
+  --kind-csv: #e9a95f;
+  --kind-csv-soft: rgba(233, 169, 95, 0.14);
+  --kind-txt: #aab4c5;
+  --kind-txt-soft: rgba(170, 180, 197, 0.13);
+  --kind-json: #b79cff;
+  --kind-json-soft: rgba(183, 156, 255, 0.14);
+  --data-row-even: rgba(255, 255, 255, 0.027);
+  --data-grid: rgba(255, 255, 255, 0.07);
+  --data-ink-1: #e7eaf0;
+  --data-ink-2: #9ec7ff;
+  --data-ink-3: #f2c37d;
+  --data-ink-4: #cbb1ff;
+  --json-key: #a7b8ff;
+  --json-object: #7aa9ff;
+  --json-object-soft: rgba(122, 169, 255, 0.14);
+  --json-object-wash: rgba(122, 169, 255, 0.08);
+  --json-array: #c3a4ff;
+  --json-array-soft: rgba(195, 164, 255, 0.14);
+  --json-array-wash: rgba(195, 164, 255, 0.08);
+  --json-string: #78d6a8;
+  --json-number: #f0b562;
+  --json-boolean: #ff91b8;
+  --json-null: #aab4c8;
+  --data-warning: #e9a95f;
+  --data-danger: #ff9ea2;
   --cm-bg: #1a1d23;
   --cm-fg: #dfe3ec;
   --cm-selection: rgba(124, 140, 255, 0.22);
@@ -1122,6 +1172,24 @@ body.nav-resizing {
   background: var(--accent-soft);
 }
 
+.note-item .kind-badge.csv {
+  color: var(--kind-csv);
+  border-color: var(--kind-csv);
+  background: var(--kind-csv-soft);
+}
+
+.note-item .kind-badge.txt {
+  color: var(--kind-txt);
+  border-color: var(--kind-txt);
+  background: var(--kind-txt-soft);
+}
+
+.note-item .kind-badge.json {
+  color: var(--kind-json);
+  border-color: var(--kind-json);
+  background: var(--kind-json-soft);
+}
+
 .note-item .meta .folder-path {
   max-width: 58%;
   overflow: hidden;
@@ -1268,6 +1336,24 @@ mark {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.note-kind.csv {
+  color: var(--kind-csv);
+  border-color: var(--kind-csv);
+  background: var(--kind-csv-soft);
+}
+
+.note-kind.txt {
+  color: var(--kind-txt);
+  border-color: var(--kind-txt);
+  background: var(--kind-txt-soft);
+}
+
+.note-kind.json {
+  color: var(--kind-json);
+  border-color: var(--kind-json);
+  background: var(--kind-json-soft);
 }
 
 .tag-editor {
@@ -1632,6 +1718,17 @@ mark {
 
 #status-counts {
   margin-left: 14px;
+}
+
+#status-encoding {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.4;
+  color: var(--text-dim);
 }
 
 /* ============ Empty state ============ */

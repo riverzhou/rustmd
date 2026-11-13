@@ -23,7 +23,7 @@ jobs:
   verify:
     name: release quality gate
     runs-on: ubuntu-22.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -80,12 +80,12 @@ jobs:
         # The report check below is authoritative; a wedged process after a
         # green report must not turn a valid release red (same policy as CI).
         continue-on-error: true
-        run: timeout 600 xvfb-run -a node scripts/launch-dev.mjs
+        run: timeout 1200 xvfb-run -a node scripts/launch-dev.mjs
 
       - name: Verify self-test report
         env:
           RUSTMD_SELFTEST_OUT: ${{ github.workspace }}/selftest-artifacts
-        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html
+        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html --require-data
 
   windows:
     name: windows portable zip

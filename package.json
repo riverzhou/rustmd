@@ -1,7 +1,7 @@
 {
   "name": "rustmd",
   "private": true,
-  "version": "1.9.0",
+  "version": "1.10.0",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.js",
@@ -12,18 +12,19 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "npm run test:unit && npm run test:rust",
-    "test:unit": "node --test frontend/src/notelist.test.js frontend/src/markdown.test.js frontend/src/i18n.test.js frontend/src/vaultlist.test.js",
+    "test:unit": "node --test frontend/src/notelist.test.js frontend/src/markdown.test.js frontend/src/i18n.test.js frontend/src/vaultlist.test.js frontend/src/dataformat.test.js",
     "test:rust": "node scripts/cargo.mjs test",
     "check:version": "node scripts/check-version.mjs",
     "check:repo": "node scripts/check-repo.mjs",
     "check:rust": "node scripts/cargo.mjs fmt --check && node scripts/cargo.mjs clippy --all-targets -- -D warnings && node scripts/cargo.mjs test",
     "check": "npm run lint && npm run test:unit && npm run check:repo && npm run check:version && npm run check:rust && npm run build",
     "selftest": "node scripts/run-selftest.mjs",
-    "selftest:check": "node scripts/check-selftest-report.mjs",
+    "selftest:check": "node scripts/check-selftest-report.mjs --require-html --require-data",
     "release:notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {
     "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.3.0",
     "@codemirror/language-data": "^6.5.0",
     "@tauri-apps/api": "^2.12.4",

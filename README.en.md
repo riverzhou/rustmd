@@ -1,6 +1,6 @@
 # rustmd
 
-**Local-first Markdown and HTML notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -13,19 +13,19 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.9.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.10.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
-Folder tree, current-folder scope and multi-vault switches, filename cards, sort direction, **MD / HTML format badges**, MathJax math and Mermaid diagrams:
+Folder tree, current-folder scope and multi-vault switches, filename cards, sort direction, **format badges for every supported type**, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope and multi-vault switches, folder tree, MD/HTML format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
+<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope and multi-vault switches, folder tree, format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
 
 Dark theme and sidebar details:
 
-<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with MD/HTML format badges, MathJax math and Mermaid preview" width="880">
+<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, folders, sort buttons, MD/HTML format badges, filenames and tags" width="320">
+<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, folders, sort buttons, format badges, filenames and tags" width="320">
 
 Multi-vault (pinned vaults + the current one, folder tree grouped per vault):
 
@@ -34,6 +34,26 @@ Multi-vault (pinned vaults + the current one, folder tree grouped per vault):
 One-click recent-vault switching:
 
 <img src="docs/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher with pinned vaults on top, the current one marked, and pin/remove controls on every row" width="560">
+
+## Rendering by format
+
+HTML notes render through the built-in WebView, including page styles, scripts, local relative assets and charts:
+
+<img src="docs/screenshots/html-note.en.png" alt="HTML note rendered in rustmd: HTML source on the left, full WebView page on the right" width="880">
+
+CSV tables: short and numeric columns shrink to content, long text columns take the remaining width; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable:
+
+<img src="docs/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints" width="880">
+
+TXT: tab-aligned columns preserve spaces and distinguish tabular rows from full-width prose:
+
+<img src="docs/screenshots/txt-note.en.png" alt="TXT tab-aligned preview in rustmd with tabular columns, row bands and column ink tints" width="880">
+
+JSON inspector (light / dark): key-value columns, semantic group headers and rails, type pills and type dots, collapsible groups — with the raw JSON kept in the editor:
+
+<img src="docs/screenshots/json-note.en.png" alt="JSON inspector in rustmd light theme with semantic group colors, type pills and collapsible groups" width="880">
+
+<img src="docs/screenshots/json-note-dark.en.png" alt="JSON inspector in rustmd dark theme with semantic group colors, type pills and collapsible groups" width="880">
 
 ## Multilingual UI
 
@@ -47,12 +67,12 @@ Chinese interface example:
 
 If you want a Markdown tool that keeps your notes as **plain files** instead of a database:
 
-- **Plain-text storage** — a note is a `.md` or `.html` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
+- **Plain-text storage** — a note is a `.md` / `.html` / `.csv` / `.txt` / `.json` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
 - **Offline by default** — editing, search, preview and export work without a network; only remote images and remote scripts/styles/fonts embedded in HTML notes need one.
 - **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
-- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML format badges, Markdown and HTML notes, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
+- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML/CSV/TXT/JSON format badges, Markdown/HTML/data notes, UTF-8/GBK/GB18030 decoding, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
 - **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
-- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code Markdown or HTML folder; unknown front matter fields (`title:`, `date:`, …) are preserved on save.
+- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder with Markdown, HTML, CSV, TXT or JSON; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save. CSV/TXT/JSON get table, tab-column and JSON-inspector views with automatic UTF-8/GBK/GB18030 decoding.
 
 Good for personal knowledge bases, engineering notes, writing drafts, course notes and local Markdown documentation.
 
@@ -91,13 +111,13 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 ### Search
 
 - Searches **title, filename, tags and body**, case-insensitively. Search stays in the current folder by default; enable **Include subfolders** to search the whole subtree.
-- For HTML notes the searchable body is the visible page text — tags, scripts and styles are not matched as content.
+- For HTML notes the searchable body is the visible page text — tags, scripts and styles are not matched as content. CSV/TXT/JSON notes search their decoded plain text.
 - Highlights the matching window and tells you whether the hit was in the title, filename or tags.
 - Debounced with a query sequence number so a slow old result cannot overwrite a newer one.
 
 ### Editing and preview
 
-- CodeMirror 6 with Markdown or HTML syntax highlighting, switched by file type (HTML tags, attributes and values get distinct colors, and JS/CSS inside `<script>` / `<style>` is highlighted too).
+- CodeMirror 6 with Markdown, HTML or JSON syntax highlighting, switched by file type (HTML tags, attributes and values get distinct colors, JS/CSS inside `<script>` / `<style>` is highlighted too; CSV/TXT use plain text).
 - Editor **auto-wrap / no-wrap** toggle, persisted across restarts — useful for long lines and wide tables.
 - Top-right **full screen** button and `F11` shortcut.
 - Edit / split / preview (`Ctrl+1` / `Ctrl+2` / `Ctrl+3`); draggable split, persisted.
@@ -115,19 +135,29 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 
 ### HTML notes
 
-- `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts. Both formats carry the same prominent format badge in the list and the topbar: **`MD` (green) / `HTML` (blue)**.
+- `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts. Every supported format carries the same prominent badge in the list and the topbar: **`MD` (green) / `HTML` (blue) / `CSV` (amber) / `TXT` (grey) / `JSON` (violet)**.
 - Edit the HTML source on the left and see a full-page native render on the right using the app's built-in WebView (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). **No Edge, Chrome or other external browser is required.** The page's `<style>`, `<script>`, local relative CSS/JS/fonts/images and ECharts charts run natively; text stays sharp when scrolling/zooming. `<title>` (or the first `<h1>`) becomes the list title, while the filename stays visible.
-- The **New note** button offers **Markdown note** and **HTML page**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for both formats.
+- The **New note** button offers **Markdown note**, **HTML page**, **CSV table**, **text file** and **JSON file**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for every format.
 - HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
 - Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot or signal print readiness. A sanitized static preview is used only if rendering fails.
-- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** saves the current source verbatim; PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
+- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** writes a UTF-8 standalone file and normalizes a legacy `<meta charset="gbk">`; PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
 - Markdown and HTML **PDF** is text-based: the system WebView's print pipeline re-lays out the note (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) instead of screenshotting it first, so text search, copy and zoom all work.
+
+### CSV / TXT / JSON previews
+
+- `.csv` / `.txt` / `.json` appear with Markdown and HTML notes in the folder tree, note list, search results and folder counts, with **CSV (amber) / TXT (grey) / JSON (violet)** badges.
+- **CSV tables** sniff comma, tab, semicolon or pipe delimiters and support quoted fields, embedded newlines and doubled quotes. The first row is the header. Column widths adapt to content: numeric, date, boolean and short-label columns stay compact while long text columns get the remaining width. Alignment is inferred from the data (numbers, dates, currency and booleans; headers use the same alignment as their cells), with alternating row bands for horizontal scanning, subtle per-column ink tints for vertical tracking, thin separators and hover highlighting. Wide tables scroll horizontally.
+- **TXT tab alignment** splits each line at tab stops into aligned columns while preserving spaces. Lines without tabs span the full row; leading prose lines are skipped, and the first multi-column row is treated as the header for alignment inference. Smart column widths, alternating row bands and per-column ink tints, a monospace font and right-aligned numeric columns make plain text comfortable to scan.
+- **JSON inspector** shows the root type, key/item counts and node count, with collapsible object/array groups (semantic header tints, rails and type pills), key-and-value columns, type/count labels, and a dedicated color plus type dot for strings, numbers, booleans and null. Invalid JSON shows the parse error plus the raw source.
+- **Display caps**: to keep huge files responsive, previews (and exports rendered from them) show at most 2000 CSV rows / 100 columns, 5000 TXT lines / 80 tab columns, and 6000 JSON nodes. A visible truncation notice is included in the preview and in HTML/PNG/PDF exports.
+- **Automatic encoding detection** decodes BOM → UTF-8 → GBK → GB18030 and shows the detected encoding in the status bar. Valid UTF-8 always wins. A rare legacy GBK byte stream can itself be valid UTF-8 (roughly 1,920 common CJK pairs); such ambiguous short files are read as UTF-8, so convert them externally to UTF-8 if they look garbled. Saving keeps the original codec and BOM; a GBK file that gains a four-byte character (e.g. an emoji) is compatibly upgraded to GB18030 and the status bar updates. Repeated UTF-8 BOMs are normalized on read and never accumulate on save.
+- Data notes have no front matter and no tag editor. Rename keeps the extension, and the new-note menu offers all three data formats.
 
 ### Export
 
-- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); HTML notes save their current source verbatim.
-- **PNG** — 3× rendering (~288 DPI) for Markdown; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
-- **PDF** — both Markdown and HTML notes are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. Platforms without native printing fall back to the block-aware lossless PNG slices.
+- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); CSV/TXT/JSON exports keep the same smart widths, row-band/column-ink and JSON-inspector styling; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized. Data exports include the same truncation notice if a display cap was hit.
+- **PNG** — 3× rendering (~288 DPI) for Markdown, CSV, TXT and JSON (with adaptive scaling for very long content); HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
+- **PDF** — Markdown, CSV, TXT, JSON and HTML notes are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. Platforms without native printing fall back to the block-aware lossless PNG slices.
 - For PNG exports, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNGs are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched. PDFs go through the system print pipeline described above.
 - The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 
@@ -139,7 +169,7 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - `resolve_in_root` contains notes and images inside the vault, rejects `..`, and blocks junction/symlink write escapes; the scanner skips symlinks.
 - Remote image fetching rejects loopback/private/link-local/reserved addresses and re-validates redirects.
 - Saves use a temp file + atomic rename; `baseHash` conflict detection avoids silent overwrites.
-- Notes are read as UTF-8; non-UTF-8 files stay visible but opening one asks you to convert it first.
+- Text notes are decoded automatically as UTF-8, GBK or GB18030 and saved with the same encoding (GBK upgrades to GB18030 when a four-byte character is added). Ambiguous short GBK byte streams that are also valid UTF-8 are read as UTF-8, a documented residual detection boundary. Unsupported encodings stay visible but show a clear error when opened. CSV/TXT/JSON previews are built exclusively with DOM `textContent`; note markup is never executed.
 - HTML-note relative CSS/JS are inlined into the preview/export document, images become data URLs, and fonts use `rmd`; `rmd` only allows classic script/style/font subresources from preview origins, while `fetch`/XHR and document reads still get 403.
 
 ## Download
@@ -218,7 +248,7 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests for sorting, folder tree, folder scope and scoped tags, recent vaults, math protection, code segments and i18n
+2. Node tests for sorting, folder tree, folder scope and scoped tags, recent vaults, CSV/TXT/JSON parsing, delimiter sniffing, type alignment and column-width hints, math protection, code segments and i18n
 3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
 4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json` plus both lockfile root versions)
 5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
@@ -232,7 +262,7 @@ CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate
 npm run selftest
 ```
 
-The dev window renders every note in `examples/`, exports PNG/PDF, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); the HTML example verifies that the built-in WebView iframe becomes ready and PNG/PDF are produced, while exercising local relative CSS/JS/images and inline scripts. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); the app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
+The dev window renders every example note (Markdown, HTML, CSV, TXT, JSON and a GBK CSV), exports PNG/PDF and HTML, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); HTML verifies that the built-in WebView iframe becomes ready, local relative CSS/JS/images and inline scripts; data notes verify table/JSON structure, smart header alignment, HTML-text safety, data HTML export and charset; the GBK fixture asserts encoding detection. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); `npm run selftest:check` requires HTML, CSV, TXT and JSON coverage (the npm script passes `--require-html --require-data`). The app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
 
 ## Release pipeline
 
@@ -254,7 +284,7 @@ Yes — **GPL-3.0-or-later**. You can use, modify and redistribute it; derivativ
 The app does not sync. Notes are a plain folder — use Syncthing, Git, iCloud, OneDrive or Dropbox.
 
 **Can it open my Obsidian vault?**
-Yes for plain `.md` and `.html` folders, folder hierarchy and Markdown front matter tags. HTML notes are recognized by extension and rendered in the app's built-in WebView. Obsidian-specific `[[wikilinks]]`, plugins and canvas are not supported; other front matter fields are preserved on save for Markdown notes.
+Yes for plain `.md` / `.html` / `.csv` / `.txt` / `.json` folders, folder hierarchy and Markdown front matter tags. HTML notes are recognized by extension and rendered in the app's built-in WebView; CSV/TXT/JSON get aligned tables, tab columns and a collapsible JSON inspector. Obsidian-specific `[[wikilinks]]`, plugins and canvas are not supported; other front matter fields are preserved on save for Markdown notes.
 
 **Why the Windows/macOS warning?**
 Windows uses a self-signed certificate and macOS uses ad-hoc signing. They prove integrity, not a purchased identity. Verify SHA256 and allow the app in the OS prompt.
@@ -287,4 +317,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, HTML notes, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, CSV tables, TXT files, JSON viewer, GBK encoding, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

@@ -10,7 +10,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 | webview 前端 | 受 Markdown HTML 影响 | Markdown 渲染结果必须消毒 + CSP；HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染 |
 | 笔记文件 | 不可信 | 正文、front matter、图片引用都不能直接执行/越界 |
 | 远程图片 | 不可信 | URL 可指向内网/元数据服务，必须 SSRF 防护 |
-| 导出的文件 | 用户数据 | Markdown 导出内容来自已消毒 DOM；HTML 笔记导出按用户预期保留原始源码；目标路径由用户在原生对话框选择 |
+| 导出的文件 | 用户数据 | Markdown 导出内容来自已消毒 DOM；HTML 笔记导出保留页面脚本/样式，但统一按 UTF-8 写入并规范化遗留 charset；目标路径由用户在原生对话框选择 |
 
 ## 已实施的控制
 
@@ -25,7 +25,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - DOMPurify 默认剥离 `<script>`、`on*` 事件、`javascript:` URL 等。
 - Mermaid 使用 `securityLevel: 'strict'`；它生成的 SVG 在消毒之后挂载，不来自笔记原文。
 - MathJax/Mermaid 在 DOMPurify **之后**运行，因此 `sanitizeRenderedDom` 再做一次窄范围清理：删除 `script/iframe/object/embed`、`on*` 事件、`javascript:`/`data:text/html` 等危险 URL、以及 mermaid `<style>` 中的 `@import`/外部 `url(...)`。
-- Markdown 的 HTML 导出由消毒后的 DOM 构建，因此导出文件同样不含脚本/事件属性；HTML 笔记的“导出 HTML”按用户预期保存原始源码（脚本/样式保留）。
+- Markdown 的 HTML 导出由消毒后的 DOM 构建，因此导出文件同样不含脚本/事件属性；HTML 笔记的“导出 HTML”保留页面脚本/样式，但重新编码为 UTF-8 并把 `<meta charset="gbk">`/`gb2312` 等声明规范化为 UTF-8，避免独立文件按旧编码解码而乱码。
 
 ### 2. CSP
 
@@ -59,7 +59,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 ### 5. 保存与导出
 
-- 笔记按 UTF-8 读取；非 UTF-8 文件会在列表中出现，打开时明确提示先转 UTF-8，不会被静默隐藏或覆盖。
+- 文本笔记按 BOM → UTF-8 → GBK → GB18030 自动解码；合法的 UTF-8 始终优先。保存沿用原编码与 BOM；GBK 文件写入 GB18030 可表示的四字节字符时兼容升级为 GB18030，保存后状态栏同步。无法识别编码的文件仍会出现在列表中，打开时返回明确错误，不会被静默隐藏或覆盖。极少数字节序列同时是合法 UTF-8 和 GBK，此时按 UTF-8 读取（见残余风险）；其余原编码无法表示的字符会让保存失败，而不是写入实体。CSV/TXT/JSON 预览全部用 DOM `textContent` 构建，不执行笔记中的 HTML。
 - 笔记保存用同目录临时文件 + rename，避免半截文件。
 - `baseHash` 冲突检测；外部修改不会被静默覆盖，必须用户确认。
 - 保存失败保持“未保存”状态；关闭窗口有 `beforeunload` 提示。
@@ -77,11 +77,14 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 3. **macOS ad-hoc**：未公证，首次打开需要用户放行；不能防止用户主动运行被篡改的包。请用 SHA256 校验。
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
 5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
-6. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式）。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
-7. **本地明文**：笔记是普通 `.md` / `.html` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 20 条，含置顶标记）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”与“多库同开”偏好保存在 `localStorage.rustmd-include-subfolders` / `rustmd-multi-vault`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
-8. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
-9. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
-10. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。
+6. **编码歧义**：约 1920 个常用汉字的 GBK 两字节序列也构成合法 UTF-8。检测器没有用户编码选择，选择“合法 UTF-8 优先”，因此这类短 GBK 文件可能显示为乱码并在编辑后被按 UTF-8 保存。这是有意的取舍：若反向猜测 GBK，会破坏合法的非中文 UTF-8 笔记。遇到类似文件请先在外部转换为 UTF-8；应用不会声称能消除这种字节级歧义。
+7. **数据视图上限**：CSV 2000 行/100 列、TXT 5000 行/80 列、JSON 6000 节点是显式资源上限，也作用于导出；超出部分显示截断提示。
+8. **Unix 反斜杠文件名**：笔记协议以 `/` 为分隔符；Unix 上含字面 `\` 的文件名无法无歧义表示，扫描时跳过，不会错误打开同名的嵌套路径。
+9. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式），只规范化 charset。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
+10. **本地明文**：笔记是普通 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 20 条，含置顶标记）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”与“多库同开”偏好保存在 `localStorage.rustmd-include-subfolders` / `rustmd-multi-vault`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
+11. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
+12. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
+13. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。
 
 ## 给用户的安全建议
 
@@ -93,5 +96,5 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 ## 审计与验证
 
 - `AUDIT_REPORT.md` 记录当前审计状态与已修复项。
-- `npm run check` 覆盖路径、保存、SSRF 单测；`npm run selftest` 覆盖真实 WebView 渲染与导出（HTML 条目要求 iframe ready + PNG/PDF 产出；CI 传 `--require-html` 防止静默丢失 HTML 覆盖）。
+- `npm run check` 覆盖路径、保存、编码、SSRF 单测；`npm run selftest` 覆盖真实 WebView 渲染与导出（HTML 条目要求 iframe ready + PNG/PDF 产出，数据条目要求表格/JSON 结构、对齐与转义；CI 传 `--require-html --require-data` 防止静默丢失格式覆盖）。
 - 发布前跑 `npm run check` + `npm run selftest`，并检查 CI 三端编译。

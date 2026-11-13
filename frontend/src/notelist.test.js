@@ -222,7 +222,7 @@ test('noteKindOf follows the extension', () => {
   assert.equal(noteKindOf('a/b/page.html'), 'html');
   assert.equal(noteKindOf('a/b/PAGE.HTM'), 'html');
   assert.equal(noteKindOf('a/b/note.md'), 'markdown');
-  assert.equal(noteKindOf('a/b/note.txt'), 'markdown');
+  assert.equal(noteKindOf('a/b/note.txt'), 'txt');
 });
 
 test('noteStemOf strips only note extensions', () => {
@@ -230,4 +230,17 @@ test('noteStemOf strips only note extensions', () => {
   assert.equal(noteStemOf('a/b/page.htm'), 'page');
   assert.equal(noteStemOf('a/b/note.md'), 'note');
   assert.equal(noteStemOf('a/b/note.md.backup'), 'note.md.backup');
+});
+
+
+test('noteKindOf and noteStemOf cover every supported note format', () => {
+  assert.equal(noteKindOf('a.md'), 'markdown');
+  assert.equal(noteKindOf('a.HTML'), 'html');
+  assert.equal(noteKindOf('a.htm'), 'html');
+  assert.equal(noteKindOf('a.csv'), 'csv');
+  assert.equal(noteKindOf('a.TXT'), 'txt');
+  assert.equal(noteKindOf('a.json'), 'json');
+  assert.equal(noteKindOf('a.bin'), 'markdown');
+  assert.equal(noteStemOf('data/示例数据.csv'), '示例数据');
+  assert.equal(noteStemOf('data/config.JSON'), 'config');
 });

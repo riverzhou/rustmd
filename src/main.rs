@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use encoding_rs::{Encoding, GB18030, GBK, UTF_8};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -22,9 +23,12 @@ struct NoteMeta {
     tags: Vec<String>,
     snippet: String,
     mtime: i64, // unix seconds
-    /// `"markdown"` or `"html"`: decides how the body is parsed/previewed and
-    /// whether front matter applies.
+    /// `"markdown"`, `"html"`, `"csv"`, `"txt"` or `"json"`: decides how the
+    /// body is parsed/previewed and whether front matter applies.
     kind: String,
+    /// Auto-detected on-disk text encoding. Empty for a file whose bytes
+    /// decode as none of the supported codecs.
+    encoding: String,
     /// Content hash of the raw file. The frontend sends it back on save so a
     /// file changed by another program is detected even when the mtime
     /// resolution (seconds) would miss it.
@@ -46,6 +50,10 @@ struct NoteContent {
     mtime: i64,
     hash: String,
     kind: String,
+    /// Auto-detected on-disk text encoding (`UTF-8`, `UTF-8 BOM`, `GBK`,
+    /// `GB18030`). Saving re-encodes with the same codec so opening a legacy
+    /// CSV/TXT file never silently converts it.
+    encoding: String,
 }
 
 #[derive(Deserialize)]
@@ -184,10 +192,25 @@ fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
     Ok(full)
 }
 
+/// Convert a platform path into the note protocol path. On Windows the
+/// backend separator is `\`; on Unix a literal backslash is a valid filename
+/// character and must NOT be rewritten into a separator.
+fn note_path_string(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        text.replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    {
+        text.into_owned()
+    }
+}
+
 fn rel_from_root(root: &Path, full: &Path) -> Result<String, String> {
     let canon_root = canonical_root(root)?;
     full.strip_prefix(&canon_root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map(note_path_string)
         .map_err(|e| e.to_string())
 }
 
@@ -545,13 +568,176 @@ fn compose_note(existing: Option<&str>, tags: &[String], body: &str) -> String {
     out
 }
 
+// ---------------- Text encodings ----------------
+
+/// The encodings recognized for note files. UTF-8 and GBK cover the vast
+/// majority of Chinese notes; GB18030 is the strict superset used when a
+/// four-byte sequence is present. UTF-16 is intentionally not guessed (a
+/// BOMless binary blob often looks like UTF-16 and would open as noise).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TextEncoding {
+    Utf8,
+    Utf8Bom,
+    Gbk,
+    Gb18030,
+}
+
+const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+const UNSUPPORTED_ENCODING: &str =
+    "note is not valid UTF-8, GBK or GB18030 text; convert it to UTF-8 before opening";
+
+impl TextEncoding {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Utf8 => "UTF-8",
+            Self::Utf8Bom => "UTF-8 BOM",
+            Self::Gbk => "GBK",
+            Self::Gb18030 => "GB18030",
+        }
+    }
+
+    fn codec(self) -> &'static Encoding {
+        match self {
+            Self::Utf8 | Self::Utf8Bom => UTF_8,
+            Self::Gbk => GBK,
+            Self::Gb18030 => GB18030,
+        }
+    }
+
+    fn payload(self, bytes: &[u8]) -> &[u8] {
+        if self == Self::Utf8Bom {
+            bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes)
+        } else {
+            bytes
+        }
+    }
+}
+
+fn decode_strict(bytes: &[u8], encoding: TextEncoding) -> Option<String> {
+    encoding
+        .codec()
+        .decode_without_bom_handling_and_without_replacement(encoding.payload(bytes))
+        .map(|text| text.into_owned())
+}
+
+/// GB18030 four-byte sequence: lead 81-FE, digit 30-39, lead 81-FE, digit
+/// 30-39. GBK two-byte trails cannot be 30-39, so this pattern is unambiguous.
+fn has_gb18030_four_byte_sequence(bytes: &[u8]) -> bool {
+    bytes.windows(4).any(|w| {
+        (0x81..=0xfe).contains(&w[0])
+            && (0x30..=0x39).contains(&w[1])
+            && (0x81..=0xfe).contains(&w[2])
+            && (0x30..=0x39).contains(&w[3])
+    })
+}
+
+/// Detect and decode a text note. A BOM identifies UTF-8 unambiguously;
+/// otherwise valid UTF-8 wins, then GBK, then GB18030. This order matters:
+/// GBK accepts almost every ASCII byte, so testing it before UTF-8 would
+/// misclassify ordinary English notes. A rare GBK stream that is also valid
+/// UTF-8 is necessarily treated as UTF-8; that inherent ambiguity is a
+/// documented residual risk rather than a heuristic that could corrupt valid
+/// UTF-8 notes in other scripts.
+fn decode_note_text(bytes: &[u8]) -> Result<(String, TextEncoding), String> {
+    let encoding = if bytes.starts_with(&UTF8_BOM) {
+        TextEncoding::Utf8Bom
+    } else if std::str::from_utf8(bytes).is_ok() {
+        TextEncoding::Utf8
+    } else {
+        // GBK and GB18030 share the two-byte mappings. When a four-byte
+        // GB18030 sequence makes the two decoders disagree, the GB18030
+        // reading is authoritative; otherwise keep the narrower GBK label.
+        let gbk = decode_strict(bytes, TextEncoding::Gbk);
+        let gb18030 = decode_strict(bytes, TextEncoding::Gb18030);
+        if has_gb18030_four_byte_sequence(bytes)
+            && let Some(gb18030) = decode_strict(bytes, TextEncoding::Gb18030)
+        {
+            return Ok((gb18030, TextEncoding::Gb18030));
+        }
+        match (gbk, gb18030) {
+            (Some(_), _) => TextEncoding::Gbk,
+            (None, Some(_)) => TextEncoding::Gb18030,
+            (None, None) => return Err(UNSUPPORTED_ENCODING.into()),
+        }
+    };
+    let text = decode_strict(bytes, encoding).ok_or_else(|| UNSUPPORTED_ENCODING.to_string())?;
+    // A single BOM was consumed by the codec. Repeated BOMs are treated as
+    // accidental prefixes: strip them all so read→save cannot accumulate
+    // one BOM per save.
+    let text = if encoding == TextEncoding::Utf8Bom {
+        text.trim_start_matches('\u{feff}').to_string()
+    } else {
+        text
+    };
+    Ok((text, encoding))
+}
+
+/// Best-effort decode for metadata/search: an unreadable legacy file still
+/// stays visible in the list (lossy text) and can be found by filename.
+fn decode_text_lossy(bytes: &[u8]) -> String {
+    match decode_note_text(bytes) {
+        Ok((text, _)) => text,
+        Err(_) => String::from_utf8_lossy(bytes).to_string(),
+    }
+}
+
+/// Re-encode with the file's original codec. `encoding_rs` replaces
+/// unrepresentable characters with numeric entities and flags it; refuse the
+/// save instead of silently corrupting a legacy file.
+fn encode_note_text(text: &str, encoding: TextEncoding) -> Result<Vec<u8>, String> {
+    let (encoded, _, had_errors) = encoding.codec().encode(text);
+    if had_errors {
+        // A GBK file is byte-compatible with GB18030 for its existing
+        // repertoire. If the edit adds a four-byte character (e.g. an emoji),
+        // upgrade the write to GB18030 instead of refusing it; the next read
+        // reports GB18030.
+        if encoding == TextEncoding::Gbk {
+            let (fallback, _, fallback_errors) = GB18030.encode(text);
+            if !fallback_errors {
+                return Ok(fallback.into_owned());
+            }
+        }
+        return Err(format!(
+            "some characters cannot be represented in {}; convert the file to UTF-8 first",
+            encoding.label()
+        ));
+    }
+    let mut out = Vec::with_capacity(encoded.len() + UTF8_BOM.len());
+    if encoding == TextEncoding::Utf8Bom {
+        out.extend_from_slice(&UTF8_BOM);
+    }
+    out.extend_from_slice(&encoded);
+    Ok(out)
+}
+
+/// First non-empty lines of a plain/CSV/JSON note, collapsed for the note
+/// list. Data notes deliberately keep their file stem as the title: a CSV
+/// header is data, not a document title.
+fn data_snippet(text: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(trimmed);
+        if out.chars().count() >= max_chars {
+            break;
+        }
+    }
+    let collapsed = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_chars(&collapsed, max_chars)
+}
+
 // ---------------- HTML notes ----------------
 
-const NOTE_EXTENSIONS: [&str; 3] = ["md", "html", "htm"];
+const NOTE_EXTENSIONS: [&str; 6] = ["md", "html", "htm", "csv", "txt", "json"];
 
-/// `"html"` for `.html`/`.htm`, `"markdown"` otherwise. The extension is the
-/// single source of truth: a file renamed to `.html` is treated as an HTML
-/// note even when its contents look like Markdown.
+/// Kind from the extension (the single source of truth). Renaming a file
+/// changes its format, even when the contents still look like another kind.
 fn note_kind(path: &Path) -> &'static str {
     match path
         .extension()
@@ -560,6 +746,9 @@ fn note_kind(path: &Path) -> &'static str {
         .as_deref()
     {
         Some("html" | "htm") => "html",
+        Some("csv") => "csv",
+        Some("txt") => "txt",
+        Some("json") => "json",
         _ => "markdown",
     }
 }
@@ -571,9 +760,11 @@ fn is_note_file_name(name: &str) -> bool {
         .is_some_and(|e| NOTE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
-/// Same as `compose_note`, but HTML notes have no front matter: keep the
-/// exact body the editor produced (LF-normalized), restore the file's BOM and
-/// CRLF/LF style, and never inject a `tags:` block.
+/// Same as `compose_note`, but HTML/CSV/TXT/JSON notes have no front matter:
+/// keep the exact body the editor produced (LF-normalized), restore the
+/// file's line-ending style, and never inject a `tags:` block. The text was
+/// already decoded; `save_note_impl` re-encodes with the original codec and
+/// adds back any BOM.
 fn compose_html(existing: Option<&str>, body: &str) -> String {
     let (bom, line_ending) = match existing {
         Some(text) => {
@@ -1013,23 +1204,27 @@ fn content_hash(bytes: &[u8]) -> String {
 /// a canonicalized path — on Windows `fs::canonicalize` adds a `\\?\`
 /// prefix, which silently broke read-back after every save.
 fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
-    let rel_s = rel.to_string_lossy().replace('\\', "/");
-    let folder = rel
-        .parent()
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default();
+    let rel_s = note_path_string(rel);
+    let folder = rel.parent().map(note_path_string).unwrap_or_default();
     let bytes = fs::read(full).ok()?;
-    // Keep non-UTF-8 notes visible in the list (instead of silently hiding
-    // them); opening one returns a clear UTF-8 error in read_note.
-    let text = String::from_utf8_lossy(&bytes).to_string();
+    // Keep unsupported-encoding notes visible in the list (instead of
+    // silently hiding them); opening one returns a clear encoding error.
+    let (text, encoding) = match decode_note_text(&bytes) {
+        Ok((text, encoding)) => (text, encoding.label().to_string()),
+        Err(_) => (String::from_utf8_lossy(&bytes).to_string(), String::new()),
+    };
     let name = full.file_stem()?.to_string_lossy().to_string();
     let kind = note_kind(full);
-    let (tags, title, snippet) = if kind == "html" {
-        let (title, snippet) = html_meta(&text, &name);
-        (Vec::new(), title, snippet)
-    } else {
-        let (tags, body) = parse_frontmatter(&text);
-        (tags, extract_title(&body, &name), plain_snippet(&body, 100))
+    let (tags, title, snippet) = match kind {
+        "html" => {
+            let (title, snippet) = html_meta(&text, &name);
+            (Vec::new(), title, snippet)
+        }
+        "markdown" => {
+            let (tags, body) = parse_frontmatter(&text);
+            (tags, extract_title(&body, &name), plain_snippet(&body, 100))
+        }
+        _ => (Vec::new(), name, data_snippet(&text, 100)),
     };
     Some(NoteMeta {
         path: rel_s,
@@ -1039,6 +1234,7 @@ fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
         snippet,
         mtime: mtime_of(full),
         kind: kind.to_string(),
+        encoding,
         hash: content_hash(&bytes),
     })
 }
@@ -1105,7 +1301,11 @@ fn walk(
         };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
+        // The note protocol uses `/` as its separator. On Unix a backslash is
+        // a legal filename character but cannot be represented unambiguously
+        // in that protocol, so skip it instead of opening a different path.
+        let ambiguous_unix_separator = cfg!(not(windows)) && name.contains('\\');
+        if name.starts_with('.') || ambiguous_unix_separator {
             continue;
         }
         // Never follow symlinks/junctions: a directory junction can loop
@@ -1156,7 +1356,8 @@ fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>, fatal: bool) -> 
         };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || is_link_or_reparse(&path) {
+        let ambiguous_unix_separator = cfg!(not(windows)) && name.contains('\\');
+        if name.starts_with('.') || ambiguous_unix_separator || is_link_or_reparse(&path) {
             continue;
         }
         let Ok(file_type) = entry.file_type() else {
@@ -1164,7 +1365,7 @@ fn walk_folders(dir: &Path, root: &Path, out: &mut Vec<String>, fatal: bool) -> 
         };
         if file_type.is_dir() {
             if let Ok(rel) = path.strip_prefix(root) {
-                out.push(rel.to_string_lossy().replace('\\', "/"));
+                out.push(note_path_string(rel));
             }
             let _ = walk_folders(&path, root, out, false);
         }
@@ -1178,9 +1379,21 @@ fn sanitize_filename(s: &str) -> String {
         .chars()
         .filter(|c| !INVALID.contains(c) && !c.is_control())
         .collect();
-    let trimmed = cleaned.trim().trim_end_matches(['.', ' ']);
+    // Leading dots would make the note invisible to `walk`; trailing dots and
+    // spaces are invalid on Windows. Check the stem before the extension:
+    // Windows reserves `CON`/`NUL`/`COM1` even when a suffix such as `.md` is
+    // appended.
+    let trimmed = cleaned
+        .trim()
+        .trim_start_matches(['.', ' '])
+        .trim_end_matches(['.', ' ']);
     let reserved = matches!(
-        trimmed.to_ascii_uppercase().as_str(),
+        trimmed
+            .split('.')
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase()
+            .as_str(),
         "CON"
             | "PRN"
             | "AUX"
@@ -1305,18 +1518,17 @@ fn list_folders(window: tauri::WebviewWindow, dir: String) -> Result<Vec<String>
 fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
     let full = resolve_in_root(root, path)?;
     let bytes = fs::read(&full).map_err(|e| e.to_string())?;
-    let text = String::from_utf8(bytes.clone())
-        .map_err(|_| "note is not valid UTF-8; convert it to UTF-8 before opening".to_string())?;
+    let (text, encoding) = decode_note_text(&bytes)?;
     let kind = note_kind(&full);
-    let (tags, body) = if kind == "html" {
-        // No front matter for HTML: the editor edits the whole document. The
-        // BOM stays on disk only; `compose_html` restores it on save.
-        (
-            Vec::new(),
-            normalize_newlines(text.strip_prefix('\u{feff}').unwrap_or(&text)),
-        )
-    } else {
+    let (tags, body) = if kind == "markdown" {
         parse_frontmatter(&text)
+    } else {
+        // No front matter for HTML/CSV/TXT/JSON: the editor edits the whole
+        // document. The BOM and encoding stay on disk only; save restores
+        // both.
+        // `decode_note_text` already normalized away all leading BOMs; the
+        // body is BOM-free and `encode_note_text` restores exactly one.
+        (Vec::new(), normalize_newlines(&text))
     };
     Ok(NoteContent {
         tags,
@@ -1324,6 +1536,7 @@ fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
         mtime: mtime_of(&full),
         hash: content_hash(&bytes),
         kind: kind.to_string(),
+        encoding: encoding.label().to_string(),
     })
 }
 
@@ -1357,9 +1570,6 @@ fn save_note_impl(
         Err(e) if e.kind() == ErrorKind::NotFound => None,
         Err(e) => return Err(e.to_string()),
     };
-    let existing_text = existing_bytes
-        .as_ref()
-        .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned));
     if !force {
         if let Some(expected) = base_hash {
             let actual = existing_bytes
@@ -1376,19 +1586,34 @@ fn save_note_impl(
             return Err(CONFLICT_ERR.into());
         }
     }
-    let content = if note_kind(Path::new(rel)) == "html" {
-        // HTML notes have no front matter; tags are a Markdown-only concept.
-        compose_html(existing_text.as_deref(), body)
-    } else {
-        compose_note(existing_text.as_deref(), tags, body)
+    // Reuse the on-disk encoding (and BOM style) for the write. A brand-new
+    // note is UTF-8 without a BOM. Decoding after the conflict check keeps a
+    // real external edit reported as a conflict even if its bytes are not
+    // valid text.
+    let existing_decoded = match existing_bytes.as_deref() {
+        Some(bytes) => Some(decode_note_text(bytes).map_err(|_| UNSUPPORTED_ENCODING.to_string())?),
+        None => None,
     };
-    // Skip the write when the on-disk content is already identical. A
+    let existing_text = existing_decoded.as_ref().map(|(text, _)| text.as_str());
+    let kind = note_kind(Path::new(rel));
+    let content = if kind == "markdown" {
+        compose_note(existing_text, tags, body)
+    } else {
+        // HTML/CSV/TXT/JSON have no front matter; tags are Markdown-only.
+        compose_html(existing_text, body)
+    };
+    let encoding = existing_decoded
+        .as_ref()
+        .map(|(_, encoding)| *encoding)
+        .unwrap_or(TextEncoding::Utf8);
+    let output = encode_note_text(&content, encoding)?;
+    // Skip the write when the on-disk bytes are already identical. A
     // no-op write still updates the file mtime, which (a) re-sorts the
     // note list and (b) under `tauri dev` trips the file watcher,
     // restarting the app right after every open ("window closes, list
     // disappears" loop).
-    if existing_text.as_deref() != Some(content.as_str()) {
-        atomic_write(&full, content.as_bytes())?;
+    if existing_bytes.as_deref() != Some(output.as_slice()) {
+        atomic_write(&full, &output)?;
     }
     // Re-read via the root-relative path (not strip_prefix on the
     // canonicalized path, which fails on Windows `\\?\` paths).
@@ -1425,6 +1650,9 @@ fn create_note_impl(root: &Path, folder: &str, kind: Option<&str>) -> Result<Str
     fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     let ext = match kind {
         Some("html" | "htm") => "html",
+        Some("csv") => "csv",
+        Some("txt") => "txt",
+        Some("json") => "json",
         _ => "md",
     };
     let mut candidate = format!("untitled.{ext}");
@@ -1610,16 +1838,19 @@ fn search_notes_impl(
         let Ok(full) = resolve_in_root(root, &meta.path) else {
             continue;
         };
-        // A non-UTF-8 note stays visible in the list / openable with a clear
-        // error; it should still be findable by title, filename or tag.
-        let text = fs::read_to_string(&full).ok();
+        // A note with an unsupported encoding stays visible in the list and
+        // findable by title/filename/tag; use lossy text for the body scan.
+        let text = fs::read(&full).ok().map(|bytes| decode_text_lossy(&bytes));
         // Search visible text for HTML notes, not markup: a hit on `class=`
         // or a tag name is not something the user can see in the preview.
+        // CSV/TXT/JSON are plain text, so their values/keys are searchable.
         let body = text.as_deref().map_or_else(String::new, |text| {
             if meta.kind == "html" {
                 html_to_text(text)
-            } else {
+            } else if meta.kind == "markdown" {
                 parse_frontmatter(text).1
+            } else {
+                text.to_string()
             }
         });
         let body_lower = body.to_lowercase();
@@ -4254,7 +4485,7 @@ mod tests {
         fs::write(dir.join("page.html"), "<title>Page</title><p>Hello</p>").unwrap();
         fs::write(dir.join("pages/legacy.htm"), "<h1>Legacy</h1>").unwrap();
         fs::write(dir.join("note.md"), "# Note\n").unwrap();
-        fs::write(dir.join("skip.txt"), "not a note").unwrap();
+        fs::write(dir.join("skip.bin"), "not a note").unwrap();
         let notes = collect_notes(&dir).unwrap();
         assert_eq!(notes.len(), 3);
         let html = notes.iter().find(|n| n.path == "page.html").unwrap();
@@ -4264,6 +4495,263 @@ mod tests {
         let htm = notes.iter().find(|n| n.path == "pages/legacy.htm").unwrap();
         assert_eq!(htm.kind, "html");
         assert_eq!(htm.title, "Legacy");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn collect_notes_includes_csv_txt_json() {
+        let dir = test_dir("data_scan");
+        fs::create_dir_all(dir.join("data")).unwrap();
+        fs::write(dir.join("data/table.csv"), "name,qty\napple,2\n").unwrap();
+        fs::write(dir.join("data/notes.txt"), "plain\ttext\n").unwrap();
+        fs::write(dir.join("data/config.json"), "{\"ok\":true}\n").unwrap();
+        fs::write(dir.join("skip.bin"), "not a note").unwrap();
+        let notes = collect_notes(&dir).unwrap();
+        assert_eq!(notes.len(), 3);
+        let csv = notes.iter().find(|n| n.path == "data/table.csv").unwrap();
+        assert_eq!(csv.kind, "csv");
+        assert_eq!(csv.title, "table");
+        assert!(csv.tags.is_empty());
+        assert!(csv.snippet.contains("name"));
+        assert_eq!(
+            notes
+                .iter()
+                .find(|n| n.path == "data/notes.txt")
+                .unwrap()
+                .kind,
+            "txt"
+        );
+        assert_eq!(
+            notes
+                .iter()
+                .find(|n| n.path == "data/config.json")
+                .unwrap()
+                .kind,
+            "json"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn valid_utf8_wins_when_the_bytes_are_also_gbk_decodable() {
+        let dir = test_dir("utf8_wins");
+        // Short non-CJK UTF-8 text can also be decoded as GBK into CJK.
+        // Guessing GBK here would corrupt legitimate UTF-8 notes; UTF-8 must
+        // win, and the inherent ambiguity is documented as a residual risk.
+        fs::write(dir.join("short.txt"), "Привет").unwrap();
+        let content = read_note_impl(&dir, "short.txt").unwrap();
+        assert_eq!(content.encoding, "UTF-8");
+        assert_eq!(content.body, "Привет");
+        fs::write(
+            dir.join("utf8.txt"),
+            "一小
+plain
+",
+        )
+        .unwrap();
+        let utf8 = read_note_impl(&dir, "utf8.txt").unwrap();
+        assert_eq!(utf8.encoding, "UTF-8");
+        assert_eq!(
+            utf8.body,
+            "一小
+plain
+"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn gb18030_roundtrip_handles_four_byte_characters() {
+        let dir = test_dir("gb18030_csv");
+        let original = "名称,备注\n服务,😀\n";
+        let (bytes, _, had_errors) = GB18030.encode(original);
+        assert!(!had_errors);
+        fs::write(dir.join("data.csv"), &bytes).unwrap();
+        let content = read_note_impl(&dir, "data.csv").unwrap();
+        assert_eq!(content.encoding, "GB18030");
+        assert_eq!(content.body, original);
+        save_note_impl(
+            &dir,
+            "data.csv",
+            &[],
+            "名称,备注\n服务,😀😀\n",
+            Some(&content.hash),
+            None,
+            false,
+        )
+        .unwrap();
+        let saved = fs::read(dir.join("data.csv")).unwrap();
+        let (decoded, _, had_errors) = GB18030.decode(&saved);
+        assert!(!had_errors);
+        assert_eq!(decoded, "名称,备注\n服务,😀😀\n");
+        let reread = read_note_impl(&dir, "data.csv").unwrap();
+        assert_eq!(reread.encoding, "GB18030");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn data_csv_conflict_and_force_save_keep_encoding() {
+        let dir = test_dir("csv_conflict");
+        let first = save_note_impl(
+            &dir,
+            "data.csv",
+            &[],
+            "名称,数量\n苹果,1\n",
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(first.kind, "csv");
+        fs::write(dir.join("data.csv"), "名称,数量\n外部,9\n").unwrap();
+        let err = save_note_impl(
+            &dir,
+            "data.csv",
+            &[],
+            "名称,数量\n苹果,2\n",
+            Some(&first.hash),
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(err, CONFLICT_ERR);
+        save_note_impl(
+            &dir,
+            "data.csv",
+            &[],
+            "名称,数量\n苹果,2\n",
+            Some(&first.hash),
+            None,
+            true,
+        )
+        .unwrap();
+        let content = read_note_impl(&dir, "data.csv").unwrap();
+        assert_eq!(content.body, "名称,数量\n苹果,2\n");
+        assert_eq!(content.encoding, "UTF-8");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn rename_data_notes_preserves_extensions_and_sanitizes_windows_names() {
+        let dir = test_dir("data_rename");
+        fs::write(dir.join("table.csv"), "a,b\n1,2\n").unwrap();
+        assert_eq!(
+            rename_note_impl(&dir, "table.csv", "data").unwrap(),
+            "data.csv"
+        );
+        fs::write(dir.join("untitled.md"), "# note\n").unwrap();
+        assert_eq!(
+            rename_note_impl(&dir, "untitled.md", "CON.md").unwrap(),
+            "_CON.md"
+        );
+        assert_eq!(
+            rename_note_impl(&dir, "_CON.md", ".hidden").unwrap(),
+            "hidden.md"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn gbk_markdown_roundtrip_keeps_frontmatter_and_encoding() {
+        let dir = test_dir("gbk_markdown");
+        let original = "---\ntitle: 编码测试\ntags: [旧]\n---\n\n# 标题\n正文\n";
+        let (bytes, _, had_errors) = GBK.encode(original);
+        assert!(!had_errors);
+        fs::write(dir.join("note.md"), &bytes).unwrap();
+        let content = read_note_impl(&dir, "note.md").unwrap();
+        assert_eq!(content.kind, "markdown");
+        assert_eq!(content.encoding, "GBK");
+        assert_eq!(content.tags, vec!["旧"]);
+        assert!(content.body.contains("# 标题"));
+        let meta = save_note_impl(
+            &dir,
+            "note.md",
+            &["新".into()],
+            "# 标题\n更新正文\n",
+            Some(&content.hash),
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(meta.tags, vec!["新"]);
+        let saved = fs::read(dir.join("note.md")).unwrap();
+        let (decoded, _, had_errors) = GBK.decode(&saved);
+        assert!(!had_errors);
+        assert!(decoded.contains("title: 编码测试"));
+        assert!(decoded.contains("tags: [\"新\"]"));
+        assert!(decoded.contains("# 标题\n更新正文"));
+        assert!(std::str::from_utf8(&saved).is_err());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn gbk_save_upgrades_to_gb18030_for_four_byte_characters() {
+        let dir = test_dir("gbk_upgrade");
+        let (bytes, _, _) = GBK.encode("旧内容\n");
+        fs::write(dir.join("notes.txt"), &bytes).unwrap();
+        save_note_impl(&dir, "notes.txt", &[], "旧内容 😀\n", None, None, false).unwrap();
+        let saved = fs::read(dir.join("notes.txt")).unwrap();
+        let (decoded, _, had_errors) = GB18030.decode(&saved);
+        assert!(!had_errors);
+        assert_eq!(decoded, "旧内容 😀\n");
+        let reread = read_note_impl(&dir, "notes.txt").unwrap();
+        assert_eq!(reread.encoding, "GB18030");
+        assert_eq!(reread.body, "旧内容 😀\n");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn utf8_bom_is_reported_and_preserved_on_save() {
+        let dir = test_dir("utf8_bom_txt");
+        let mut bytes = UTF8_BOM.to_vec();
+        bytes.extend_from_slice(b"hello\r\nworld\r\n");
+        fs::write(dir.join("notes.txt"), &bytes).unwrap();
+        let content = read_note_impl(&dir, "notes.txt").unwrap();
+        assert_eq!(content.encoding, "UTF-8 BOM");
+        assert_eq!(content.body, "hello\nworld\n");
+        save_note_impl(&dir, "notes.txt", &[], "hello\nrustmd\n", None, None, false).unwrap();
+        let saved = fs::read(dir.join("notes.txt")).unwrap();
+        assert!(saved.starts_with(&UTF8_BOM));
+        assert_eq!(&saved[UTF8_BOM.len()..], b"hello\r\nrustmd\r\n");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn repeated_utf8_boms_do_not_accumulate_on_save() {
+        let dir = test_dir("double_bom");
+        let mut bytes = UTF8_BOM.to_vec();
+        bytes.extend_from_slice(&UTF8_BOM);
+        bytes.extend_from_slice(b"hello\r\n");
+        fs::write(dir.join("notes.txt"), &bytes).unwrap();
+        let content = read_note_impl(&dir, "notes.txt").unwrap();
+        assert_eq!(content.encoding, "UTF-8 BOM");
+        assert_eq!(content.body, "hello\n");
+        save_note_impl(&dir, "notes.txt", &[], "hello\nworld\n", None, None, false).unwrap();
+        let saved = fs::read(dir.join("notes.txt")).unwrap();
+        assert!(saved.starts_with(&UTF8_BOM));
+        assert!(
+            !saved[UTF8_BOM.len()..].starts_with(&UTF8_BOM),
+            "save accumulated an extra BOM"
+        );
+        assert_eq!(&saved[UTF8_BOM.len()..], b"hello\r\nworld\r\n");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn create_note_supports_data_extensions() {
+        let dir = test_dir("data_create");
+        assert_eq!(
+            create_note_impl(&dir, "", Some("csv")).unwrap(),
+            "untitled.csv"
+        );
+        assert_eq!(
+            create_note_impl(&dir, "", Some("txt")).unwrap(),
+            "untitled.txt"
+        );
+        assert_eq!(
+            create_note_impl(&dir, "", Some("json")).unwrap(),
+            "untitled.json"
+        );
         cleanup(&dir);
     }
 
@@ -4591,6 +5079,19 @@ Real text here
         assert!(!s.contains("$$"));
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_backslash_names_are_skipped() {
+        let dir = test_dir("unix_backslash");
+        fs::write(dir.join(r"a\b.md"), "# hidden by path model\n").unwrap();
+        fs::create_dir_all(dir.join(r"c\d")).unwrap();
+        fs::write(dir.join(r"c\d/note.md"), "# nested\n").unwrap();
+        assert!(collect_notes(&dir).unwrap().is_empty());
+        let folders = collect_folders(&dir).unwrap();
+        assert!(folders.is_empty(), "unexpected folders: {folders:?}");
+        cleanup(&dir);
+    }
+
     #[test]
     fn sanitize_filename_removes_invalid() {
         assert_eq!(sanitize_filename("a/b\\c:d?e*f"), "abcdef");
@@ -4598,6 +5099,9 @@ Real text here
         assert_eq!(sanitize_filename(""), "untitled");
         assert_eq!(sanitize_filename("my note"), "my note");
         assert_eq!(sanitize_filename("CON"), "_CON");
+        assert_eq!(sanitize_filename("CON.md"), "_CON.md");
+        assert_eq!(sanitize_filename("NUL.txt"), "_NUL.txt");
+        assert_eq!(sanitize_filename(".hidden"), "hidden");
         assert_eq!(sanitize_filename("trail... "), "trail");
     }
 

@@ -5,8 +5,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
+const cliArgs = process.argv.slice(2);
 const reportPath =
-  process.argv[2] ||
+  cliArgs.find((arg) => !arg.startsWith('--')) ||
   path.join(
     process.env.RUSTMD_SELFTEST_OUT ||
       path.join(process.env.TEMP || process.env.TMPDIR || '/tmp', 'rustmd-selftest'),
@@ -27,8 +28,10 @@ try {
 }
 
 const requireHtml = process.argv.includes('--require-html');
+const requireData = process.argv.includes('--require-data');
 const errors = [];
 let htmlEntries = 0;
+const dataEntries = { csv: 0, txt: 0, json: 0 };
 const maxAgeHours = Number(
   process.env.RUSTMD_SELFTEST_MAX_AGE_HOURS || 24
 );
@@ -52,6 +55,33 @@ if (Array.isArray(report.errors) && report.errors.length) {
 }
 for (const entry of report.entries || []) {
   if (!entry.path) errors.push('entry without path');
+  if (Object.prototype.hasOwnProperty.call(dataEntries, entry.kind)) {
+    dataEntries[entry.kind] += 1;
+    const render = entry.dataRender;
+    if (!render || render.view !== true) {
+      errors.push(`${entry.path}: data preview view is missing`);
+    } else {
+      if ((entry.kind === 'csv' || entry.kind === 'txt') && !(render.rows > 0)) {
+        errors.push(`${entry.path}: data table has no rows`);
+      }
+      if (entry.kind === 'json' && !(render.groups > 0 && render.values > 0)) {
+        errors.push(`${entry.path}: JSON inspector is empty`);
+      }
+      if (render.injected !== 0) {
+        errors.push(`${entry.path}: note markup reached the data preview DOM`);
+      }
+    }
+    if (!entry.htmlExport || !(entry.htmlExport.bytes > 100)) {
+      errors.push(`${entry.path}: data HTML export missing or too small`);
+    } else {
+      if (entry.htmlExport.dataView !== true) {
+        errors.push(`${entry.path}: exported HTML has no data view`);
+      }
+      if (entry.htmlExport.escapedMarkup !== true) {
+        errors.push(`${entry.path}: note markup was not escaped in exported HTML`);
+      }
+    }
+  }
   if (entry.kind === 'html') {
     htmlEntries += 1;
     if (entry.render?.iframe !== true || entry.render?.ready !== true) {
@@ -81,8 +111,19 @@ for (const entry of report.entries || []) {
   }
 }
 
+if (report.htmlCharset?.ok !== true) {
+  errors.push('HTML export charset normalization did not pass');
+}
+if (report.dataAlignment?.csv !== true || report.dataAlignment?.txt !== true) {
+  errors.push('CSV/TXT header alignment or column scope did not pass');
+}
 if (requireHtml && htmlEntries === 0) {
   errors.push('no HTML entry found (--require-html)');
+}
+if (requireData) {
+  for (const [kind, count] of Object.entries(dataEntries)) {
+    if (count === 0) errors.push(`no ${kind.toUpperCase()} entry found (--require-data)`);
+  }
 }
 
 if (Array.isArray(report.warnings) && report.warnings.length) {
@@ -97,5 +138,7 @@ if (errors.length) {
 }
 
 console.log(
-  `selftest report OK: ${report.entries.length} notes, ${reportPath}`
+  `selftest report OK: ${report.entries.length} notes ` +
+    `(html ${htmlEntries}, csv ${dataEntries.csv}, txt ${dataEntries.txt}, ` +
+    `json ${dataEntries.json}), ${reportPath}`
 );

@@ -3,6 +3,7 @@ import { EditorView, keymap } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown';
 import { html as htmlLanguage } from '@codemirror/lang-html';
+import { json as jsonLanguage } from '@codemirror/lang-json';
 import { languages } from '@codemirror/language-data';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -125,12 +126,15 @@ const highlight = HighlightStyle.define([
 /** Language + keymap for a note kind. Swapped per note via a Compartment, so
  * opening an HTML page does not keep Markdown list/Enter behavior. */
 function languageExtension(kind) {
-  return kind === 'html'
-    ? [htmlLanguage()]
-    : [
-        markdown({ base: markdownLanguage, codeLanguages: languages }),
-        keymap.of(markdownKeymap),
-      ];
+  if (kind === 'html') return [htmlLanguage()];
+  if (kind === 'json') return [jsonLanguage()];
+  // CSV and TXT are plain text: Markdown list/Enter behavior or HTML
+  // completions would be wrong in a data file.
+  if (kind === 'csv' || kind === 'txt') return [];
+  return [
+    markdown({ base: markdownLanguage, codeLanguages: languages }),
+    keymap.of(markdownKeymap),
+  ];
 }
 
 export function createEditor(holder, { onChange }) {

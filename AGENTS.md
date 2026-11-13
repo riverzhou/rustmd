@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rust + [Tauri 2](https://tauri.app) local Markdown + HTML notes app. The Rust
+Rust + [Tauri 2](https://tauri.app) local Markdown / HTML / CSV / TXT / JSON notes app. The Rust
 backend is one file (`src/main.rs`); the frontend is frameworkless vanilla JS
 bundled by Vite. User-facing docs are Chinese + English (`README.md` / `README.en.md`);
 this file is the developer/agent contract.
@@ -21,9 +21,9 @@ this file is the developer/agent contract.
 | Frontend pure unit tests | `npm run test:unit` |
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
-| Verify the self-test report | `npm run selftest:check` (CI adds `--require-html`) |
-| Version/tag preflight | `node scripts/check-version.mjs v1.9.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.9.0 >/dev/null` |
+| Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
+| Version/tag preflight | `node scripts/check-version.mjs v1.10.0` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.10.0 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -35,8 +35,8 @@ this file is the developer/agent contract.
   directory under `rustmd-selftest/`; **clear/override `RUSTMD_SELFTEST_OUT`
   before a release run** so a stale green report cannot be reused. Override
   examples with `RUSTMD_SELFTEST_EXAMPLES`. It exits the app with 0/1; the
-  report checker enforces HTML coverage (`--require-html`) and freshness
-  (24 h default).
+  report checker enforces HTML + data coverage (`--require-html --require-data`)
+  and freshness (24 h default).
 - CI: `.github/workflows/ci.yml` (quality gate + three-platform compile +
   Linux Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
   zip, Linux deb/AppImage, macOS Apple Silicon (arm64) DMG). Details: `docs/RELEASING.md`.
@@ -51,8 +51,10 @@ this file is the developer/agent contract.
   - types and path safety (`resolve_in_root`, `strip_extended_prefix`,
     `canonical_root`, symlink/junction checks);
   - front matter split/compose (unknown fields and CRLF are preserved);
+  - text encoding detection/round-tripping (`decode_note_text`,
+    `encode_note_text`; UTF-8/BOM, GBK, GB18030) and data-note metadata;
   - HTML helpers (`html_to_text`, title/snippet extraction) and HTML-specific
-    save/compose (no front matter, BOM/CRLF preserved);
+    save/compose (no front matter, BOM/CRLF preserved; CSV/TXT/JSON share it);
   - `render_html_note` / `html_preview_finish` (hidden Tauri WebView; no
     external browser; segmented full-page capture + Rust PNG stitching);
   - `set_html_preview` (sandboxed native preview iframe, random-token
@@ -87,11 +89,25 @@ this file is the developer/agent contract.
   (`rustmd-multi-vault`: pinned vaults + the current one, aggregated note list,
   per-vault folder trees), the 320 px sidebar with a draggable folders/tags ↔
   note-list splitter (`rustmd-nav-height`), and the format badges (`MD` green /
-  `HTML` blue) shown in both the note list and the topbar.
+  `HTML` blue / `CSV` amber / `TXT` grey / `JSON` violet) shown in both the note
+  list and the topbar. The status bar shows the auto-detected encoding.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers,
-  folder-scope predicates and scoped tag counts (covered by `node --test`).
+  folder-scope predicates, scoped tag counts and the note-kind mapping for all
+  supported extensions (covered by `node --test`).
+- `frontend/src/dataformat.js` — pure CSV/TSV parser (quotes, embedded
+  newlines, delimiter sniffing), tab-column builder, smart column alignment
+  (numbers/dates right, booleans centered, missing markers ignored) and JSON
+  stats/validation (covered by `node --test`).
+- `frontend/src/dataview.js` / `dataview.css` — DOM-only CSV/TXT/JSON preview
+  renderers (all note text via `textContent`), plus the styles shared with
+  standalone HTML exports. Tables use alternating ROW backgrounds plus a
+  tight four-color column-ink cycle, and apply the same alignment class to
+  `<th>` and `<td>`; the JSON view is an inspector with aligned keys,
+  a semantic per-type palette (group tints/rails, type/count pills, leaf
+  type dots) and collapsible groups (no raw braces/commas). `main.js` imports the CSS; `preview.js`
+  imports the raw string so exported files stay visually identical.
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap 20, pinned entries that survive eviction, pinned-first display order,
   display name; covered by `node --test`).
@@ -99,9 +115,11 @@ this file is the developer/agent contract.
   (covered by `node --test`).
 - `frontend/src/preview.js` — Markdown via marked + DOMPurify + highlight.js
   + Mermaid + MathJax; HTML notes via a sandboxed native iframe (preview) and
-  a hidden Tauri WebView capture (export); note-relative CSS/JS/images are inlined and fonts use `rmd`; link interception in both Markdown and HTML previews; timeout
-  warning; async preview generation guard; HTML export and local-image
-  inlining for the hidden capture.
+  a hidden Tauri WebView capture (export); CSV/TXT/JSON via `dataview.js`;
+  note-relative CSS/JS/images are inlined and fonts use `rmd`; link interception
+  in both Markdown and HTML previews; timeout warning; async preview generation
+  guard; HTML export (including data views) and local-image inlining for the
+  hidden capture.
 - `frontend/src/export.js` — off-screen stage, image inlining, html2canvas,
   multi-page jsPDF, `pdfFromPngDataUrl` for WebView-rendered HTML notes, and
   a 0.25–3× adaptive scale for very long Markdown notes. Markdown PDF export
@@ -110,9 +128,9 @@ this file is the developer/agent contract.
   pages and embeds font subsets, so the PDF is vector text (selectable, sharp,
   small) instead of sliced canvas images. The raster exporter stays as the
   fallback for unsupported platforms and older WebView2 runtimes.
-- `frontend/src/editor.js` — CodeMirror 6 setup; Markdown/HTML language is
-  swapped per note through a `Compartment`; HTML/JS/CSS highlight rules and
-  line-wrap compartment.
+- `frontend/src/editor.js` — CodeMirror 6 setup; Markdown/HTML/JSON language
+  (plain text for CSV/TXT) is swapped per note through a `Compartment`;
+  HTML/JS/CSS/JSON highlight rules and line-wrap compartment.
 - `frontend/src/imgutil.js` — bytes→data URL and magic-byte MIME sniffing.
 - `frontend/shims/katex.js` — tiny stub aliased as `katex` in
   `frontend/vite.config.js`; mermaid 12 has an optional KaTeX import, while
@@ -120,22 +138,38 @@ this file is the developer/agent contract.
 - `frontend/src/selftest.js` — dev-only E2E; dynamically imported from
   `main.js` under `import.meta.env.DEV`, never bundled into release builds.
 - `frontend/src/style.css` — theme variables via `body[data-theme]`; sidebar,
-  markdown, export stage.
+  markdown, export stage. `dataview.css` adds the data-preview layout and is
+  imported after it.
 
 ### Data model
 
 - Notes root = plain folder. Note paths are root-relative with forward slashes.
-  Recognized note extensions: `.md`, `.html`, `.htm` (case-insensitive).
-- `kind` is `"markdown"` or `"html"`, derived from the extension (not the
-  contents). It is returned in `NoteMeta` and `NoteContent`.
+  Recognized note extensions: `.md`, `.html`, `.htm`, `.csv`, `.txt`, `.json`
+  (case-insensitive). On Unix, filenames containing a literal backslash are
+  skipped because the note protocol cannot represent them unambiguously; on
+  Windows the backend normalizes `\` separators to `/`.
+- `kind` is `"markdown"`, `"html"`, `"csv"`, `"txt"` or `"json"`, derived
+  from the extension (not the contents). It is returned in `NoteMeta` and
+  `NoteContent`.
 - Markdown front matter is `---` … `---`/`...` at the top. Only `tags` is
   editable in the app; `compose_note` preserves every other line and the file’s
   CRLF/LF style, and rewrites only the `tags:` entry.
-- Notes are UTF-8. Non-UTF-8 files stay visible in the list (lossy metadata) but `read_note` returns a clear UTF-8 error; the app does not silently transcode or overwrite them.
-- HTML notes have **no** front matter and **no** tags. `compose_html` writes the
-  editor body verbatim (LF-normalized), restoring the file’s BOM and CRLF/LF
-  style; `tags:` is never injected. `read_note` returns the raw document with
-  the BOM stripped and newlines normalized.
+- Text notes are decoded automatically as UTF-8 (with or without BOM), GBK or
+  GB18030. Detection order is BOM → valid UTF-8 → GBK → GB18030. A rare GBK
+  stream that is itself valid UTF-8 is read as UTF-8 (documented residual
+  ambiguity; do not add a heuristic that corrupts valid UTF-8 in other
+  scripts). A file that decodes as none stays visible with lossy metadata but
+  `read_note` returns a clear encoding error. `NoteContent.encoding` and
+  `NoteMeta.encoding` report the detected label. Saving re-encodes with the
+  same codec and restores the BOM; repeated UTF-8 BOMs are normalized on read
+  and never accumulate. GBK saves upgrade to GB18030 only when a new four-byte
+  character cannot be represented in GBK. Other unrepresentable edits fail
+  instead of writing entities.
+- HTML, CSV, TXT and JSON notes have **no** front matter and **no** tags.
+  `compose_html` writes the editor body verbatim (LF-normalized), restoring the
+  file’s CRLF/LF style; `tags:` is never injected. `read_note` returns the raw
+  document with the BOM stripped and newlines normalized; `save_note_impl`
+  applies the original encoding and BOM when writing bytes.
 - HTML preview uses a **sandboxed iframe** (`allow-scripts allow-forms`; no
   `allow-same-origin`; null origin) served by the `rmdhtml` protocol, so
   scripts/styles/charts and note-relative CSS/JS/images (inlined) run natively
@@ -146,8 +180,9 @@ this file is the developer/agent contract.
   PID/counter-derived. No Edge/Chrome is required.
 - Tall HTML exports are captured in vertical slices and stitched into one PNG
   in Rust (`png` crate); preview stays a single native iframe.
-- `NoteMeta` includes `hash`; `NoteContent` includes `hash`/`mtime`/`kind`. The
-  frontend sends `baseHash` on save; a mismatch returns
+- `NoteMeta` includes `hash` and `encoding`; `NoteContent` includes
+  `hash`/`mtime`/`kind`/`encoding`. The frontend sends `baseHash` on save; a
+  mismatch returns
   `conflict: note changed on disk` and the UI asks before forcing.
 - `mtime` is unix seconds (display/sort only); `hash` is the conflict token.
 - Multi-vault mode is a frontend concept: `main.js` aggregates
@@ -171,9 +206,10 @@ this file is the developer/agent contract.
 `set_notes_roots` registers every loaded vault (multi-vault mode). A request is
 served only when its canonical path is under at least one registered root.
 
-`create_note` takes an optional `kind` (`"markdown"` default, `"html"`) and
-picks `untitled.md` / `untitled.html`. `rename_note` preserves the note’s
-current extension; `unique_sibling` keeps the extension.
+`create_note` takes an optional `kind` (`"markdown"` default, `"html"`,
+`"csv"`, `"txt"`, `"json"`) and picks the matching `untitled.<ext>`.
+`rename_note` preserves the note’s current extension; `unique_sibling` keeps the
+extension.
 
 `save_export` opens the OS save dialog in Rust and writes the selected bytes;
 there is deliberately **no** arbitrary `write_text`/`write_bytes` command.
@@ -266,24 +302,36 @@ If a new Tauri *plugin* is used:
   `save_note_impl` tests together. Keep unknown fields and CRLF. HTML notes
   use `compose_html` instead: no front matter, no tags, BOM/CRLF preserved.
 - **Note formats**: `note_kind()` (Rust) and `noteKindOf()` (JS) must agree on
-  `.md` / `.html` / `.htm`. Update `walk`, `read_meta`, `read_note`,
-  `save_note_impl`, `create_note`, `rename_note`, the mock in `api.js`, and the
-  per-note preview/export `kind` argument together.
+  `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json`. Update `walk`,
+  `read_meta`, `read_note`, `save_note_impl`, `create_note`, `rename_note`, the
+  mock in `api.js`, and the per-note preview/export `kind` argument together.
+  Data kinds share the no-front-matter compose path and the generic export
+  stage; keep `notelist.noteStemOf`, the smart alignment/width hints in
+  `dataformat.js`, the data display caps in `dataview.js`, and the badges in
+  `main.js`/`style.css` in sync. The export stage reuses the preview renderer,
+  so the caps (CSV 2000×100, TXT 5000×80, JSON 6000 nodes) apply to
+  HTML/PNG/PDF exports too; the visible truncation notice is part of the
+  contract.
 - **Search**: `search_notes` searches body, heading, filename and tags, scoped
   by its `folder` argument (the selected/current folder; empty/null = vault
   root) and the `recursive` flag (the sidebar's “include subfolders” switch).
   The note list uses the same scope: by default only notes directly in the
   selected folder are shown and searched; the choice persists as
   `rustmd-include-subfolders` (`on`/`off`).
-  For HTML notes the body is visible text (`html_to_text`), not markup. The
-  snippet window is 40 chars before the match and query length + 60 after;
-  the mock in `api.js` mirrors it.
+  For HTML notes the body is visible text (`html_to_text`), not markup;
+  CSV/TXT/JSON search their decoded plain text. The snippet window is roughly
+  40 characters before the match and query length + 60 after; Rust measures a
+  UTF-8 byte window (then trims to char boundaries) while the mock uses
+  UTF-16 code units, so a CJK excerpt can be shorter than the mock.
 - **Preview/export**: `renderPreview(source, container, kind)` dispatches to
-  Markdown rendering, the sandboxed HTML preview iframe, or the hidden WebView
-  capture. `renderMarkdownInto` must sanitize before mounting; the HTML
-  preview must stay in the null-origin iframe. Bump `htmlRenderSeq` so a slow
-  previous preview cannot append an iframe after a newer note was selected,
-  and tear down the native listener via `disposeNativeHtmlPreview` when the
+  Markdown rendering, the sandboxed HTML preview iframe, the hidden WebView
+  capture, or `renderDataView` for CSV/TXT/JSON. `renderMarkdownInto` must
+  sanitize before mounting; the HTML preview must stay in the null-origin
+  iframe; data renderers must keep using `textContent`/DOM APIs (never
+  innerHTML with note text). HTML/PNG/PDF export all go through the same
+  `.export-stage`, so new data kinds get all three for free. Bump
+  `htmlRenderSeq` so a slow previous preview cannot append an iframe after a
+  newer note was selected, and tear down the native listener via `disposeNativeHtmlPreview` when the
   container is reused. `render_html_note` builds the hidden-window document
   with `html2canvas`; `mode=export` captures at up to 3× (target ~48k device
   px height) and `png` stitches tall segments; PDF mode uses 3× for short
@@ -314,7 +362,8 @@ If a new Tauri *plugin* is used:
   passes `naturalWidth`/`naturalHeight`, which cropped viewBox-only SVGs. The
   self-test's inline-SVG red/blue check covers this.
 - **Editor**: line wrapping is a CodeMirror `Compartment` toggled from
-  `#btn-wrap`; the state is persisted as `rustmd-wrap` (`on`/`off`).
+  `#btn-wrap`; the state is persisted as `rustmd-wrap` (`on`/`off`). JSON uses
+  `@codemirror/lang-json`; CSV/TXT intentionally use no language extension.
   `#btn-fullscreen` / `F11` call `api.setFullscreen` (Tauri window
   `setFullscreen`; browser Fullscreen API); sync the real state on focus.
   HTML highlighting comes from `@codemirror/lang-html`; explicit
@@ -324,7 +373,7 @@ If a new Tauri *plugin* is used:
   `--hl-punct`).
 - **UI strings**: add the key to both `en` and `zh-CN` dictionaries in `i18n.js`,
   use `t()` in JS and `data-i18n*` attributes in HTML. Never hardcode a
-  user-visible string in `main.js`.
+  user-visible string in `main.js`. Data-preview strings live under `data.*`.
 - **Sidebar**: `notelist.js` owns sorting/tree/filtering; `main.js` only
   renders. Keep counts (`count` = subtree, `direct` = exact folder) in sync;
   with the subfolder scope off the tree shows `direct`, otherwise `count`, and
@@ -396,10 +445,17 @@ If a new Tauri *plugin* is used:
   checks. Remote images are best-effort: a fetch failure is recorded in
   `report.warnings` (and the remaining remote URLs are skipped for the run),
   never in `report.errors`, so an unreachable image host cannot block a
-  release; local images stay strict. HTML entries use the built-in WebView
-  (native preview iframe + hidden export window), check `--require-html`, and
-  assert iframe readiness, local-JS execution, PNG/PDF magic/dimensions and
-  local CSS/JS/image inlining. Markdown and HTML PDF entries assert the vector
+  release; local images stay strict. The release/CI runner allows 1200 s for
+  the full ten-note export run (a local blocked-network run can be much slower
+  because each remote image export waits on its fetch timeout). HTML entries use the built-in WebView
+  (native preview iframe + hidden export window), check `--require-html` and
+  `--require-data`, and assert iframe readiness, local-JS execution,
+  PNG/PDF magic/dimensions and local CSS/JS/image inlining; data entries
+  assert the table/JSON structure,
+  smart header alignment, markup escaping, data HTML export, HTML charset
+  normalization and GBK detection. A synthetic CSV/TXT table (independent of
+  the example vault) verifies numeric right / boolean center header alignment
+  and `scope=col`. Markdown and HTML PDF entries assert the vector
   path really produced text (`/Font` in the PDF, not just image slices) on
   every desktop platform. No external browser is installed or required. Clear
   the output dir first; the checker rejects reports older than 24h and prints
@@ -408,12 +464,13 @@ If a new Tauri *plugin* is used:
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
   `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
-  script captures 1440×900 zh/en light/dark, the 320 px sidebar, a 900×900
-  multi-vault view and a 640×460 recent-vault switcher crop; it seeds
-  `rustmd-recent-dirs` with three demo folders (two pinned) before taking the
-  switcher/multi shots, and turns on the subfolder scope so the nested demo
-  note appears. Update it when the UI layout or the mock notes change so the
-  images do not drift.
+  script captures 1440×900 zh/en light/dark overview, the 320 px sidebar, a
+  900×900 multi-vault view and a 640×460 recent-vault switcher crop, plus
+  full-window HTML/CSV/TXT/JSON and dark JSON format shots (`*-note*.png`, with
+  `.en` variants). It seeds `rustmd-recent-dirs` with three demo folders (two
+  pinned) before taking the switcher/multi shots, and turns on the subfolder
+  scope so the nested demo note appears. Update it when the UI layout or the
+  mock notes change so the images do not drift.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.

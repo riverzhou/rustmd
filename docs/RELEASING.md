@@ -25,30 +25,30 @@
 **Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，并在
 `CHANGELOG.md` 中补对应小节（项目实践两者都写；`scripts/release-notes.mjs`
 接受任一，找不到才失败）。如果本版改动了 UI 或 mock 笔记库，先用
-`node scripts/capture-screenshots.mjs` 重新生成 `docs/screenshots/`，并把
+`node scripts/capture-screenshots.mjs` 重新生成 `docs/screenshots/`（含 HTML/CSV/TXT/JSON 格式截图与中英文/深色变体），并把
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.9.0
-node scripts/release-notes.mjs v1.9.0 >/dev/null
+node scripts/check-version.mjs v1.10.0
+node scripts/release-notes.mjs v1.10.0 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.9.0"
-git tag v1.9.0
+git commit -m "release: v1.10.0"
+git tag v1.10.0
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.9.0
+git push github v1.10.0
 git push origin master
-git push origin v1.9.0
+git push origin v1.10.0
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.9.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.10.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 ## 2. Workflow 结构
 
@@ -61,7 +61,7 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
 
 只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会运行
-`npm run selftest` 并用 `--require-html` 校验报告；HTML/隐藏 WebView 路径回归会阻止发布。
+`npm run selftest` 并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
 
 ## 3. 产物
 
@@ -84,7 +84,7 @@ Release 都能拿到许可证，publish job 还会把仓库根目录的 `LICENSE
 Windows zip 的目录结构：
 
 ```
-rustmd-1.9.0-win-x64/
+rustmd-1.10.0-win-x64/
 ├── rustmd.exe
 ├── README.md / README.en.md
 ├── CHANGELOG.md
@@ -166,17 +166,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.9.0-macos-arm64.dmg.sha256
+shasum -a 256 -c rustmd-1.10.0-macos-arm64.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.9.0-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.9.0-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.10.0-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.10.0-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.9.0-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.10.0-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

@@ -2,19 +2,19 @@
 
 本文件给出可直接粘贴到 GitHub 仓库设置里的文案，以及提升搜索/点击率的建议。仓库 slug：`riverzhou/rustmd`。
 
-> 2026-11-12：已通过 `gh repo edit` 应用 HTML 版 About 描述与 20 个 topics（含 `html`、`html-editor`、`html-notes`、`webview`）。
+> 2026-11-13：已通过 `gh repo edit` 与 GitHub Topics API 应用 v1.10.0 About 描述和 20 个 topics（含 `csv`、`json`、`txt`、`data-viewer`、`gbk`）。
 
 ## 1. About 描述（英文，推荐）
 
 GitHub 的 About 描述会出现在搜索、仓库列表和社交预览中，是“被别人搜到”的第一入口。
 
-> Local-first Markdown & HTML notes for Windows, macOS (Apple Silicon) & Linux. Rust + Tauri 2, GPL-3.0-or-later, English/中文 UI, offline, plain `.md/.html` files, built-in WebView HTML preview, folder tree, search, Mermaid, LaTeX, HTML/PNG/PDF export.
+> Local-first Markdown, HTML, CSV, TXT & JSON notes for Windows, macOS (Apple Silicon) & Linux. Rust + Tauri 2, GPL-3.0-or-later, English/中文 UI, offline, plain files, smart CSV/TXT tables, JSON inspector, UTF-8/GBK/GB18030, Mermaid, LaTeX, HTML/PNG/PDF export.
 
-长度约 250 字符，包含 `Markdown notes`、`Windows`、`macOS`、`Linux`、`Rust`、`Tauri`、`offline`、`Mermaid`、`LaTeX`、`export` 等搜索词。
+长度约 300 字符（低于 GitHub 350 限制），包含 `Markdown notes`、`HTML`、`CSV`、`TXT`、`JSON`、`GBK`、`Windows`、`macOS`、`Linux`、`Rust`、`Tauri`、`offline`、`Mermaid`、`LaTeX`、`export` 等搜索词。
 
 中文备选：
 
-> 本地优先的 Markdown / HTML 笔记应用：Rust + Tauri 2，GPL-3.0-or-later，Windows / macOS（Apple Silicon）/ Linux，离线、纯 .md / .html 文件、文件夹树、全文搜索、Mermaid、LaTeX、HTML/PNG/PDF 导出。
+> 本地优先的 Markdown / HTML / CSV / TXT / JSON 笔记应用：Rust + Tauri 2，GPL-3.0-or-later，Windows / macOS（Apple Silicon）/ Linux，离线、纯文件存储、CSV/TXT 智能表格、JSON 检查器、UTF-8/GBK/GB18030、文件夹树、全文搜索、Mermaid、LaTeX、HTML/PNG/PDF 导出。
 
 ## 2. Topics（最多 20 个）
 
@@ -24,18 +24,18 @@ GitHub Topics 是搜索与“相关仓库”推荐的核心信号。建议：
 markdown
 markdown-editor
 html
-html-editor
 html-notes
-webview
-notes
+csv
+json
+txt
+data-viewer
+gbk
 tauri
 rust
 desktop-app
 offline
 local-first
 mermaid
-mathjax
-latex
 pdf-export
 windows
 macos
@@ -55,15 +55,15 @@ gh repo edit riverzhou/rustmd \
 
 ```bash
 gh repo edit riverzhou/rustmd \
-  --add-topic markdown --add-topic markdown-editor --add-topic notes
+  --add-topic markdown --add-topic html --add-topic csv --add-topic json --add-topic txt --add-topic data-viewer
 ```
 
 ## 3. README 搜索关键词
 
 README 已包含自然出现的英文/中文关键词，不要为了 SEO 堆砌。重点词：
 
-- 英文：local-first Markdown & HTML notes, HTML editor, built-in WebView preview, Markdown editor, recent-folder switcher, pinned vaults, multi-vault view, current-folder scope, offline notes, knowledge base, Obsidian alternative, Tauri, Rust, Mermaid, LaTeX, PDF export, portable Windows, macOS (Apple Silicon), Linux.
-- 中文：Markdown / HTML 笔记、HTML 编辑器、内置 WebView 实时预览、最近笔记库切换、置顶笔记库、多库同开、当前文件夹范围、本地笔记、离线笔记、Markdown 编辑器、知识库、Obsidian 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS Apple Silicon。
+- 英文：local-first Markdown/HTML/CSV/TXT/JSON notes, data viewer, CSV table, JSON inspector, tab-aligned text, UTF-8/GBK/GB18030, HTML WebView preview, Markdown editor, recent-folder switcher, pinned vaults, multi-vault view, current-folder scope, offline notes, knowledge base, Obsidian alternative, Tauri, Rust, Mermaid, LaTeX, PDF export, portable Windows, macOS (Apple Silicon), Linux.
+- 中文：Markdown / HTML / CSV / TXT / JSON 笔记、数据查看器、CSV 表格、JSON 检查器、制表符对齐文本、UTF-8/GBK/GB18030、内置 WebView 实时预览、最近笔记库切换、置顶笔记库、多库同开、当前文件夹范围、本地笔记、离线笔记、知识库、Obsidian 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS Apple Silicon。
 
 `README.md` 首段和 `README.en.md` 首段都包含仓库定位；GitHub 会索引 README 内容。
 
@@ -74,19 +74,19 @@ GitHub 仓库 Settings → Social preview 建议上传 1280×640 的图片。可
 - `docs/screenshots/overview.png`（1440×900，上传后 GitHub 会裁切；若严格需要 1280×640，可再截一张带标题的图）
 - 或 `docs/screenshots/dark.png`
 
-推荐图上叠加一行文字：`rustmd — local-first Markdown notes`。
+推荐图上叠加一行文字：`rustmd — local-first Markdown, HTML & data notes`。
 
 ## 5. Release 文案
 
 Release 标题：
 
 ```
-rustmd v<version> — local-first Markdown & HTML notes
+rustmd v<version> — local-first Markdown, HTML & data notes
 ```
 
 第一段：
 
-> Local-first Markdown & HTML notes for Windows, macOS (Apple Silicon) and Linux. Live HTML preview via the built-in WebView, folder tree, filename cards, pinned recent vaults and a multi-vault view, current-folder scope, full-text search, Mermaid, LaTeX, HTML/PNG/PDF export. Plain `.md` / `.html` files, no account.
+> Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux. Live HTML preview via the built-in WebView, smart CSV/TXT tables, JSON inspector, UTF-8/GBK/GB18030 decoding, folder tree, filename cards, pinned recent vaults and a multi-vault view, current-folder scope, full-text search, Mermaid, LaTeX, HTML/PNG/PDF export. Plain files, no account.
 
 然后列出三端资产与 `SHA256SUMS.txt`。
 
@@ -94,7 +94,7 @@ rustmd v<version> — local-first Markdown & HTML notes
 
 - **保持 README 首屏有截图、定位、下载入口**：访客 10 秒内知道它能做什么、怎么装。
 - **每个 Release 写清楚三端资产和校验方式**：减少“下载了不会用”的流失。
-- **GitHub Topics 覆盖“格式 + 技术栈 + 平台”**：`markdown-editor`、`html-editor`、`html-notes`、`webview`、`tauri`、`windows`、`obsidian-alternative`。
+- **GitHub Topics 覆盖“格式 + 技术栈 + 平台”**：`markdown-editor`、`html-notes`、`csv`、`json`、`txt`、`data-viewer`、`gbk`、`tauri`、`windows`、`obsidian-alternative`。
 - **提交有意义的 Issue/PR 模板**（可选）：让外部反馈更容易变成可合并的改动。
 - **不要刷 star 或堆砌无关关键词**：GitHub 搜索会降权，且损害信任。
 - **在相关社区分享时用“解决什么问题”而不是“求 star”**：例如本地 Markdown、Obsidian 迁移、Windows 绿色软件、Tauri 实战。

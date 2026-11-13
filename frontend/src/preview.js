@@ -5,6 +5,8 @@ import mermaid from 'mermaid';
 import { api } from './api.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 import { getLanguage, t } from './i18n.js';
+import { DATA_VIEW_CSS, renderDataView } from './dataview.js';
+import { isDataKind } from './notelist.js';
 import {
   splitCodeSegments,
   splitInlineCode,
@@ -1201,6 +1203,15 @@ export function renderPreview(source, container, kind = 'markdown') {
       ? renderHtmlNativeInto(container, source)
       : renderHtmlIframeInto(container, source);
   }
+  if (isDataKind(kind)) {
+    // A slow HTML iframe/native preview may still be in flight: invalidate it
+    // before replacing the container with the data view.
+    htmlRenderSeq += 1;
+    disposeNativeHtmlPreview(container);
+    disposeHtmlControl(container);
+    renderDataView(container, kind, source);
+    return undefined;
+  }
   return renderMarkdownInto(container, source);
 }
 
@@ -1231,6 +1242,8 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
       stage.innerHTML = sanitizeHtml(
         rewriteLocalImageHtml(htmlBodySource(source))
       );
+    } else if (isDataKind(kind)) {
+      renderDataView(stage, kind, source);
     } else {
       await renderMarkdownInto(stage, source);
     }
@@ -1244,7 +1257,52 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
   }
   const isDark = theme === 'dark';
   const css = `
- :root { color-scheme: ${isDark ? 'dark' : 'light'}; }
+ :root {
+   color-scheme: ${isDark ? 'dark' : 'light'};
+   --font-body: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+   --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+   --border: ${isDark ? '#262a33' : '#e2e5ec'};
+   --card: ${isDark ? '#1a1d23' : '#ffffff'};
+   --code-bg: ${isDark ? '#22262e' : '#f2f3f8'};
+   --text: ${isDark ? '#e7eaf0' : '#1f2430'};
+   --text-dim: ${isDark ? '#99a0af' : '#69707f'};
+   --text-faint: ${isDark ? '#6b7280' : '#9aa1b0'};
+   --accent: ${isDark ? '#7c8cff' : '#4f6df5'};
+   --accent-soft: ${isDark ? 'rgba(124,140,255,.12)' : 'rgba(79,109,245,.1)'};
+   --accent-soft-2: ${isDark ? 'rgba(124,140,255,.2)' : 'rgba(79,109,245,.16)'};
+   --hover: ${isDark ? 'rgba(255,255,255,.055)' : 'rgba(20,24,40,.05)'};
+   --danger: ${isDark ? '#ff6369' : '#e5484d'};
+   --hl-var: ${isDark ? '#56b6c2' : '#2f8fa3'};
+   --hl-string: ${isDark ? '#7bd88f' : '#177a4b'};
+   --hl-number: ${isDark ? '#e5a34d' : '#c26a2e'};
+   --hl-keyword: ${isDark ? '#c678dd' : '#a626a4'};
+   --hl-comment: ${isDark ? '#6f7686' : '#8b93a7'};
+   --kind-csv: ${isDark ? '#e9a95f' : '#a15d00'};
+   --kind-csv-soft: ${isDark ? 'rgba(233,169,95,.14)' : 'rgba(161,93,0,.1)'};
+   --kind-txt: ${isDark ? '#aab4c5' : '#5c6675'};
+   --kind-txt-soft: ${isDark ? 'rgba(170,180,197,.13)' : 'rgba(92,102,117,.1)'};
+   --kind-json: ${isDark ? '#b79cff' : '#7048c8'};
+   --kind-json-soft: ${isDark ? 'rgba(183,156,255,.14)' : 'rgba(112,72,200,.1)'};
+   --data-row-even: ${isDark ? 'rgba(255,255,255,.027)' : 'rgba(20,24,40,.028)'};
+   --data-ink-1: ${isDark ? '#e7eaf0' : '#1f2430'};
+   --data-ink-2: ${isDark ? '#9ec7ff' : '#235c94'};
+   --data-ink-3: ${isDark ? '#f2c37d' : '#8a4b0f'};
+   --data-ink-4: ${isDark ? '#cbb1ff' : '#663a99'};
+   --json-key: ${isDark ? '#a7b8ff' : '#4859c6'};
+   --json-object: ${isDark ? '#7aa9ff' : '#1f63c9'};
+   --json-object-soft: ${isDark ? 'rgba(122,169,255,.14)' : 'rgba(31,99,201,.11)'};
+   --json-object-wash: ${isDark ? 'rgba(122,169,255,.08)' : 'rgba(31,99,201,.06)'};
+   --json-array: ${isDark ? '#c3a4ff' : '#6a3bc0'};
+   --json-array-soft: ${isDark ? 'rgba(195,164,255,.14)' : 'rgba(106,59,192,.11)'};
+   --json-array-wash: ${isDark ? 'rgba(195,164,255,.08)' : 'rgba(106,59,192,.06)'};
+   --json-string: ${isDark ? '#78d6a8' : '#0f7a55'};
+   --json-number: ${isDark ? '#f0b562' : '#b35c00'};
+   --json-boolean: ${isDark ? '#ff91b8' : '#c0266b'};
+   --json-null: ${isDark ? '#aab4c8' : '#5f6b7f'};
+   --data-warning: ${isDark ? '#e9a95f' : '#8a4b0f'};
+   --data-danger: ${isDark ? '#ff9ea2' : '#b42318'};
+   --data-grid: ${isDark ? 'rgba(255,255,255,.07)' : 'rgba(20,24,40,.07)'};
+ }
  * { box-sizing: border-box; }
  body {
    margin: 0 auto;
@@ -1331,14 +1389,62 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml(title)}</title>
-<style>${css}</style>
+<style>${css}
+${DATA_VIEW_CSS}</style>
 </head>
-<body>
+<body class="rmd-export">
 ${body}
 <footer>${escapeHtml(t('export.footer', { date }))}</footer>
 </body>
 </html>
 `;
+}
+
+/// The app decodes HTML notes to a JavaScript string, then exports UTF-8
+/// bytes. A `<meta charset="gbk">` copied from the original file would make a
+/// browser decode those UTF-8 bytes as GBK, so normalize the declaration when
+/// saving a standalone HTML file.
+export function ensureUtf8HtmlCharset(source) {
+  const html = String(source ?? '');
+  const metaTag = '<meta charset="utf-8">';
+  if (
+    typeof DOMParser !== 'undefined' &&
+    /<html[\s>]|<!doctype|<head[\s>]/i.test(html)
+  ) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const head = doc.head || doc.documentElement.insertBefore(
+      doc.createElement('head'),
+      doc.body
+    );
+    for (const node of [...head.querySelectorAll('meta')]) {
+      const equiv = String(node.getAttribute('http-equiv') || '').toLowerCase();
+      if (node.hasAttribute('charset') || equiv === 'content-type') {
+        node.remove();
+      }
+    }
+    const meta = doc.createElement('meta');
+    meta.setAttribute('charset', 'utf-8');
+    head.prepend(meta);
+    return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+  }
+
+  // A bare fragment has no head to parse; insert the declaration after any
+  // doctype (never before it) and avoid touching body script text.
+  let normalized = html.replace(
+    /<meta\b[^>]*\bcharset\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/gi,
+    ''
+  );
+  normalized = normalized.replace(
+    /<meta\b[^>]*\bhttp-equiv\s*=\s*(?:"content-type"|'content-type'|content-type)[^>]*>/gi,
+    ''
+  );
+  if (/^\s*<!doctype[^>]*>/i.test(normalized)) {
+    return normalized.replace(
+      /^(\s*<!doctype[^>]*>)/i,
+      `$1\n<head>${metaTag}</head>`
+    );
+  }
+  return `${metaTag}\n${normalized}`;
 }
 
 function escapeHtml(s) {
