@@ -17,3 +17,6 @@ gen/schemas/linux-schema.json
 *.dmg
 *.deb
 *.AppImage
+
+# local promo/agent scratch
+.promo-tmp/
