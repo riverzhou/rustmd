@@ -68,7 +68,7 @@
 | # | 渠道 | 类型 | 预期 | 需要 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | GitHub About / topics / 社交预览 / pinned repo | 基础转化 | 决定 10 秒留存 | GitHub 设置 | 部分完成，社交预览待上传 |
-| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提；待签 Microsoft CLA |
+| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提；validation 通过，等待 review |
 | 3 | AUR（Arch Linux） | 长期搜索入口 | 中高 | AUR 账号 | 清单已就绪；待提交 |
 | 4 | Scoop / Homebrew tap | 长期搜索入口 | 中 | 建 bucket/tap 仓库 | ✅ 已发布：`riverzhou/scoop-bucket`、`riverzhou/homebrew-tap` |
 | 5 | awesome-markdown-editors、awesome-local-first、awesome-note-taking | 精准推荐 | 高 | 3 个 PR | ✅ 已提交（awesome-rust 需 50 stars，暂缓） |

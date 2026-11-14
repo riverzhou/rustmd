@@ -5,14 +5,14 @@
 这类**长期搜索入口**中——这是 GitHub 之外最稳定的新用户来源。
 
 > 状态（2026-11-14）：**Scoop 与 Homebrew 已发布**（自建 bucket / tap，可直接安装）；
-> winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提交（待签 Microsoft CLA）；AUR 清单已就绪，
+> winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已通过 validation，等待 review；AUR 清单已就绪，
 > 待有 AUR 账号后提交。每个版本发布后需要更新下面的版本号、URL 和 SHA256。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)；待签 Microsoft CLA |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)；validation 通过，等待 review |
 | `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 已发布 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
 | `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 已发布 |
