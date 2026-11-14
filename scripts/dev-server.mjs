@@ -26,7 +26,12 @@ const vite = spawn(
   { cwd: root, stdio: 'inherit' }
 );
 
+vite.on('error', (err) => {
+  console.error(`[rustmd] cannot start the Vite dev server: ${err.message}`);
+  process.exit(1);
+});
 vite.on('close', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 0);
+  // A killed Vite (signal, code=null) must not look like a clean exit: Tauri
+  // would keep waiting for devUrl and surface it as a white window instead.
+  process.exit(signal ? 1 : (code ?? 0));
 });

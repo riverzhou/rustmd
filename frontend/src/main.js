@@ -117,13 +117,20 @@ const state = {
   currentHash: '',
   currentMtime: 0,
   tagsOfCurrent: [],
-  view: localStorage.getItem('rustmd-view') || 'split',
+  // Set while a delete is in flight so a debounced autosave cannot recreate
+  // the file after it has been removed.
+  deleting: false,
+  // Unknown persisted values must not leave the layout/theme in a bogus
+  // state that then stays sticky forever.
+  view: ['edit', 'split', 'preview'].includes(localStorage.getItem('rustmd-view'))
+    ? localStorage.getItem('rustmd-view')
+    : 'split',
   wrap: localStorage.getItem('rustmd-wrap') !== 'off',
   fullscreen: false,
   // Default theme is LIGHT regardless of the OS setting (v1.0): the app's
   // light palette is the house style. A manual toggle is still persisted in
   // localStorage and always wins once the user has chosen one.
-  theme: localStorage.getItem('rustmd-theme') || 'light',
+  theme: localStorage.getItem('rustmd-theme') === 'dark' ? 'dark' : 'light',
   sortKey: initialSort.key,
   sortDir: initialSort.dir,
   // The note list/search only cover the selected folder by default; subfolders
@@ -259,10 +266,21 @@ function esc(s) {
 }
 
 function highlightText(text, query) {
-  const safe = esc(text);
-  if (!query || /[&<>"']/.test(query)) return safe;
+  const raw = String(text ?? '');
+  if (!query || /[&<>"']/.test(query)) return esc(raw);
   const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  return safe.replace(re, (m) => `<mark>${m}</mark>`);
+  // Mark the plain text and escape each slice: escaping first and then
+  // matching the raw query can split an entity ("amp" inside &amp;).
+  let out = '';
+  let last = 0;
+  let match;
+  while ((match = re.exec(raw))) {
+    out += esc(raw.slice(last, match.index));
+    out += `<mark>${esc(match[0])}</mark>`;
+    last = match.index + match[0].length;
+    if (match[0].length === 0) re.lastIndex += 1;
+  }
+  return out + esc(raw.slice(last));
 }
 
 function uiLocale() {
@@ -1306,8 +1324,7 @@ async function enterDir(dir, { toastErrors = false } = {}) {
     noteTitle.value = '';
     statusPath.textContent = '';
     suppressChange = true;
-    editor.setLanguage('markdown');
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '' } });
+    editor.loadDocument('', 'markdown');
     suppressChange = false;
     renderPreview('', previewEl, 'markdown');
     renderTagEditor();
@@ -1377,23 +1394,43 @@ function deriveFolderPaths(notes) {
 
 /** Search every visible vault (or only the selected folder's vault). */
 async function searchActiveVaults(query) {
+  // activeVaultDirs() reflects the NEW state.dir immediately; state.vaults
+  // is only replaced at the end of loadNotes(), so using it here could search
+  // (and open) notes from the vault the user just left.
   const dirs = state.filter.vault
     ? [state.filter.vault]
-    : state.vaults.map((vault) => vault.dir);
-  const chunks = await Promise.all(
+    : activeVaultDirs();
+  // One unavailable vault (a pinned folder on a removed drive) must not fail
+  // the whole search: keep results from the vaults that answered.
+  const settled = await Promise.allSettled(
     dirs.map(async (dir) => {
       const hits = await api.searchNotes(
         dir,
         query,
         state.filter.folder,
-        state.includeSubfolders
+        state.includeSubfolders,
+        getLanguage()
       );
       // Each hit carries its vault: relative paths are not unique across
       // vaults, and the aggregated list must know where to read from.
       return hits.map((hit) => ({ ...hit, meta: { ...hit.meta, vault: dir } }));
     })
   );
-  return chunks.flat();
+  const failed = settled.filter((result) => result.status === 'rejected');
+  if (failed.length) {
+    console.warn(
+      'search skipped unavailable vault(s)',
+      failed.map((result) => result.reason)
+    );
+  }
+  if (dirs.length && failed.length === settled.length) {
+    // Every vault failed: surface the search error instead of pretending
+    // that a missing/unmounted vault has no matches.
+    throw new Error('search failed for every open vault');
+  }
+  return settled
+    .filter((result) => result.status === 'fulfilled')
+    .flatMap((result) => result.value);
 }
 
 async function refreshSearch() {
@@ -2149,6 +2186,7 @@ function initEditor() {
 }
 
 function scheduleSave() {
+  if (state.deleting) return;
   state.pendingSave = true;
   state.saveFailed = false;
   setSaveStatus('unsaved');
@@ -2323,16 +2361,18 @@ function reportSaveFailure(err, dir, path) {
 async function flushSave() {
   clearTimeout(state.saveTimer);
   try {
-    if (!state.pendingSave) {
-      await saveQueue;
-      return true;
+    await saveQueue;
+    // A change made while a save was in flight marks the note dirty again;
+    // keep draining (and clear the timer those saves re-arm) until it is
+    // really on disk. Returning false means "still dirty".
+    let guard = 0;
+    while (state.pendingSave && guard < 5) {
+      guard += 1;
+      const ok = await saveCurrent(false);
+      clearTimeout(state.saveTimer);
+      if (!ok) return false;
     }
-    let ok = await saveCurrent(false);
-    // A change made while the save was in flight marks the note dirty again.
-    for (let i = 0; i < 3 && ok && state.pendingSave; i++) {
-      ok = await saveCurrent(false);
-    }
-    return ok;
+    return !state.pendingSave;
   } catch (err) {
     reportSaveFailure(err, state.currentDir, state.current);
     return false;
@@ -2360,24 +2400,20 @@ function applyNoteContent(
   setImageContext(vault, path);
   state.currentKind = content.kind || noteKindOf(path);
   state.currentEncoding = content.encoding || 'UTF-8';
-  editor.setLanguage(state.currentKind);
   state.tagsOfCurrent = content.tags || [];
   // Loading must not mark the note dirty (a spurious save right after opening
   // would re-touch the file and, under `tauri dev`, retrigger the file watcher
   // → app restart loop → "window closed" + "files gone").
   suppressChange = true;
-  const changes = {
-    from: 0,
-    to: editor.state.doc.length,
-    insert: content.body,
-  };
-  editor.dispatch(
+  // A fresh state per note also resets the undo history: Ctrl+Z in the newly
+  // opened note must never restore the previous note's text (which would then
+  // be autosaved into the new file).
+  editor.loadDocument(
+    content.body,
+    state.currentKind,
     preserveView
-      ? {
-          changes,
-          selection: { anchor: Math.min(head, content.body.length) },
-        }
-      : { changes }
+      ? { selection: { anchor: Math.min(head, content.body.length) } }
+      : undefined
   );
   suppressChange = false;
   clearTimeout(state.previewTimer); // drop the previous note's pending update
@@ -2392,6 +2428,11 @@ function applyNoteContent(
   editorPane.classList.add('visible');
   emptyState.classList.add('hidden');
   editor.scrollDOM.scrollTop = preserveView ? scrollTop : 0;
+  // The preview pane can be scrolled independently of the editor (wheel over
+  // the preview), so resetting editor.scrollTop alone is not enough.
+  if (!preserveView && previewEl.parentElement) {
+    previewEl.parentElement.scrollTop = 0;
+  }
   if (focus) editor.focus();
 }
 
@@ -2410,10 +2451,7 @@ function clearCurrentNote() {
   state.currentMtime = 0;
   state.tagsOfCurrent = [];
   suppressChange = true;
-  editor.setLanguage('markdown');
-  editor.dispatch({
-    changes: { from: 0, to: editor.state.doc.length, insert: '' },
-  });
+  editor.loadDocument('', 'markdown');
   suppressChange = false;
   renderPreview('', previewEl, 'markdown');
   noteTitle.value = '';
@@ -2442,6 +2480,9 @@ function updateStatusPath() {
 
 async function selectNote(vault, path) {
   if (!vault) return;
+  // A delete is a destructive mutation of the current note; do not swap the
+  // editor under it (the delete handler clears only if it is still current).
+  if (state.deleting) return;
   if (vault === state.currentDir && path === state.current) return;
   const seq = ++noteSelectSeq;
   const loadSeq = state.loadSeq;
@@ -2566,13 +2607,28 @@ function renderTagEditor() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
-      const v = input.value.trim().replace(/,/g, '');
-      if (v && !state.tagsOfCurrent.includes(v)) {
-        state.tagsOfCurrent.push(v);
-        renderTagEditor();
-        onMetaChanged();
+      // A pasted "a, b, c" list adds three tags; renderTagEditor replaces the
+      // input, so move focus to the new one.
+      const values = input.value
+        .split(/[,，]/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+      let added = false;
+      for (const value of values) {
+        if (!state.tagsOfCurrent.includes(value)) {
+          state.tagsOfCurrent.push(value);
+          added = true;
+        }
       }
       input.value = '';
+      if (added) {
+        renderTagEditor();
+        onMetaChanged();
+        const next = tagEditor.querySelector('input');
+        if (next) next.focus();
+      } else {
+        input.focus();
+      }
     }
   });
   tagEditor.appendChild(input);
@@ -2664,18 +2720,41 @@ $('btn-new-note').addEventListener('click', openNewNoteMenu);
 $('btn-delete').addEventListener('click', async () => {
   if (!state.current) return;
   if (!confirm(t('dialog.delete', { title: noteTitle.value }))) return;
-  clearTimeout(state.saveTimer);
-  state.pendingSave = false;
-  state.saveFailed = false;
-  await saveQueue.catch(() => false);
+  const targetDir = state.currentDir;
+  const revisionAtStart = state.docRevision;
+  const wasDirty = state.pendingSave || state.saveFailed;
+  let failed = false;
+  state.deleting = true;
   try {
+    clearTimeout(state.saveTimer);
+    state.pendingSave = false;
+    state.saveFailed = false;
+    await saveQueue.catch(() => false);
+    // A run that saw "more typing happened" re-armed the timer above; drop it
+    // again after the queue drained, before the file disappears.
+    clearTimeout(state.saveTimer);
+    state.pendingSave = false;
     const deleted = state.current;
-    await api.deleteNote(state.currentDir, deleted);
-    clearCurrentNote();
+    await api.deleteNote(targetDir, deleted);
+    // The user may have selected another note while the delete was in flight;
+    // only clear the editor when the deleted note is still the open one.
+    if (state.current === deleted && state.currentDir === targetDir) {
+      clearCurrentNote();
+    }
     await loadNotes();
     toast(t('toast.deleted'));
   } catch (err) {
+    failed = true;
     toast(t('toast.deleteFailed', { msg: err.message || err }), true);
+  } finally {
+    state.deleting = false;
+    // A failed delete must not silently mark the edits as clean: restore the
+    // dirty state so close/switch guards still protect them.
+    if (failed && state.current && (wasDirty || state.docRevision !== revisionAtStart)) {
+      state.pendingSave = true;
+      state.saveFailed = true;
+      scheduleSave();
+    }
   }
 });
 
@@ -2876,7 +2955,17 @@ async function exportNote(kind, body, noteKind, title) {
     : exportPdf(body, noteKind);
 }
 
-async function runExport(kind) {
+// Exports are serialized: two concurrent runs would mount two .export-stage
+// elements (both visible to the print engine) and stack save dialogs.
+let exportQueue = Promise.resolve();
+function runExport(kind) {
+  exportQueue = exportQueue
+    .then(() => runExportInner(kind))
+    .catch((err) => console.warn('export failed', err));
+  return exportQueue;
+}
+
+async function runExportInner(kind) {
   if (!state.current) return;
   const ok = await flushSave();
   if (!ok) {
@@ -2899,8 +2988,9 @@ async function runExport(kind) {
   try {
     if (kind === 'html') {
       if (currentKind === 'html') {
-        // An HTML note is already a standalone document: export it verbatim
-        // so its scripts, styles and charts keep working outside the app.
+        // HTML notes are exported as their source (UTF-8, charset normalized)
+        // by design; relative CSS/JS/images are NOT copied, so the file is
+        // standalone only when the note has no vault-relative assets.
         payload = {
           data: new TextEncoder().encode(ensureUtf8HtmlCharset(body)),
           ext: 'html',
@@ -3032,6 +3122,18 @@ window.addEventListener('beforeunload', (e) => {
     e.returnValue = '';
   }
 });
+
+// Tauri's native close does not run beforeunload, and it cannot await a save.
+// Flush the 500 ms autosave window before the window closes; a failed save
+// keeps the window open unless the user confirms losing the edits.
+void api
+  .onCloseRequested(async (event) => {
+    if (!state.pendingSave && !state.saveFailed) return;
+    const ok = await flushSave();
+    if (ok && !state.pendingSave && !state.saveFailed) return;
+    if (!confirm(t('dialog.closeUnsaved'))) event.preventDefault();
+  })
+  .catch((err) => console.warn('close guard unavailable', err));
 
 // ---------------- Global error surface ----------------
 // Tauri's webview console is not piped to the terminal, so surface runtime

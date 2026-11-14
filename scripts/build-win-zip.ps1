@@ -17,7 +17,12 @@ if (-not (Test-Path $exe)) {
   throw "missing $exe; run 'npx tauri build --no-bundle' first"
 }
 $productVersion = (Get-Item $exe).VersionInfo.ProductVersion
-if ($productVersion -notlike "$version*") {
+# Exact match, not a prefix: "1.10.30" must not sign an intended 1.10.3 release.
+# ProductVersion may carry a trailing space or "+<sha>" suffix.
+$productBase = $productVersion.Trim()
+if ($productBase.Contains(' ')) { $productBase = $productBase.Split(' ')[0] }
+if ($productBase.Contains('+')) { $productBase = $productBase.Split('+')[0] }
+if ($productBase -ne $version) {
   throw "target/release/rustmd.exe reports '$productVersion', expected '$version'; run 'npx tauri build --no-bundle' again"
 }
 
@@ -58,19 +63,60 @@ if (Test-Path $workflows) {
 }
 
 $cert = Join-Path $release 'rustmd-selfsigned.cer'
+$certIncluded = $false
 if (Test-Path $cert) {
   Copy-Item $cert (Join-Path $green 'rustmd-selfsigned.cer')
+  $certIncluded = $true
 }
 
-Compress-Archive -Path $green -DestinationPath $zip -CompressionLevel Optimal
-
+# Compress-Archive (PowerShell 5.1 / .NET Framework) stores entry names with
+# backslashes, which `unzip`, macOS Archive Utility and Python zipfile turn into
+# flat filenames like `dir\file`. Build the archive explicitly with `/`
+# separators so the documented directory tree survives on every OS.
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path $zip) { Remove-Item $zip -Force }
+$greenFull = (Resolve-Path $green).Path
+$archive = [IO.Compression.ZipFile]::Open($zip, 'Create')
+try {
+  Get-ChildItem -LiteralPath $green -Recurse -File | ForEach-Object {
+    $relative = $_.FullName.Substring($greenFull.Length + 1).Replace('\', '/')
+    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+      $archive, $_.FullName, $relative, [IO.Compression.CompressionLevel]::Optimal
+    ) | Out-Null
+  }
+} finally {
+  $archive.Dispose()
+}
+
 $archive = [IO.Compression.ZipFile]::OpenRead($zip)
 try {
   $names = @($archive.Entries | ForEach-Object FullName)
-  if (-not ($names -match '(^|[\\/])rustmd\.exe$')) { throw 'rustmd.exe missing in zip' }
-  if (-not ($names -match '(^|[\\/])README\.md$')) { throw 'README.md missing in zip' }
-  if (-not ($names -match 'ci[.]yml$')) { throw 'ci.yml missing in zip' }
+  $required = @(
+    'rustmd.exe',
+    'README.md',
+    'README.en.md',
+    'LICENSE',
+    'SECURITY.md',
+    'CHANGELOG.md',
+    'docs/screenshots/overview.png',
+    'docs/ARCHITECTURE.md',
+    '.github/workflows/ci.yml',
+    '.github/workflows/release.yml'
+  )
+  foreach ($entry in $required) {
+    if ($names -notcontains $entry) { throw "$entry missing in zip" }
+  }
+  $screenshots = @($names | Where-Object { $_ -like 'docs/screenshots/*.png' })
+  if ($screenshots.Count -lt 20) {
+    throw "expected at least 20 screenshots in the zip, found $($screenshots.Count)"
+  }
+  if ($certIncluded -and ($names -notcontains 'rustmd-selfsigned.cer')) {
+    throw 'rustmd-selfsigned.cer was signed but is missing from the zip'
+  }
+  if ($names -match '\\') {
+    throw 'zip entries must use forward slashes (portable across unzip/macOS)'
+  }
   if ($names -match 'rustmd-tmp') { throw 'temporary files leaked into the zip' }
   Write-Host "zip entries: $($names.Count)"
 } finally {

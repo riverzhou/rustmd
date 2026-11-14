@@ -105,6 +105,32 @@ export function parseDelimited(text, delimiter = ',') {
   };
 }
 
+/// Cells that still contain a quote are evidence that this candidate
+/// mangled quoting (the real separator would not leave stray quotes behind).
+function quoteGarbage(rows) {
+  let garbage = 0;
+  for (const row of rows) {
+    for (const cell of row) {
+      if (cell.includes('"')) garbage += 1;
+    }
+  }
+  return garbage;
+}
+
+/// Tabs left inside cells of a non-tab parse are only suspicious when the tab
+/// reading actually has MORE columns (a TSV whose text contains commas). A
+/// comma CSV with a tab inside a text cell parses to the same column count,
+/// so it must not be pushed toward the tab delimiter.
+function tabGarbage(rows) {
+  let garbage = 0;
+  for (const row of rows) {
+    for (const cell of row) {
+      if (cell.includes('	')) garbage += 1;
+    }
+  }
+  return garbage;
+}
+
 function modeFieldCount(rows) {
   const counts = new Map();
   let best = 0;
@@ -130,8 +156,7 @@ function modeFieldCount(rows) {
 export function detectDelimiter(text) {
   const sample = normalizeNewlines(stripBom(text)).slice(0, 20000);
   if (!sample) return ',';
-  let best = ',';
-  let bestScore = -1;
+  const stats = [];
   for (const candidate of DELIMITERS) {
     const { rows } = parseDelimitedInternal(sample, candidate.char, {
       rowLimit: 20,
@@ -139,25 +164,36 @@ export function detectDelimiter(text) {
     const scoredRows = rows.filter((row) => row.some((cell) => cell.length > 0));
     const { fields, count } = modeFieldCount(scoredRows);
     if (!fields) continue;
-    const usable = scoredRows.filter((row) => row.length > 1).length;
+    stats.push({ char: candidate.char, scoredRows, fields, count });
+  }
+  const tabFields = stats.find((stat) => stat.char === '	')?.fields || 0;
+  let best = ',';
+  let bestScore = -1;
+  for (const stat of stats) {
+    const usable = stat.scoredRows.filter((row) => row.length > 1).length;
     // Coverage matters: commas inside one text field may yield more columns
     // than the real delimiter, but they are missing from the header row (and
     // often other rows). A delimiter that appears in every meaningful row is
     // the structural one.
-    const coverage = usable / Math.max(1, scoredRows.length);
-    const consistency = count / Math.max(1, usable);
-    // On a coverage/consistency tie, prefer the candidate with fewer
-    // columns: structural delimiters normally produce fewer fields than
-    // punctuation embedded inside text fields. Without this, a 4-column
-    // comma reading of a 2-column TSV wins only because it has more columns.
+    const coverage = usable / Math.max(1, stat.scoredRows.length);
+    const consistency = stat.count / Math.max(1, usable);
+    const garbage =
+      quoteGarbage(stat.scoredRows) +
+      (stat.char !== '	' && stat.fields < tabFields
+        ? tabGarbage(stat.scoredRows)
+        : 0);
+    // Only on a full coverage/consistency tie does the field count decide:
+    // structural delimiters normally produce fewer fields than punctuation
+    // embedded inside text fields (e.g. decimal commas in a semicolon file).
     const score =
       coverage * 1000 +
       consistency * 500 +
       Math.min(usable, 20) -
-      fields;
+      stat.fields -
+      garbage * 2;
     if (score > bestScore) {
       bestScore = score;
-      best = candidate.char;
+      best = stat.char;
     }
   }
   return best;

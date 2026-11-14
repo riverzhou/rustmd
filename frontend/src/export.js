@@ -14,27 +14,17 @@ import { renderPreview, isRmdUrl, rmdUrlPath } from './preview.js';
 import { api } from './api.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 import { pdfPageOrientation } from './pdfgeom.js';
+import {
+  CONTENT_WIDTH,
+  SCALE,
+  PDF_PAGE_HEIGHT,
+  exportScale,
+  computePageCuts,
+  trimSliverCuts,
+} from './exportgeom.js';
 
-const CONTENT_WIDTH = 860; // matches .markdown-body max-width
-const PAD_TOP = 48; // .export-stage top padding (48px 44px 64px)
-const SCALE = 3; // 3 * 96 px/in ≈ 288 DPI
-const MAX_CANVAS_HEIGHT = 30000; // device-px cap; below WebView canvas limits
-const MAX_CANVAS_WIDTH = 30000;
-const MIN_SCALE = 0.25; // very long notes stay usable instead of failing
-const PDF_PAGE_HEIGHT = 1340; // css px per PDF page (A4-ish aspect at 948 px wide)
-
-/// Export raster scale, reduced for very long notes to keep the canvas under
-/// MAX_CANVAS_HEIGHT device pixels.
-function exportScale(cssHeight, cssWidth = 0) {
-  let scale = SCALE;
-  if (cssHeight > 0 && cssHeight * scale > MAX_CANVAS_HEIGHT) {
-    scale = MAX_CANVAS_HEIGHT / cssHeight;
-  }
-  if (cssWidth > 0 && cssWidth * scale > MAX_CANVAS_WIDTH) {
-    scale = Math.min(scale, MAX_CANVAS_WIDTH / cssWidth);
-  }
-  return Math.max(MIN_SCALE, scale);
-}
+// Re-exported for callers/tests that imported the geometry from here.
+export { exportScale };
 
 function buildStage(source, kind) {
   const stage = document.createElement('div');
@@ -260,17 +250,19 @@ async function renderToCanvas(source, kind = 'markdown') {
       : CONTENT_WIDTH;
     stage.style.width = `${contentWidth + 88}px`;
     stage.firstElementChild.style.maxWidth = `${contentWidth}px`;
+    // Remote images are swapped for inline data: URLs (nothing to revoke);
+    // inlineRemoteImages already awaits each replacement's load event.
+    await inlineRemoteImages(stage);
     // WebKitGTK can leave an intrinsic-width image unconstrained in the
-    // off-screen stage, which crops wide charts at the canvas edge. Pin every
-    // image to the content width before html2canvas measures the page.
+    // off-screen stage, which crops wide charts at the canvas edge. Pin each
+    // DECODED image to its natural width (capped at the content width); pinning
+    // before the load event forced every image to 860px and upscaled small ones.
     for (const img of stage.querySelectorAll('img')) {
-      const natural = img.naturalWidth || CONTENT_WIDTH;
-      img.style.width = `${Math.min(CONTENT_WIDTH, natural)}px`;
+      if (!(img.complete && img.naturalWidth > 0)) continue;
+      img.style.width = `${Math.min(CONTENT_WIDTH, img.naturalWidth)}px`;
       img.style.height = 'auto';
       img.style.maxWidth = `${CONTENT_WIDTH}px`;
     }
-    // Remote images are swapped for inline data: URLs (nothing to revoke).
-    await inlineRemoteImages(stage);
     // SVG images must be bitmaps before html2canvas draws them (see above).
     // Rasterize at the scale the canvas will use; the frozen image boxes keep
     // the stage height unchanged, but measure again in case of rounding.
@@ -294,48 +286,23 @@ async function renderToCanvas(source, kind = 'markdown') {
       scale,
       cssWidth,
       cssHeight,
-      pageCuts: computePageCuts(stage),
+      pageCuts: pageCutsOf(stage),
     };
   } finally {
     stage.remove();
   }
 }
 
-/// Page-break positions for PDF export, in css px relative to the stage.
-/// Breaks only happen at block boundaries (PAD_TOP above a block top), so
-/// paragraphs/tables/images are never split mid-way. Blocks taller than a
-/// page's content area are hard-split at fixed intervals.
-function computePageCuts(stage) {
+/// Page-break positions for PDF export, measured from the live stage and
+/// passed to the pure geometry in exportgeom.js.
+function pageCutsOf(stage) {
   const article = stage.firstElementChild;
   const stageTop = stage.getBoundingClientRect().top;
-  const total = stage.offsetHeight;
-  const content = PDF_PAGE_HEIGHT - PAD_TOP; // room a block gets before a break
-  const cuts = [];
-  let pageStart = 0; // stage-relative css px where the current page begins
-  let prevBottom = 0; // bottom of the last block — a cut must never land
-  //                       INSIDE a block, so when the inter-block gap is
-  //                       smaller than PAD_TOP (collapsed margins) the cut
-  //                       is clamped to prevBottom instead of top - PAD_TOP.
-  for (const el of article.children) {
+  const blocks = [...article.children].map((el) => {
     const rect = el.getBoundingClientRect();
-    const top = rect.top - stageTop;
-    const height = rect.height;
-    if (height > content) {
-      for (let t = top + content; t < top + height; t += PDF_PAGE_HEIGHT) {
-        cuts.push(t);
-      }
-      pageStart = cuts[cuts.length - 1];
-      prevBottom = top + height;
-    } else if (top - pageStart > content) {
-      const cut = Math.max(top - PAD_TOP, prevBottom);
-      cuts.push(cut);
-      pageStart = cut;
-      prevBottom = top + height;
-    } else {
-      prevBottom = top + height;
-    }
-  }
-  return { cuts, total };
+    return { top: rect.top - stageTop, height: rect.height };
+  });
+  return computePageCuts(blocks, stage.offsetHeight);
 }
 
 // ---------------- Exports ----------------
@@ -423,11 +390,9 @@ export async function exportPdf(source, kind = 'markdown') {
   const pxPerCss = canvas.width / cssWidth; // ≈ scale (guard against rounding)
   const { cuts, total } = pageCuts;
   // A trailing page only a few pixels tall reads as a broken/blank page in
-  // some viewers (and the old hard-split logic could produce one): fold such
-  // a sliver into the previous page instead of emitting it.
-  if (cuts.length && total - cuts[cuts.length - 1] < PDF_PAGE_HEIGHT * 0.12) {
-    cuts.pop();
-  }
+  // some viewers: fold such a sliver into the previous page instead of
+  // emitting it (same 25% rule as pdfFromPngDataUrl).
+  trimSliverCuts(cuts, total);
   const bounds = [0, ...cuts, total];
   const firstHeightPt = (bounds[1] - bounds[0]) * 0.75;
   // jsPDF's `format` is [width, height], but an explicit portrait orientation
@@ -464,7 +429,9 @@ export async function exportPdf(source, kind = 'markdown') {
       slice.height
     );
     const hPt = (y1 - y0) * 0.75;
-    if (i > 0) doc.addPage([wPt, hPt], orientation);
+    // jsPDF reverses [w,h] for a page whose requested orientation contradicts
+    // the box; a short LAST page is common, so choose per page.
+    if (i > 0) doc.addPage([wPt, hPt], pdfPageOrientation(wPt, hPt));
     // PNG (not JPEG): no compression halo around text.
     doc.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, wPt, hPt);
   }
@@ -516,7 +483,7 @@ export async function pdfFromPngDataUrl(dataUrl, cssWidth) {
   const { jsPDF } = await import('jspdf');
   const wPt = width * 0.75;
   const doc = new jsPDF({
-    orientation: 'p',
+    orientation: pdfPageOrientation(wPt, pagePt),
     unit: 'pt',
     format: [wPt, pagePt],
     compress: true,
@@ -531,7 +498,7 @@ export async function pdfFromPngDataUrl(dataUrl, cssWidth) {
     if (!sliceCtx) throw new Error('2D canvas context unavailable');
     sliceCtx.drawImage(canvas, 0, y, canvas.width, height, 0, 0, canvas.width, height);
     const hPt = (height / pxPerCss) * 0.75;
-    if (page > 0) doc.addPage([wPt, hPt]);
+    if (page > 0) doc.addPage([wPt, hPt], pdfPageOrientation(wPt, hPt));
     doc.addImage(
       slice.toDataURL('image/png'),
       'PNG',

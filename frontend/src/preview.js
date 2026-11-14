@@ -28,14 +28,11 @@ marked.setOptions({ gfm: true, breaks: true });
 
 const MATHJAX_CONFIG = {
   tex: {
-    inlineMath: [
-      ['$', '$'],
-      ['\\(', '\\)'],
-    ],
-    displayMath: [
-      ['$$', '$$'],
-      ['\\[', '\\]'],
-    ],
+    // Only $-delimiters are supported: Markdown consumes/re-emits the
+    // backslashes of \( … \) and \[ … \], so markdown.js cannot protect them
+    // before marked parses (it detects/protects the $ forms only).
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$']],
     processEscapes: true,
   },
   svg: { fontCache: 'local' },
@@ -127,15 +124,19 @@ function ensureMathJax() {
 /// the WHOLE batch — which is how one typo can leave an entire note full of
 /// raw `$...$` text. On failure we re-typeset each formula individually:
 /// the broken one keeps its raw source, the rest render.
-async function typesetMath(container, spans) {
+async function typesetMath(container, spans, isCurrent = () => true) {
   try {
     const MathJax = await ensureMathJax();
+    // A slow first MathJax load can finish after the user switched notes;
+    // typesetting at that point would mutate the NEXT note's DOM.
+    if (!isCurrent()) return;
     disableMathJaxA11y(MathJax);
     try {
       await MathJax.typesetPromise([container]);
     } catch (err) {
       console.error('MathJax 批量渲染失败，回退为逐公式渲染：', err);
       for (const span of spans) {
+        if (!isCurrent()) return;
         if (span.querySelector('mjx-container')) continue; // done in the batch pass
         try {
           await MathJax.typesetPromise([span]);
@@ -305,44 +306,75 @@ async function inlineLocalImagesForHtml(stage) {
 /// note-controlled origins. Inlining makes the page independent of those
 /// requests and works identically on WebView2/WebKitGTK/WKWebView.
 export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
-  const template = document.createElement('template');
-  template.innerHTML = String(source || '');
+  const raw = String(source || '');
+  // Parse the WHOLE document (DOMParser keeps <html lang>, <head>, <body
+  // class> and their attributes). A <template> round-trip flattened those
+  // wrappers and made deferred head scripts run before <body> existed.
+  const doc = new DOMParser().parseFromString(raw, 'text/html');
+  // Only a doctype at the very start of the source is a doctype; the same
+  // text inside a leading comment or script must not be re-emitted.
+  const doctypeMatch = /^\s*<!doctype[^>]*>/i.exec(raw);
+  const doctype = doctypeMatch ? doctypeMatch[0].trim() : '<!doctype html>';
   const decode = (bytes) => new TextDecoder().decode(new Uint8Array(bytes));
 
   // Snapshot the context for the whole operation: a per-asset read of the
   // global context could mix two notes if the user switches mid-inline.
   const context = ctx;
-  const resolveAndRead = async (url) => {
+  const TEXT_ASSET = /.(?:css|js|mjs)$/i;
+  // The element kind decides the command: <img> may only read images, while
+  // <link>/<script> may only read CSS/JS. Choosing by extension alone would
+  // let <img src="secret.js"> inline text that the note's scripts can read.
+  const resolveAndRead = async (url, kind) => {
     const abs = localImageAbsPath(url, context);
     if (!abs) return null;
-    return api.readLocalImage(abs);
+    try {
+      if (kind === 'asset') {
+        if (!TEXT_ASSET.test(abs)) return null;
+        return await api.readLocalAsset(abs);
+      }
+      return await api.readLocalImage(abs);
+    } catch {
+      return null;
+    }
   };
 
-  // Stylesheets first (their order relative to scripts is preserved by
-  // replacing in place, but reading is independent).
-  for (const link of [...template.content.querySelectorAll('link[rel~="stylesheet"][href]')]) {
-    const file = await resolveAndRead(link.getAttribute('href') || '').catch(() => null);
+  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"][href]')]) {
+    const file = await resolveAndRead(link.getAttribute('href') || '', 'asset').catch(
+      () => null
+    );
     if (!file) continue;
-    const style = document.createElement('style');
+    const style = doc.createElement('style');
     style.textContent = decode(file.bytes).replace(/<\/style/gi, '<\\/style');
     link.replaceWith(style);
   }
 
-  for (const script of [...template.content.querySelectorAll('script[src]')]) {
+  // A deferred/async external script becomes an inline script; inline scripts
+  // ignore defer, so keep it at the end of <body> (deferred scripts run after
+  // parsing anyway) instead of running it in <head> before the body exists.
+  const deferred = [];
+  for (const script of [...doc.querySelectorAll('script[src]')]) {
     const src = script.getAttribute('src') || '';
-    const file = await resolveAndRead(src).catch(() => null);
+    const file = await resolveAndRead(src, 'asset').catch(() => null);
     if (!file) continue;
-    const inline = document.createElement('script');
+    const inline = doc.createElement('script');
     for (const attr of [...script.attributes]) {
       if (attr.name.toLowerCase() !== 'src') inline.setAttribute(attr.name, attr.value);
     }
     inline.textContent = decode(file.bytes).replace(/<\/script/gi, '<\\/script');
-    script.replaceWith(inline);
+    if (script.hasAttribute('defer') || script.hasAttribute('async')) {
+      deferred.push(inline);
+      script.remove();
+    } else {
+      script.replaceWith(inline);
+    }
   }
+  // A <frameset> note has no <body>; append deferred scripts to the root
+  // element instead of throwing and forcing the static fallback.
+  for (const inline of deferred) (doc.body || doc.documentElement).appendChild(inline);
 
-  for (const img of [...template.content.querySelectorAll('img[src]')]) {
+  for (const img of [...doc.querySelectorAll('img[src]')]) {
     const src = img.getAttribute('src') || '';
-    const file = await resolveAndRead(src).catch(() => null);
+    const file = await resolveAndRead(src, 'image').catch(() => null);
     if (!file) continue;
     img.removeAttribute('srcset');
     img.setAttribute(
@@ -351,7 +383,7 @@ export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
     );
   }
 
-  return template.innerHTML;
+  return doctype + '\n' + doc.documentElement.outerHTML;
 }
 
 // ---------------- HTML sanitization / links ----------------
@@ -606,10 +638,21 @@ async function renderMermaidBlocks(container) {
   );
 }
 
-let htmlRenderSeq = 0;
+// Per-container render generation: a slow render must not sanitize/mutate a
+// container that a NEWER render (of any kind) has since taken over. Scoping
+// this to the container (instead of one editor-wide counter) keeps an
+// off-screen export stage from cancelling the app preview's sanitize/typeset.
+function nextRenderSeq(container) {
+  const seq = (Number(container.__rmdRenderSeq) || 0) + 1;
+  container.__rmdRenderSeq = seq;
+  return seq;
+}
+function isCurrentRender(container, seq) {
+  return container.__rmdRenderSeq === seq;
+}
 
 async function renderMarkdownInto(container, markdownSource) {
-  htmlRenderSeq += 1;
+  const renderSeq = nextRenderSeq(container);
   disposeNativeHtmlPreview(container);
   disposeHtmlControl(container);
   const mathStore = [];
@@ -624,9 +667,12 @@ async function renderMarkdownInto(container, markdownSource) {
   }
   const jobs = [renderMermaidBlocks(container)];
   if (sourceHasMath(markdownSource)) {
-    jobs.push(typesetMath(container, mathSpans));
+    jobs.push(typesetMath(container, mathSpans, () => isCurrentRender(container, renderSeq)));
   }
   await Promise.all(jobs);
+  // The user may have switched notes while MathJax/Mermaid was loading; a
+  // stale sanitize pass would delete the new preview (e.g. an HTML iframe).
+  if (!isCurrentRender(container, renderSeq)) return;
   sanitizeRenderedDom(container);
 }
 
@@ -958,7 +1004,10 @@ const HTML_NATIVE_HEIGHT_SCRIPT = `<script>
         d ? d.offsetHeight : 0
       ),
       localScript: b && b.dataset ? b.dataset.localScript || '' : '',
-      scriptRan: b && b.dataset ? b.dataset.scriptRan || '' : ''
+      scriptRan: b && b.dataset ? b.dataset.scriptRan || '' : '',
+      bodyClass: b ? b.className || '' : '',
+      htmlLang: d ? d.getAttribute('lang') || '' : '',
+      headDefer: b && b.dataset ? b.dataset.headDefer || '' : ''
     }, '*');
   }
   if (document.readyState === 'complete') setTimeout(send, 300);
@@ -1006,7 +1055,7 @@ async function buildNativeHtmlPreviewDocument(source, ctx = imageCtx) {
 /// and sharp (the WebView lays out text/charts itself); note scripts are
 /// isolated from the app DOM by the sandbox.
 async function renderHtmlNativeInto(container, htmlSource) {
-  const renderSeq = ++htmlRenderSeq;
+  const renderSeq = nextRenderSeq(container);
   // Snapshot the note context so a note switch during the async build cannot
   // mix assets from one vault with the base href of another.
   const ctx = imageCtx;
@@ -1021,14 +1070,14 @@ async function renderHtmlNativeInto(container, htmlSource) {
       await buildNativeHtmlPreviewDocument(htmlSource, ctx)
     );
   } catch (err) {
-    if (renderSeq === htmlRenderSeq) {
+    if (isCurrentRender(container, renderSeq)) {
       renderHtmlStaticFallback(container, htmlSource, err.message || err);
     }
     return;
   }
   // A newer note/preview won the race while the Rust-side document was being
   // registered; do not append a stale iframe.
-  if (renderSeq !== htmlRenderSeq) return;
+  if (!isCurrentRender(container, renderSeq)) return;
   const iframe = document.createElement('iframe');
   iframe.className = 'html-preview-frame';
   iframe.setAttribute('sandbox', 'allow-scripts allow-forms');
@@ -1057,6 +1106,9 @@ async function renderHtmlNativeInto(container, htmlSource) {
     iframe.style.height = `${height}px`;
     if (data.localScript) iframe.dataset.localScript = String(data.localScript);
     if (data.scriptRan) iframe.dataset.scriptRan = String(data.scriptRan);
+    if (data.bodyClass) iframe.dataset.bodyClass = String(data.bodyClass);
+    if (data.htmlLang) iframe.dataset.htmlLang = String(data.htmlLang);
+    if (data.headDefer) iframe.dataset.headDefer = String(data.headDefer);
     if (!received) {
       received = true;
       iframe.dataset.ready = '1';
@@ -1101,7 +1153,7 @@ async function renderHtmlNativeInto(container, htmlSource) {
 /// `renderHtmlNativeInto` (native iframe); this path uses html2canvas.
 
 async function renderHtmlIframeInto(container, htmlSource) {
-  const renderSeq = ++htmlRenderSeq;
+  const renderSeq = nextRenderSeq(container);
   const ctx = imageCtx;
   disposeHtmlControl(container);
   let url;
@@ -1109,6 +1161,7 @@ async function renderHtmlIframeInto(container, htmlSource) {
     url = await api.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource, ctx));
   } catch (err) {
     console.error('HTML preview registration failed:', err);
+    if (!isCurrentRender(container, renderSeq)) return;
     container.innerHTML = '';
     const p = document.createElement('p');
     p.className = 'html-preview-error';
@@ -1116,7 +1169,7 @@ async function renderHtmlIframeInto(container, htmlSource) {
     container.appendChild(p);
     return;
   }
-  if (renderSeq !== htmlRenderSeq) return;
+  if (!isCurrentRender(container, renderSeq)) return;
   container.innerHTML = '';
   container.classList.add('html-mode');
   const holder = container.closest('.preview-holder');
@@ -1196,7 +1249,17 @@ export async function captureHtmlPreview(source) {
  * HTML notes go through the sandboxed native preview iframe (or a
  * browser-dev iframe fallback); their scripts never run in the main document.
  */
+/// Release a data view's listeners/observers before the container is reused
+/// by a Markdown/HTML render (createView also does this for data-to-data).
+function disposeDataView(container) {
+  if (typeof container.__dataTeardown === 'function') {
+    container.__dataTeardown();
+    container.__dataTeardown = null;
+  }
+}
+
 export function renderPreview(source, container, kind = 'markdown') {
+  disposeDataView(container);
   ensureMermaid();
   container.classList.remove('data-mode');
   if (kind === 'html') {
@@ -1207,7 +1270,7 @@ export function renderPreview(source, container, kind = 'markdown') {
   if (isDataKind(kind)) {
     // A slow HTML iframe/native preview may still be in flight: invalidate it
     // before replacing the container with the data view.
-    htmlRenderSeq += 1;
+    nextRenderSeq(container);
     disposeNativeHtmlPreview(container);
     disposeHtmlControl(container);
     // Data notes are the one view that should consume the whole preview pane:
@@ -1263,6 +1326,18 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
   }
   const isDark = theme === 'dark';
   const dataExport = isDataKind(kind);
+  // The app gets highlight.js colors from the /hljs/*.css <link>; a standalone
+  // export must carry them too or code blocks lose their colours.
+  let hljsCss = '';
+  try {
+    const res = await fetch(
+      isDark ? '/hljs/github-dark.css' : '/hljs/github.css',
+      { cache: 'no-store' }
+    );
+    if (res.ok) hljsCss = await res.text();
+  } catch {
+    // Export still works without colours.
+  }
   const css = `
  :root {
    color-scheme: ${isDark ? 'dark' : 'light'};
@@ -1409,6 +1484,7 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml(title)}</title>
 <style>${css}
+${hljsCss}
 ${DATA_VIEW_CSS}</style>
 </head>
 <body class="rmd-export${dataExport ? ' data-export' : ''}">

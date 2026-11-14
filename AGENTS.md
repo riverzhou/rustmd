@@ -9,7 +9,7 @@ this file is the developer/agent contract.
 
 | Task | Command |
 | --- | --- |
-| All checks (lint, units, repo, fmt/clippy/test, build) | `npm run check` |
+| All checks (lint, units, repo+IPC/docs, version, fmt/clippy/test, build) | `npm run check` |
 | Dev window (real Tauri, hot frontend reload) | `node scripts/launch-dev.mjs` |
 | Dev window shortcut (Windows) | `scripts\run-dev.bat` |
 | Browser dev (in-memory mock) | `npm run dev` → http://127.0.0.1:5173 |
@@ -22,8 +22,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.10.3` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.10.3 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.10.4` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.10.4 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -33,13 +33,16 @@ this file is the developer/agent contract.
   or the `scripts\run-*.bat` wrappers.
 - The E2E self-test writes artifacts and `report.json` to the system temp
   directory under `rustmd-selftest/`; **clear/override `RUSTMD_SELFTEST_OUT`
-  before a release run** so a stale green report cannot be reused. Override
+  before a release run** so a stale green report cannot be reused (the runner
+  also deletes the previous `report.json`/`progress.log` itself). Override
   examples with `RUSTMD_SELFTEST_EXAMPLES`. It exits the app with 0/1; the
-  report checker enforces HTML + data coverage (`--require-html --require-data`)
-  and freshness (24 h default).
-- CI: `.github/workflows/ci.yml` (quality gate + three-platform compile +
-  Linux Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
-  zip, Linux deb/AppImage, macOS Apple Silicon (arm64) DMG). Details: `docs/RELEASING.md`.
+  report checker enforces HTML + data coverage (`--require-html --require-data`),
+  freshness (24 h default), and verifies every reported PNG/PDF/HTML artifact
+  exists with the exact recorded byte length.
+- CI: `.github/workflows/ci.yml` (quality gate + three-platform compile,
+  Windows sign/portable-zip dry run, macOS app bundle + ad-hoc sign, Linux Xvfb
+  E2E); release: `.github/workflows/release.yml` (Windows portable zip, Linux
+  deb/AppImage, macOS Apple Silicon (arm64) DMG). Details: `docs/RELEASING.md`.
 - Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4
   backend); install/packaging/no-root sysroot notes live in `LINUX_BUILD.md`.
   `scripts/linux-headless-smoke.sh` can smoke-test the release binary on an
@@ -59,11 +62,14 @@ this file is the developer/agent contract.
     external browser; segmented full-page capture + Rust PNG stitching);
   - `set_html_preview` (sandboxed native preview iframe, random-token
     `rmdhtml` document served by Rust);
-  - note scanning (`list_notes`, `list_folders`), search, metadata;
+  - note scanning (`list_notes`, `list_folders`), search, metadata; reads are
+    capped at 64 MB per note (larger files stay listed by name but are never
+    loaded into memory);
   - commands (`read/save/create/rename/delete/move`) including atomic writes
     and hash-based external-change detection;
-  - `fetch_image_bytes` (SSRF checks + redirect policy), `save_export`
-    (native dialog + write in Rust);
+  - `fetch_image_bytes` (SSRF checks + redirect policy; async + blocking pool),
+    `save_export` (native dialog + write in Rust, async + blocking pool — the
+    dialog plugin forbids blocking calls on the main thread);
   - `print_note_pdf` / `print_html_note`: platform print engines (WebView2
     `PrintToPdfStream`, WKWebView `NSPrintOperation`, WebKitGTK print
     operation) with A4 settings, vector text, page numbers; the macOS/Linux
@@ -73,15 +79,24 @@ this file is the developer/agent contract.
   - HTML capture result handling must always resolve the waiting renderer,
     including decode/stitch errors; close/cancel on timeout or task failure;
   - the `rmd` custom protocol (`serve_rmd`, `VaultFileCache`, mtime + byte
-    budget) and `read_local_image`: both accept files under any registered
-    vault root (`set_notes_roots`, multi-vault mode);
+    budget), `read_local_image` (**image-extension only**) and
+    `read_local_asset` (**CSS/JS only**): both read commands accept files under
+    any registered vault root (`set_notes_roots`, multi-vault mode) and return
+    bytes to the trusted asset inliner. Splitting the two commands keeps
+    arbitrary vault files out of a note document a note script can read;
   - dev-only self-test commands (`selftest_config/write/finish`);
   - unit tests.
 - `frontend/src/api.js` — the **only** Tauri bridge. Detects Tauri via
   `__TAURI_INTERNALS__` and falls back to an in-memory mock. Keep the mock’s
-  validation/conflict/search behaviour aligned with Rust.
+  validation/conflict/search behaviour aligned with Rust. Known mock-only
+  simplifications: notes live in memory (no real filesystem), encodings are
+  always UTF-8, front matter/CRLF are not composed, hash is an FNV of the body,
+  `render_html_note` throws, and `read_local_image`/`read_local_asset` always
+  reject (asset inlining is a no-op in browser mode). These are dev-only; do
+  not treat the mock as an encoding/export test.
 - `frontend/src/main.js` — UI state and DOM wiring (no framework/state lib).
-  Save queue, conflict retry, unsaved guard, folder tree, sorting, note
+  Save queue, conflict retry, unsaved guard (including an async
+  `onCloseRequested` flush), folder tree, sorting, note
   selection/search race guards, export menu, wrap persistence, fullscreen
   button + `F11`, the recent-vault switcher (`rustmd-recent-dirs`, MRU max 20,
   pinned vaults displayed first and never evicted), the current-folder/subfolder
@@ -94,6 +109,9 @@ this file is the developer/agent contract.
   (`rustmd-nav-height`), and the format badges (`MD` green /
   `HTML` blue / `CSV` amber / `TXT` grey / `JSON` violet) shown in both the note
   list and the topbar. The status bar shows the auto-detected encoding.
+  Exports are serialized through one promise queue; delete sets a `deleting`
+  flag so a debounced autosave cannot recreate the file; search passes the UI
+  locale so `Title:/File:/Tag:` fallbacks are localized.
 - `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
 - `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers,
@@ -115,6 +133,9 @@ this file is the developer/agent contract.
   editor/preview split (covered by `node --test`).
 - `frontend/src/pdfgeom.js` — pure raster-PDF page orientation helper (covered
   by `node --test`); wide data-table PDFs use landscape pages.
+- `frontend/src/exportgeom.js` — pure raster export geometry (adaptive scale
+  with width/height/total-area caps, page cuts, sliver trimming; covered by
+  `node --test`).
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap 20, pinned entries that survive eviction, pinned-first display order,
   display name; covered by `node --test`).
@@ -124,20 +145,29 @@ this file is the developer/agent contract.
   + Mermaid + MathJax; HTML notes via a sandboxed native iframe (preview) and
   a hidden Tauri WebView capture (export); CSV/TXT/JSON via `dataview.js`;
   note-relative CSS/JS/images are inlined and fonts use `rmd`; link interception
-  in both Markdown and HTML previews; timeout warning; async preview generation
-  guard; HTML export (including data views) and local-image inlining for the
-  hidden capture.
+  in both Markdown and HTML previews; timeout warning; generation guards so a
+  stale Markdown render cannot sanitize/mutate a newer preview; HTML export
+  (including data views) and local-image inlining for the hidden capture.
+  `inlineLocalAssetsInHtml` parses the whole document with `DOMParser`
+  (preserving `<html>/<head>/<body>` attributes) and moves inlined
+  deferred/async scripts to the end of `<body>`.
 - `frontend/src/export.js` — off-screen stage, image inlining, html2canvas,
   multi-page jsPDF, `pdfFromPngDataUrl` for WebView-rendered HTML notes, and
-  a 0.25–3× adaptive scale for very long Markdown notes. Markdown PDF export
+  an adaptive (normally 0.25–3×, lower only for absurd geometry) scale for very
+  long Markdown notes. Markdown PDF export
   prefers the WebView's own print pipeline (`exportPdfVector` →
   `print_note_pdf`, `print_html_note`): the browser lays the note out on real
   pages and embeds font subsets, so the PDF is vector text (selectable, sharp,
   small) instead of sliced canvas images. The raster exporter stays as the
-  fallback for unsupported platforms and older WebView2 runtimes.
+  fallback for unsupported platforms and older WebView2 runtimes. The raster
+  PDF picks page orientation per page (jsPDF swaps a short portrait page's
+  box) and the `@media print` palette is forced to light so dark-theme exports
+  stay legible on macOS/Linux (whose print paths do not paint backgrounds).
 - `frontend/src/editor.js` — CodeMirror 6 setup; Markdown/HTML/JSON language
   (plain text for CSV/TXT) is swapped per note through a `Compartment`;
-  HTML/JS/CSS/JSON highlight rules and line-wrap compartment.
+  HTML/JS/CSS/JSON highlight rules and line-wrap compartment. Opening a note
+  REPLACES the editor state (`loadDocument`) so CodeMirror's undo history is
+  per-note (Ctrl+Z must never restore the previous note's text).
 - `frontend/src/imgutil.js` — bytes→data URL and magic-byte MIME sniffing.
 - `frontend/shims/katex.js` — tiny stub aliased as `katex` in
   `frontend/vite.config.js`; mermaid 12 has an optional KaTeX import, while
@@ -192,6 +222,9 @@ this file is the developer/agent contract.
   mismatch returns
   `conflict: note changed on disk` and the UI asks before forcing.
 - `mtime` is unix seconds (display/sort only); `hash` is the conflict token.
+- Files above 64 MB are listed by filename with an empty hash/encoding and a
+  "too large" snippet; `read_note` refuses them and search skips their body, so
+  an untrusted vault cannot freeze the UI by opening.
 - Multi-vault mode is a frontend concept: `main.js` aggregates
   `list_notes(dir)` results from every active vault and tags each note with
   `vault` (the absolute vault folder). Relative paths are only unique per
@@ -200,27 +233,35 @@ this file is the developer/agent contract.
   kept active (so unpinning it never closes the editor); leaving multi-vault
   mode promotes that vault to primary.
 
-### IPC commands (22)
+### IPC commands (23)
 
 `list_notes`, `list_folders`, `read_note`, `save_note`, `create_note`,
 `rename_note`, `delete_note`, `move_note`, `search_notes`, `save_export`,
 `print_note_pdf`, `print_html_note`, `fetch_image_bytes`, `set_notes_root`,
-`set_notes_roots`, `read_local_image`, `render_html_note`,
+`set_notes_roots`, `read_local_image`, `read_local_asset`, `render_html_note`,
 `html_preview_finish`, `set_html_preview`, `selftest_config`, `selftest_write`,
 `selftest_finish`.
 
 `set_notes_root` registers one vault for the `rmd` protocol/`read_local_image`;
 `set_notes_roots` registers every loaded vault (multi-vault mode). A request is
 served only when its canonical path is under at least one registered root.
+`read_local_image` additionally requires an image extension; CSS/JS inlining
+uses `read_local_asset`, which accepts only `.css`/`.js`/`.mjs` — so an
+`<img src="secret.js">` cannot turn a text file into a readable data URL.
+
+`search_notes` takes an optional `locale` (`zh*` selects 标题：/文件名：/标签：
+fallback snippets, anything else Title:/File:/Tag:).
 
 `create_note` takes an optional `kind` (`"markdown"` default, `"html"`,
 `"csv"`, `"txt"`, `"json"`) and picks the matching `untitled.<ext>`.
 `rename_note` preserves the note’s current extension; `unique_sibling` keeps the
 extension.
 
-`save_export` opens the OS save dialog in Rust and writes the selected bytes;
-there is deliberately **no** arbitrary `write_text`/`write_bytes` command.
-`selftest_*` are debug-only (release stubs return an error).
+`save_export` opens the OS save dialog in Rust and writes the selected bytes
+(`#[tauri::command(async)]` + `spawn_blocking`: the dialog plugin's blocking
+API must not run on the main thread). There is deliberately **no** arbitrary
+`write_text`/`write_bytes` command. `selftest_*` are debug-only (release stubs
+return an error).
 
 `print_note_pdf` prints *the main window's current document* through the
 platform print engine — WebView2 `PrintToPdfStream` on Windows, WKWebView's
@@ -279,14 +320,20 @@ If a new Tauri *plugin* is used:
    every vault command except `html_preview_finish`. The static fallback goes
    through DOMPurify.
 2. **CSP stays on.** `tauri.conf.json` has a non-null `app.security.csp`
-   (`object-src 'none'`, no inline script). Do not set it to `null`.
-3. **Path containment.** `resolve_in_root` rejects `..`/absolute paths,
-   canonicalizes existing paths, and canonicalizes the deepest existing
-   ancestor for new paths (junction/symlink escape guard). `walk` skips
-   symlinks/junctions. `resolve_vault_file` is the equivalent guard for the
-   `rmd` protocol and `read_local_image`; `resolve_vault_file_in_roots` applies
-   it to every registered vault root and still rejects a file outside all of
-   them.
+   (`object-src 'none'`, no inline script). The release policy must not carry
+   dev-server origins; the Vite HMR/WebSocket sources live in
+   `app.security.devCsp`. `npm run check:repo` enforces both. Do not set `csp`
+   to `null`.
+3. **Path containment + asset types.** `resolve_in_root` rejects
+   `..`/absolute paths, canonicalizes existing paths, and canonicalizes the
+   deepest existing ancestor for new paths (junction/symlink escape guard).
+   `walk` skips symlinks/junctions. `resolve_vault_file` is the equivalent
+   guard for the `rmd` protocol and `read_local_image`;
+   `resolve_vault_file_in_roots` applies it to every registered vault root and
+   still rejects a file outside all of them. `read_local_image` also rejects
+   non-image extensions and `read_local_asset` accepts only CSS/JS: a
+   note-controlled `<img src>` must never turn an arbitrary vault file into a
+   data URL readable by the note's own scripts.
 4. **SSRF guard.** `fetch_image_bytes` only accepts http(s), rejects
    localhost/private/loopback/link-local/reserved targets, validates DNS
    resolution, and re-validates every redirect.
@@ -343,9 +390,10 @@ If a new Tauri *plugin* is used:
   iframe; data renderers must keep using `textContent`/DOM APIs (never
   innerHTML with note text). HTML/PNG/PDF export all go through the same
   `.export-stage`, so new data kinds get all three for free. Bump
-  `htmlRenderSeq` so a slow previous preview cannot append an iframe after a
-  newer note was selected, and tear down the native listener via `disposeNativeHtmlPreview` when the
-  container is reused. `render_html_note` builds the hidden-window document
+  the per-container render sequence (`nextRenderSeq`/`isCurrentRender`) so a
+  slow previous render can neither append a stale iframe nor sanitize a newer
+  preview, and tear down the native listener via `disposeNativeHtmlPreview`
+  when the container is reused. `render_html_note` builds the hidden-window document
   with `html2canvas`; `mode=export` captures at up to 3× (target ~48k device
   px height) and `png` stitches tall segments; PDF mode uses 3× for short
   pages and a 2× cap for taller ones. HTML local images, stylesheets and classic scripts must be inlined
@@ -353,8 +401,9 @@ If a new Tauri *plugin* is used:
   `Origin: null` for CORS subresources and html2canvas uses CORS-mode image
   requests, both of which the strict `rmd` policy rejects.
   `export.js` starts from a 948 px Markdown stage (860 content + 2×44 padding),
-  widens it to a data table's natural width, and adapts scale down to 0.25×
-  for extremely tall or wide captures; wide data tables deliberately fall back
+  widens it to a data table's natural width, and adapts the scale with
+  `exportgeom.js` (width/height/total-canvas-area caps; normally ≥0.25×, only
+  absurd geometry goes lower); wide data tables deliberately fall back
   from vector printing to the raster PDF, with natural table width and a
   landscape custom page so no columns are clipped or rotated into portrait.
   Markdown PDF export goes through `exportPdfVector` (`print_note_pdf`):
@@ -366,8 +415,9 @@ If a new Tauri *plugin* is used:
   is sized to the printable width, `@media print` CSS in the note is honored,
   and `scrollWidth` drives the scale factor; keep `print_ready_script` in sync
   with the capture script's settle timing. `exportPdf` (image slices) remains
-  the fallback for unsupported hosts; `pdfFromPngDataUrl` slices pages evenly
-  so the last page is not a sliver. Page-number styling for macOS/Linux lives
+  the fallback for unsupported hosts; `exportgeom.js` computes page cuts and
+  trims a sliver tail, and every raster PDF page picks its own orientation
+  (short last pages are otherwise transposed by jsPDF). Page-number styling for macOS/Linux lives
   in `stamp_page_numbers` (lopdf): it appends a content stream per page and
   must never replace an existing `/Resources/Font` dictionary — it copies it.
   Keep the `RUSTMD_STAMP_PDF`/`RUSTMD_STAMP_OUT` unit test usable for checking
@@ -377,7 +427,9 @@ If a new Tauri *plugin* is used:
   `drawImage` source rectangles in SVG user units, and html2canvas always
   passes `naturalWidth`/`naturalHeight`, which cropped viewBox-only SVGs. The
   self-test's inline-SVG red/blue check covers this.
-- **Editor**: line wrapping is a CodeMirror `Compartment` toggled from
+- **Editor**: opening a note calls `editor.loadDocument(...)`, which creates a
+  fresh `EditorState` (fresh undo history); never reintroduce a full-document
+  `dispatch` for note loads. Line wrapping is a CodeMirror `Compartment` toggled from
   `#btn-wrap`; the state is persisted as `rustmd-wrap` (`on`/`off`). JSON uses
   `@codemirror/lang-json`; CSV/TXT intentionally use no language extension.
   `#btn-fullscreen` / `F11` call `api.setFullscreen` (Tauri window
@@ -464,7 +516,8 @@ If a new Tauri *plugin* is used:
   checks. Remote images are best-effort: a fetch failure is recorded in
   `report.warnings` (and the remaining remote URLs are skipped for the run),
   never in `report.errors`, so an unreachable image host cannot block a
-  release; local images stay strict. The release/CI runner allows 1200 s for
+  release; local images stay strict. Residual raw math, Mermaid/MathJax
+  render errors and a blank PNG are errors. The release/CI runner allows 1200 s for
   the full ten-note export run (a local blocked-network run can be much slower
   because each remote image export waits on its fetch timeout). HTML entries use the built-in WebView
   (native preview iframe + hidden export window), check `--require-html` and
@@ -477,8 +530,10 @@ If a new Tauri *plugin* is used:
   and `scope=col`. Markdown and HTML PDF entries assert the vector
   path really produced text (`/Font` in the PDF, not just image slices) on
   every desktop platform. No external browser is installed or required. Clear
-  the output dir first; the checker rejects reports older than 24h and prints
-  warnings. It restores the user’s notes root afterwards and exits with 0/1.
+  the output dir first (the runner also deletes the previous report); the
+  checker rejects reports older than 24h, verifies every artifact's existence
+  and byte length, requires one entry per example note, and prints warnings. It
+  restores the user’s notes root afterwards and exits with 0/1.
 - **README screenshots** (`docs/screenshots/*.png`) are generated from the
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
@@ -490,6 +545,9 @@ If a new Tauri *plugin* is used:
   pinned) before taking the switcher/multi shots, and turns on the subfolder
   scope so the nested demo note appears. Update it when the UI layout or the
   mock notes change so the images do not drift.
+- **App close uses `onCloseRequested`** (async save flush). @tauri-apps/api
+  then calls `plugin:window|destroy`, so `capabilities/default.json` MUST keep
+  `core:window:allow-destroy`; `npm run check:repo` enforces it.
 - **Windows signing** is self-signed (integrity only, SmartScreen still
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.

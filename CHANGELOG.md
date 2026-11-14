@@ -5,6 +5,90 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.4] - 2026-11-14
+
+### 安全（Security）
+
+- **`read_local_image` 只允许图片扩展名**：它会把库内文件字节交给 HTML 资源内联器
+  并写入笔记文档；此前任意文本/密钥文件都能被恶意 HTML 笔记变成 `<img>` 的 data
+  URL，再被笔记脚本读出。CSS/JS 内联改用独立的 `read_local_asset`，只接受
+  `.css`/`.js`/`.mjs`。
+- **64 MB 单笔记读取上限**：超限文件仍按文件名列出并提示过大，但不会加载正文；
+  打开报明确错误、搜索跳过正文，避免不可信笔记库用超大文件冻结 UI 或耗尽内存。
+- **预览源 Origin 精确匹配**：`http://rmdhtml.localhost.evil.example` 之类前缀域名
+  不再被当作预览源；`rmd` 只放行真正的 `rmdhtml.localhost` / null。
+- **发布 CSP 移除开发源**：`127.0.0.1`/`ws://` 等 Vite HMR 来源移入
+  `app.security.devCsp`，发布版 `connect-src` 只保留 IPC；`check:repo` 会阻止回退。
+- **HTML 注入助手跳过 script/style/注释正文**：笔记脚本字符串里的 `<base` /
+  `<head>` 不再被当成真实标签删除或插入。
+- **`save_export` / `fetch_image_bytes` 改为异步 + 阻塞线程池**：原生保存对话框和
+  最长 20 秒的远程图片请求不再阻塞主线程（dialog 插件明确禁止主线程阻塞调用）。
+
+### 修复（Fixed）
+
+- **切换笔记后撤销会恢复上一篇内容**：打开笔记现在重建 CodeMirror 状态（每篇独立
+  撤销历史），Ctrl+Z 不会把上一篇的文本写进当前文件。
+- **HTML 资源内联丢失文档结构**：改用 `DOMParser` 保留 `<html lang>`、`<body
+  class>` 等属性；`defer`/`async` 头部脚本内联后移到 `<body>` 末尾，执行时
+  `<body>` 已存在。
+- **旧 Markdown 渲染可能清掉新预览**：渲染代数守卫改为**按容器**记录
+  （`nextRenderSeq`/`isCurrentRender`），导出离屏舞台不再使主预览跳过
+  sanitize/typeset，快速切换笔记时旧渲染也不会清掉新 DOM。
+- **栅格 PDF 短页被转置/裁切**：每页按自身宽高选择 jsPDF 方向；分页与尾页裁剪
+  抽到纯函数 `exportgeom.js` 并新增 6 个单测。
+- **深色主题 PDF 在 macOS/Linux 可能浅字白纸**：打印时强制浅色变量并启用
+  `print-color-adjust: exact`，三端导出一致。
+- **超宽数据表 PNG/栅格 PDF 可能超出画布总像素上限**：自适应缩放同时约束宽度、
+  高度和面积，常规仍保持 0.25–3×。
+- **图片宽度在解码前被固定为 860px**：改为等待图片加载后再按 `naturalWidth`
+  设定，避免小图被放大。
+- **CSV/TSV 分隔符嗅探误判**：把解析后残留的引号/制表符作为“错误候选”证据，
+  TSV 文本里的逗号、引号内的分号不再抢占真正分隔符；新增 3 组回归用例。
+- **导出 HTML 代码块没有高亮颜色**：独立 HTML 会内联当前主题的 highlight.js CSS。
+- **英文界面搜索命中显示中文前缀**：`search_notes` 新增 `locale`，按 UI 语言返回
+  `Title:/File:/Tag:` 或中文前缀；mock 同步。
+- **删除与延迟自动保存竞态**：删除期间设置 `deleting` 标志并再次清理定时器，
+  500ms 防抖保存不会把刚删除的文件写回来。
+- **关闭窗口可能丢失最后 500ms 输入**：注册 Tauri `onCloseRequested`，先
+  `flushSave()`；失败时询问是否放弃本次修改。并补上 `core:window:allow-destroy`
+  （`onCloseRequested` 的 destroy 调用需要该权限，否则窗口无法关闭），
+  `check:repo` 会阻止再次漏配。
+- **导出并发**：导出串行化，避免两个 `.export-stage` 同时进入打印或保存对话框叠加。
+- **数据视图监听器/ResizeObserver 泄漏**：数据视图渲染前以及切换到
+  Markdown/HTML 时统一 teardown。
+- **标签输入**：粘贴 `a, b, c` 会添加多个标签，重建后焦点回到输入框。
+- **搜索高亮破坏 HTML 实体**：按明文本区间加 `<mark>` 再转义，查询 `amp` 不再
+  拆开 `&amp;`。
+
+### 变更（Changed）
+
+- 打印/PDF 固定使用浅色配色；README 的导出说明同步（PNG 的自适应范围也改为
+  “常规 0.25–3×，极端尺寸可更低”）。
+- 排序在大小写/变音符等价时增加确定性 tie-break，列表顺序不再依赖输入顺序。
+- MathJax 只声明实际支持并被保护的 `$`/`$$` 定界符；`\(…\)`/`\[…\]` 不再写入配置。
+- Tauri capabilities 收紧为 `dialog:allow-open`；CSP 拆分发布/开发两套。
+- 浏览器 mock 补上更完整的私网/回环地址拒绝、`render_html_note` 明确报错，并在
+  AGENTS 中记录 mock 的已知简化（不作为编码/导出测试）。
+- 多库搜索改为逐库容错：一个置顶库不可用（移动硬盘/目录被删）不再让整次搜索失败。
+- 删除失败会恢复“未保存”状态；删除期间禁止切换笔记，且只清除仍为当前笔记的删除目标。
+
+### 测试与发布（Tests / Release）
+
+- **selftest 报告不再可伪造/复用**：runner 启动前删除旧 `report.json`，校验器要求
+  每个 PNG/PDF/HTML 产物真实存在且字节数与报告一致、示例笔记全覆盖、时间戳合法；
+  新增残留公式/Mermaid/MathJax 错误/空白 PNG、HTML 文档结构、内联脚本执行与
+  highlight.js CSS 断言。
+- **前端单测 60 个**（新增 `exportgeom.test.js`、分隔符/排序回归）；**Rust 77 个**
+  （新增 `read_local_image`/`read_local_asset` 类型限制、64 MB 上限、原始文本跳过测试）。
+- **check-repo 扩展**：IPC 数量/桥接、README 版本横幅、CHANGELOG/Release Notes、
+  capabilities codegen 同步、CSP 开发源、大小写敏感的文档链接、引用式链接、
+  机器路径、git 不可用时报错。
+- **CI/发布**：CI 提前执行 Windows 签名 + 绿色 zip、macOS app bundle + ad-hoc 签名
+  的打包 dry run；release 在缺少 zip/dmg/deb/AppImage 时直接失败，合并
+  `SHA256SUMS.txt` 现在包含 `LICENSE`；绿色 zip 使用 `/` 分隔符并校验文档/截图/证书。
+- GitHub About 与 topics 更新为 HTML 优先口径（`html`、`html-editor`、`html-notes`、
+  `webview`），Release 标题带 “local-first Markdown, HTML & data notes”。
+
 ## [1.10.3] - 2026-11-13
 
 ### 优化（Changed）

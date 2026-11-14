@@ -4,12 +4,14 @@
   <meta charset="utf-8" />
   <title>HTML 页面渲染示例</title>
   <link rel="stylesheet" href="assets/html-demo.css" />
+  <!-- Deferred head script: asset inlining must keep it after <body> exists. -->
+  <script src="assets/html-demo-head.js" defer></script>
   <style>
     /* Inline styles also run in the isolated built-in WebView preview. */
     .notice { color: crimson; }
   </style>
 </head>
-<body>
+<body class="html-demo">
   <h1>HTML 页面渲染示例</h1>
   <p class="notice">
     这是一个 <strong>HTML 笔记</strong>：左侧编辑源码，右侧显示整页渲染结果。

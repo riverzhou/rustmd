@@ -29,26 +29,30 @@
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.10.3
-node scripts/release-notes.mjs v1.10.3 >/dev/null
+node scripts/check-version.mjs v1.10.4
+node scripts/release-notes.mjs v1.10.4 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.10.3"
-git tag v1.10.3
+git commit -m "release: v1.10.4"
+git tag v1.10.4
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.10.3
+git push github v1.10.4
 git push origin master
-git push origin v1.10.3
+git push origin v1.10.4
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.10.3`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.10.4`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+
+`ci.yml` 会在每个 PR/push 上提前执行 Windows 签名 + 绿色 zip 和 macOS app bundle +
+ad-hoc 签名的打包 dry run，并把 selftest 报告校验放在发布前；打包脚本的回归不应等到
+tag 之后才暴露。
 
 ## 2. Workflow 结构
 
@@ -61,7 +65,9 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
 
 只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会运行
-`npm run selftest` 并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
+`npm run selftest` 并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物真实存在且字节数一致，`npm run selftest` 也会先删除旧报告，避免复用上一次的绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
+
+Windows 的 `Stage flat release assets` 步骤会在缺少 zip/sha256/证书时直接失败；`publish` 在发布前逐一断言三端资产（zip、DMG、deb、AppImage、各校验文件、LICENSE）都存在，避免只带证书的残缺 Release。
 
 ## 3. 产物
 
@@ -84,7 +90,7 @@ Release 都能拿到许可证，publish job 还会把仓库根目录的 `LICENSE
 Windows zip 的目录结构：
 
 ```
-rustmd-1.10.3-win-x64/
+rustmd-1.10.4-win-x64/
 ├── rustmd.exe
 ├── README.md / README.en.md
 ├── CHANGELOG.md
@@ -154,7 +160,8 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 - `npx tauri build --bundles deb,appimage` 生成 deb 与 AppImage；
 - `SHA256SUMS-linux.txt` 覆盖两个文件；
-- publish job 再对所有资产生成合并的 `SHA256SUMS.txt`；
+- publish job 再对全部发布资产（含独立上传的 `LICENSE`）生成合并的 `SHA256SUMS.txt`；
+  各平台自己的 `.sha256` 与 `SHA256SUMS-linux.txt` 不包含在内，避免校验文件自引用。
 - Linux 没有 Windows/macOS 那种系统级发行者签名；如需 GPG，可在 workflow 中增加 `gpg --detach-sign`，但当前未启用。
 
 AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
@@ -166,17 +173,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.10.3-macos-arm64.dmg.sha256
+shasum -a 256 -c rustmd-1.10.4-macos-arm64.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.10.3-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.10.3-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.10.4-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.10.4-win-x64-portable.zip.sha256
 ```
 
 Windows 签名检查：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.10.3-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd-1.10.4-win-x64\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

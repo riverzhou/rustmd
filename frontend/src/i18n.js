@@ -153,6 +153,8 @@ export const MESSAGES = {
     'dialog.newNote':
       'The current note could not be saved. Create a new note anyway? Unsaved changes will be lost.',
     'dialog.delete': 'Delete “{title}”? This cannot be undone.',
+    'dialog.closeUnsaved':
+      'There are unsaved changes. Close the app anyway and lose them?',
     'dialog.conflict':
       'This note was changed outside the app.\n\n' +
       'OK overwrites the file on disk with the editor contents. Cancel keeps ' +
@@ -387,6 +389,8 @@ export const MESSAGES = {
     'dialog.newNote':
       '当前笔记保存失败，仍要新建吗？未保存的修改会丢失。',
     'dialog.delete': '确定删除「{title}」吗？此操作不可恢复。',
+    'dialog.closeUnsaved':
+      '还有未保存的更改。仍要关闭应用并丢失这些更改吗？',
     'dialog.conflict':
       '这篇笔记已在外部被修改。\n\n' +
       '点击“确定”用当前编辑器内容覆盖磁盘版本；点击“取消”保留磁盘版本' +
@@ -568,19 +572,25 @@ export function t(key, vars = {}) {
 /** Translate static elements marked with data-i18n* attributes. */
 export function applyStaticTranslations(root = globalThis.document) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
-  for (const el of root.querySelectorAll('[data-i18n]')) {
+  // Note content (sanitized Markdown, HTML preview/export) may legitimately
+  // carry data-i18n* attributes; UI translation must never rewrite a note.
+  const translatable = (selector) =>
+    [...root.querySelectorAll(selector)].filter(
+      (el) => !el.closest('#preview, .export-stage, .markdown-body')
+    );
+  for (const el of translatable('[data-i18n]')) {
     el.textContent = t(el.dataset.i18n);
   }
-  for (const el of root.querySelectorAll('[data-i18n-html]')) {
+  for (const el of translatable('[data-i18n-html]')) {
     el.innerHTML = t(el.dataset.i18nHtml);
   }
-  for (const el of root.querySelectorAll('[data-i18n-placeholder]')) {
+  for (const el of translatable('[data-i18n-placeholder]')) {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   }
-  for (const el of root.querySelectorAll('[data-i18n-title]')) {
+  for (const el of translatable('[data-i18n-title]')) {
     el.title = t(el.dataset.i18nTitle);
   }
-  for (const el of root.querySelectorAll('[data-i18n-aria]')) {
+  for (const el of translatable('[data-i18n-aria]')) {
     el.setAttribute('aria-label', t(el.dataset.i18nAria));
   }
 }

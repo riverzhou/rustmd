@@ -87,12 +87,23 @@ export function folderOf(path) {
   return idx < 0 ? '' : normalized.slice(0, idx);
 }
 
+/// Locale collation with a deterministic code-unit tie-break: the zh-CN
+/// collator treats "Apple"/"apple" (and diacritics) as equal, which used to
+/// leave their order dependent on the input array.
+function compareStrings(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  const result = collator.compare(left, right);
+  if (result !== 0) return result;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export function compareFileNames(a, b) {
-  return collator.compare(fileNameOf(a), fileNameOf(b));
+  return compareStrings(fileNameOf(a), fileNameOf(b));
 }
 
 export function comparePaths(a, b) {
-  return collator.compare(String(a || ''), String(b || ''));
+  return compareStrings(a, b);
 }
 
 export function compareNotes(a, b, sort) {

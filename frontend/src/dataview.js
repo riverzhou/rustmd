@@ -41,6 +41,12 @@ function addNotice(view, text, tone = 'info') {
 }
 
 function createView(container, kind, stats) {
+  // Tear down the previous render's listeners/observers before its DOM goes
+  // away (a large table must not stay reachable after switching to Markdown).
+  if (typeof container.__dataTeardown === 'function') {
+    container.__dataTeardown();
+    container.__dataTeardown = null;
+  }
   container.replaceChildren();
   const view = make('div', `data-view data-view-${kind}`);
   addHead(view, kind, stats);
@@ -195,23 +201,26 @@ function renderTable(
         }
       }
     };
-    if (container.__dataFitRows) {
-      container.removeEventListener('rustmd:layout', container.__dataFitRows);
-    }
-    container.__dataFitRows = fitRows;
     container.addEventListener('rustmd:layout', fitRows);
+    // Window resizing changes the clamp()-based font/table width; keep the
+    // top bar geometry in sync on both 1440×900 and 4K/200% viewports.
+    let observer = null;
+    const onResize = () => requestAnimationFrame(syncTopScroll);
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(onResize);
+      observer.observe(scroll);
+    } else {
+      window.addEventListener('resize', onResize);
+    }
+    container.__dataTeardown = () => {
+      container.removeEventListener('rustmd:layout', fitRows);
+      if (observer) observer.disconnect();
+      else window.removeEventListener('resize', onResize);
+    };
     requestAnimationFrame(() => {
       fitRows();
       syncTopScroll();
     });
-    // Window resizing changes the clamp()-based font/table width; keep the
-    // top bar geometry in sync on both 1440×900 and 4K/200% viewports.
-    if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => requestAnimationFrame(syncTopScroll));
-      ro.observe(scroll);
-    } else {
-      window.addEventListener('resize', syncTopScroll);
-    }
   }
   for (const notice of notices) addNotice(view, notice.text, notice.tone);
 }

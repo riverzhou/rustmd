@@ -1,0 +1,12 @@
+# Keep repository blobs LF (Linux/macOS scripts and CI consumers); Windows
+# PowerShell/batch files are checked out with CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.woff binary
+*.woff2 binary

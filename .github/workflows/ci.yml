@@ -101,9 +101,18 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: rustup target add aarch64-apple-darwin
 
-      - name: Compile macOS arm64 binary
+      - name: Build the macOS arm64 app bundle
         if: matrix.os == 'macos-latest'
-        run: npx tauri build --target aarch64-apple-darwin --no-bundle
+        run: npx tauri build --target aarch64-apple-darwin --bundles app
+
+      - name: Ad-hoc sign and verify the macOS app
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -euo pipefail
+          APP="target/aarch64-apple-darwin/release/bundle/macos/rustmd.app"
+          test -d "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Rust tests (Windows-specific path rules)
         if: matrix.os == 'windows-latest'
@@ -112,6 +121,18 @@ jobs:
       - name: Compile desktop binary
         if: matrix.os != 'macos-latest'
         run: npx tauri build --no-bundle
+
+      # The signing and portable-zip scripts are custom and only ran on a
+      # release tag before: exercise them on every CI run so a packaging
+      # regression cannot first surface after the tag is public.
+      - name: Package the Windows portable release (dry run)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-win.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-zip.ps1
+          Get-ChildItem release -Recurse -File | Select-Object FullName, Length
 
   selftest:
     name: e2e self-test (linux)

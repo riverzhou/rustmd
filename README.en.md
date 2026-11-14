@@ -1,6 +1,6 @@
 # rustmd
 
-**Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**. Edit HTML and preview the full page in the built-in WebView: page scripts, styles, local assets and charts run natively, with no external browser required.
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -13,7 +13,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.10.3** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.10.4** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## Screenshots
 
@@ -70,7 +70,7 @@ If you want a Markdown tool that keeps your notes as **plain files** instead of 
 - **Plain-text storage** — a note is a `.md` / `.html` / `.csv` / `.txt` / `.json` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
 - **Offline by default** — editing, search, preview and export work without a network; only remote images and remote scripts/styles/fonts embedded in HTML notes need one.
 - **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
-- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML/CSV/TXT/JSON format badges, Markdown/HTML/data notes, UTF-8/GBK/GB18030 decoding, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
+- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML/CSV/TXT/JSON format badges, **HTML pages and reports rendered in the built-in WebView**, UTF-8/GBK/GB18030 decoding, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
 - **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
 - **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder with Markdown, HTML, CSV, TXT or JSON; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save. CSV/TXT/JSON get table, tab-column and JSON-inspector views with automatic UTF-8/GBK/GB18030 decoding.
 
@@ -141,7 +141,7 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - The **New note** button offers **Markdown note**, **HTML page**, **CSV table**, **text file** and **JSON file**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for every format.
 - HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
 - Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot or signal print readiness. A sanitized static preview is used only if rendering fails.
-- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** writes a UTF-8 standalone file and normalizes a legacy `<meta charset="gbk">`; PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
+- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** writes the note source as a UTF-8 file and normalizes a legacy `<meta charset="gbk">` (relative CSS/JS/images are not copied with it); PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
 - Markdown and HTML **PDF** is text-based: the system WebView's print pipeline re-lays out the note (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) instead of screenshotting it first, so text search, copy and zoom all work.
 
 ### CSV / TXT / JSON previews
@@ -152,13 +152,14 @@ Good for personal knowledge bases, engineering notes, writing drafts, course not
 - **JSON inspector** shows the root type, key/item counts and node count, with collapsible object/array groups (semantic header tints, rails and type pills), key-and-value columns, type/count labels, and a dedicated color plus type dot for strings, numbers, booleans and null. Invalid JSON shows the parse error plus the raw source.
 - **Complete data views**: CSV/TXT/JSON are no longer truncated. Data views use the full preview width; a 4K display at 200% scaling (about a 1920×1080 CSS viewport) can show many more columns, while narrow tables still shrink to content instead of forcing a full-width grid. Wide tables get synchronized horizontal scrollbars above and below the table; when there is spare height, tables with 18+ rows distribute it across row heights, while taller tables scroll inside the card with a sticky header.
 - **Automatic encoding detection** decodes BOM → UTF-8 → GBK → GB18030 and shows the detected encoding in the status bar. Valid UTF-8 always wins. A rare legacy GBK byte stream can itself be valid UTF-8 (roughly 1,920 common CJK pairs); such ambiguous short files are read as UTF-8, so convert them externally to UTF-8 if they look garbled. Saving keeps the original codec and BOM; a GBK file that gains a four-byte character (e.g. an emoji) is compatibly upgraded to GB18030 and the status bar updates. Repeated UTF-8 BOMs are normalized on read and never accumulate on save.
+- A single note is capped at **64 MB**: larger files stay listed by filename with a "too large" hint but their body is not loaded (an untrusted vault cannot freeze the UI with a huge file). Normal CSV/TXT/JSON notes still have no row/column display cap.
 - Data notes have no front matter and no tag editor. Rename keeps the extension, and the new-note menu offers all three data formats.
 
 ### Export
 
 - **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); CSV/TXT/JSON exports keep the same smart widths, row-band/column-ink and JSON-inspector styling and use the **full browser width** instead of the 820px reading column: data cards stay content-sized, while wide tables use the viewport and scroll horizontally; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized. Data HTML exports keep the complete content.
-- **PNG** — Markdown renders at 3× (~288 DPI); data notes widen the off-screen stage to the table’s natural width and reduce scale when the canvas cap would otherwise clip right-hand columns; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
-- **PDF** — Markdown, HTML and narrow data tables are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. **Data tables wider than the ~640 CSS px printable area automatically fall back to a landscape raster PDF on a widened stage**, preserving every column but not selectable text; platforms without native printing fall back to block-aware lossless PNG slices.
+- **PNG** — Markdown usually renders at 3× (~288 DPI); data notes widen the off-screen stage to the table’s natural width and reduce the scale against width, height AND total canvas area (normally 0.25–3×, lower only for extreme geometry) so right-hand columns are never clipped and the WebView canvas limit is not hit; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
+- **PDF** — Markdown, HTML and narrow data tables are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. **Printing always uses the light palette**, so a dark-theme PDF is dark text on white on every platform (macOS/Linux print paths do not paint page backgrounds). Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. **Data tables wider than the ~640 CSS px printable area automatically fall back to a landscape raster PDF on a widened stage**, preserving every column but not selectable text; platforms without native printing fall back to block-aware lossless PNG slices.
 - For PNG exports, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNGs are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched. PDFs go through the system print pipeline described above.
 - The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 
@@ -318,4 +319,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, HTML notes, CSV tables, TXT files, JSON viewer, GBK encoding, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, HTML editor, HTML page preview, built-in WebView, HTML reports, CSV tables, TXT files, JSON viewer, GBK encoding, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.

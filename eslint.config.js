@@ -14,7 +14,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['frontend/src/**/*.js'],
+    files: ['frontend/src/**/*.js', 'frontend/shims/**/*.js'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

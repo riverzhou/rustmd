@@ -5,7 +5,7 @@
 //      the RUSTMD_VITE_PORT environment variable.
 //   3. Override `build.devUrl` with `tauri dev --config`, because the Tauri
 //      v2 CLI has no TAURI_DEV_URL environment variable to do this directly.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -48,6 +48,11 @@ if (port !== PREFERRED_PORT) {
 const tmpCfg = path.join(os.tmpdir(), `rustmd-tauri-dev-${process.pid}.json`);
 fs.writeFileSync(tmpCfg, JSON.stringify({ build: { devUrl } }, null, 2));
 
+function cleanup() {
+  fs.rmSync(tmpCfg, { force: true });
+}
+process.on('exit', cleanup);
+
 // --no-watch: the Tauri dev file watcher has no exclude option and watches
 // the whole project dir, so ANY in-project write (a note saved into the
 // examples vault, a PNG exported into the repo, even `npm run build`) killed
@@ -73,8 +78,36 @@ const tauri = isWin
       env: process.env,
     });
 
+tauri.on('error', (err) => {
+  console.error(`[rustmd] cannot start tauri dev: ${err.message}`);
+  cleanup();
+  process.exit(1);
+});
+
+// Stop a wedged dev app (Ctrl-C, CI `timeout`, SIGTERM) without leaving
+// rustmd.exe/WebView2/cargo orphans holding the notes folder. On Windows the
+// child is cmd.exe, so kill the whole process tree.
+function stopChild() {
+  if (!tauri.pid || tauri.exitCode !== null) return;
+  if (isWin) {
+    spawnSync('taskkill', ['/pid', String(tauri.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } else {
+    tauri.kill('SIGTERM');
+  }
+}
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    stopChild();
+    cleanup();
+    process.exit(130);
+  });
+}
+
 tauri.on('close', (code, signal) => {
-  fs.rmSync(tmpCfg, { force: true });
+  cleanup();
   if (signal) process.kill(process.pid, signal);
   process.exit(code ?? 0);
 });

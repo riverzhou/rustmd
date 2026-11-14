@@ -12,6 +12,12 @@
   overflow: hidden;
 }
 
+/* Deep JSON indents per level; let the inspector scroll sideways instead of
+   clipping the right-hand values inside the card. */
+.data-view-json {
+  overflow-x: auto;
+}
+
 .data-view .data-view-head {
   display: flex;
   align-items: center;
@@ -180,7 +186,9 @@
   background: var(--code-bg);
   border-bottom-color: var(--border);
   font-weight: 650;
-  white-space: nowrap;
+  /* Long header labels must not paint over the neighbouring column. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .data-view .data-table th + th,
@@ -236,6 +244,7 @@
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
@@ -520,12 +529,6 @@
   width: max-content;
   min-width: 0;
   table-layout: fixed;
-}
-
-.export-stage .data-view .data-table th,
-.export-stage .data-view .data-table td {
-  word-break: normal;
-  overflow-wrap: normal;
 }
 
 .export-stage .data-view .data-table th,

@@ -2,7 +2,7 @@
 
 **Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
 
-**本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用（macOS 仅 Apple Silicon）**：文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
+**本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用（macOS 仅 Apple Silicon）**：编辑 HTML 源码即可在应用内置 WebView 中预览整页效果（脚本、样式、本地资源和图表原生执行，无需外部浏览器）；文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
 
 [English](README.en.md) · [简体中文](README.md)
 
@@ -15,7 +15,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.10.3** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.10.4** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 ## 截图
 
@@ -72,13 +72,13 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 - **纯文件存储**：笔记就是 `.md` / `.html` / `.csv` / `.txt` / `.json`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
 - **本地优先**：核心编辑、预览、搜索、导出全部离线可用；拉取远程图片、加载 HTML 报告里的 CDN 脚本等场景才需要网络。
 - **轻量跨平台**：Rust + Tauri 2，Windows / macOS / Linux 三端；Windows 提供解压即用的绿色 zip。
-- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、**MD / HTML / CSV / TXT / JSON 格式徽标**、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
+- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、**MD / HTML / CSV / TXT / JSON 格式徽标**、**内置 WebView 渲染 HTML 页面/报告**、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
 - **安全边界认真做**：Markdown HTML 消毒、HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
 - **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件夹即可；Markdown front matter 中的 `title:`、`date:` 等字段保存时原样保留。CSV/TXT/JSON 使用表格、制表符与 JSON 检查器视图，并提供 UTF-8 / GBK / GB18030 自动解码。
 
 适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
 
-关键词：local-first、Markdown 笔记、HTML 笔记、CSV 表格、TXT 文本、JSON 查看器、GBK 编码、Markdown 编辑器、最近笔记库、置顶笔记库、多库同开、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
+关键词：local-first、Markdown 笔记、HTML 笔记、HTML 编辑器、HTML 网页预览、内置 WebView、HTML 报告、CSV 表格、TXT 文本、JSON 查看器、GBK 编码、Markdown 编辑器、最近笔记库、置顶笔记库、多库同开、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
 
 ## 功能
 
@@ -139,7 +139,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 - 顶部新建按钮提供 **Markdown 笔记 / HTML 页面 / CSV 表格 / 纯文本文件 / JSON 文件**；重命名、移动、删除、手动刷新和 HTML / PNG / PDF 导出与 Markdown 笔记一致。
 - HTML 笔记没有 front matter，因此不显示标签编辑器；保存时不会插入 `---` 或 `tags:`，并保留文件原有的 BOM 与 CRLF/LF 换行风格。
 - 预览在 **sandbox iframe** 中运行（无 `allow-same-origin`，origin 为 null），拿不到父页面 DOM/Tauri IPC；导出在隐藏的独立 Tauri WebView 窗口中执行，所有笔记/保险库命令按窗口 label 校验，隐藏窗口只能回传截图或通知打印就绪。渲染失败时才回退为 DOMPurify 消毒后的静态预览。
-- 图表页面通常依赖 CDN 脚本，首次渲染/导出需要联网；HTML 笔记的 **导出 HTML** 输出 UTF-8 独立文件，并把遗留的 `<meta charset="gbk">` 规范化为 UTF-8；PNG 仍由内置 WebView 整页截图（超长页面分段拼接），PDF 则在隐藏 WebView 里按 A4 打印。
+- 图表页面通常依赖 CDN 脚本，首次渲染/导出需要联网；HTML 笔记的 **导出 HTML** 按源码原样输出 UTF-8 文件，并把遗留的 `<meta charset="gbk">` 规范化为 UTF-8（相对 CSS/JS/图片不会随文件复制）；PNG 仍由内置 WebView 整页截图（超长页面分段拼接），PDF 则在隐藏 WebView 里按 A4 打印。
 - Markdown 和 HTML 笔记的 **PDF** 是文字版：由系统 WebView 的打印管线重新排版（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK），不再把整页先截成图片；因此搜索、复制文字和放大查看都正常。
 
 ### CSV / TXT / JSON 数据预览
@@ -150,13 +150,14 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 - **JSON 检查器**：展示根类型、键/项数量、节点数，可折叠的对象/数组分组，键与值分列对齐，对象/数组分组带语义色浅底、侧边轨和同色系类型标签，字符串/数字/布尔/null 各有独立色彩与类型圆点；非法 JSON 显示错误与原文，便于继续编辑。
 - **完整数据视图**：CSV/TXT/JSON 不再截断行、列或节点。数据视图自动使用预览区宽度（4K 在 200% 缩放下 CSS 视口约为 1920×1080），能展开更多列；窄表仍按内容收缩、不强制铺满；宽表在表格上方和下方各有一条同步横向滚动条；空间充足时 18 行以上的表格会把多余高度均分给行高，长表在卡片内滚动并保持表头可见。
 - **自动编码识别**：读取时按 BOM → UTF-8 → GBK → GB18030 自动解码，状态栏显示当前编码；合法的 UTF-8 始终优先。GBK 字节序列极少数情况下也会构成合法 UTF-8（约 1920 个常用汉字的组合），这类有歧义的短文件会按 UTF-8 读取；如遇乱码，请先在外部转换为 UTF-8。保存时沿用原编码和 BOM；如果向 GBK 文件写入 GB18030 可表示的四字节字符（例如 emoji），会兼容升级为 GB18030，并在保存后同步状态栏。重复的 UTF-8 BOM 会在读取时归一化，不会在连续保存中累积。
+- 单篇笔记的读取上限为 **64 MB**：超限文件仍会按文件名出现在列表里并提示过大，但不会加载正文（避免不可信的笔记库用超大文件卡死界面）；正常规模的 CSV/TXT/JSON 不设行/列显示上限。
 - 数据笔记没有 front matter，因此不显示标签编辑器；重命名保留扩展名，新建菜单也支持这三种格式。
 
 ### 导出
 
 - **HTML**：Markdown 笔记导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；CSV/TXT/JSON 导出包含同样的智能列宽、隔行底色/列文字色和 JSON 检查器样式，并**使用整个浏览器宽度**（不再限制 820px 阅读栏宽）：数据卡片按内容收缩，宽表利用全屏并保留横向滚动；HTML 笔记输出 UTF-8 独立文件并规范化遗留 charset。数据 HTML 导出保留完整内容。
-- **PNG**：Markdown 使用 3× 渲染（约 288 DPI）；数据笔记的离屏舞台会按表格自然宽度扩宽，超宽表触到画布上限时自动降采样，保证右侧列不被裁掉；HTML 笔记按页面高度在 1–3× 间自适应（短页面 3×，超长报告目标高度约 48k 设备像素），整页保持。
-- **PDF**：Markdown、HTML 和窄数据表走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出的是**矢量文字**，可选中、可搜索、任意放大都清晰，A4 排版，由引擎按 CSS 规则分页（不会把一行文字切成两半，也不会出现只有几像素的尾页），文件通常比图片版小一个数量级。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚，不添加浏览器地址栏信息。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。**宽度超过约 640 CSS px 可打印区的数据表会自动回退为扩宽舞台的横向栅格 PDF**，保证所有列完整，但文字不可选中；某个平台或环境不支持原生打印时也会回退为按块边界分页的无损 PNG 切片。
+- **PNG**：Markdown 通常使用 3× 渲染（约 288 DPI）；数据笔记的离屏舞台会按表格自然宽度扩宽，并在宽度、高度和**画布总像素面积**三方面自动降采样（常规 0.25–3×，极端尺寸才会继续降低），保证右侧列不被裁掉且不会触发 WebView 画布上限；HTML 笔记按页面高度在 1–3× 间自适应（短页面 3×，超长报告目标高度约 48k 设备像素），整页保持。
+- **PDF**：Markdown、HTML 和窄数据表走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出的是**矢量文字**，可选中、可搜索、任意放大都清晰，A4 排版，由引擎按 CSS 规则分页（不会把一行文字切成两半，也不会出现只有几像素的尾页），文件通常比图片版小一个数量级。**打印始终使用浅色配色**，因此深色主题下导出的 PDF 在不同平台上都是白底深字，不会出现 macOS/Linux 白纸配浅色文字。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚，不添加浏览器地址栏信息。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。**宽度超过约 640 CSS px 可打印区的数据表会自动回退为扩宽舞台的横向栅格 PDF**，保证所有列完整，但文字不可选中；某个平台或环境不支持原生打印时也会回退为按块边界分页的无损 PNG 切片。
 - PNG 导出时，远程图片经 Rust 后端拉取并内联，不再出现空白图；HTML 笔记的 PNG 由内置 WebView 整页渲染（超长报告按高度自适应分段截取并拼接为单图），PDF 则走上面的系统打印管线。
 - 导出目标路径由系统保存对话框选择，前端不能任意写文件。
 
@@ -358,4 +359,4 @@ rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
 
 如果 rustmd 对你有帮助，给一个 ⭐ 是最直接的鼓励；也欢迎分享给需要本地 Markdown 笔记的朋友。
 
-**关键词**：Markdown 笔记、HTML 笔记、CSV 表格、TXT 文本、JSON 查看器、GBK 编码、本地笔记、离线笔记、Markdown 编辑器、最近笔记库切换、置顶笔记库、多库同开、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。
+**关键词**：Markdown 笔记、HTML 笔记、HTML 编辑器、HTML 网页预览、内置 WebView、HTML 报告、CSV 表格、TXT 文本、JSON 查看器、GBK 编码、本地笔记、离线笔记、Markdown 编辑器、最近笔记库切换、置顶笔记库、多库同开、知识库、Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、Windows 绿色版、macOS、Linux。

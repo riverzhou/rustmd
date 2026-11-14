@@ -42,7 +42,7 @@ struct SearchHit {
     snippet: String, // plain text around the first match
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NoteContent {
     tags: Vec<String>,
@@ -81,7 +81,7 @@ struct FetchedImage {
     mime: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LocalImage {
     bytes: Vec<u8>,
@@ -1203,9 +1203,30 @@ fn content_hash(bytes: &[u8]) -> String {
 /// avoids fragile `strip_prefix` comparisons between a user-typed root and
 /// a canonicalized path — on Windows `fs::canonicalize` adds a `\\?\`
 /// prefix, which silently broke read-back after every save.
+/// Upper bound for loading a note into memory (listing, opening, search).
+/// The vault is untrusted (synced / downloaded folders): without this, a few
+/// multi-GB files freeze the UI on open or abort the process on allocation
+/// failure. Files above the cap stay visible by name but are not read.
+const MAX_NOTE_BYTES: u64 = 64 * 1024 * 1024;
+
 fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
     let rel_s = note_path_string(rel);
     let folder = rel.parent().map(note_path_string).unwrap_or_default();
+    let size = fs::metadata(full).ok()?.len();
+    if size > MAX_NOTE_BYTES {
+        let name = full.file_stem()?.to_string_lossy().to_string();
+        return Some(NoteMeta {
+            path: rel_s,
+            folder,
+            title: name,
+            tags: Vec::new(),
+            snippet: "> 64 MB".into(),
+            mtime: mtime_of(full),
+            kind: note_kind(full).to_string(),
+            encoding: String::new(),
+            hash: String::new(),
+        });
+    }
     let bytes = fs::read(full).ok()?;
     // Keep unsupported-encoding notes visible in the list (instead of
     // silently hiding them); opening one returns a clear encoding error.
@@ -1438,14 +1459,14 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
         .parent()
         .ok_or_else(|| "no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "file".to_string());
+    // Do NOT embed the target file name: a valid 253-character note name
+    // leaves no room for the suffix within the 255-unit filename limit, so
+    // every save of that note would fail. The pid+counter temp name is unique
+    // within the process and create_new retries on collision.
     let mut last_err: Option<String> = None;
     for attempt in 0..5u32 {
         let tmp = parent.join(format!(
-            ".{file_name}.rustmd-tmp-{}-{}-{attempt}",
+            ".rustmd-tmp-{}-{}-{attempt}",
             std::process::id(),
             TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
@@ -1517,6 +1538,12 @@ fn list_folders(window: tauri::WebviewWindow, dir: String) -> Result<Vec<String>
 
 fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
     let full = resolve_in_root(root, path)?;
+    if fs::metadata(&full)
+        .map(|m| m.len() > MAX_NOTE_BYTES)
+        .unwrap_or(false)
+    {
+        return Err("note is too large (> 64 MB)".into());
+    }
     let bytes = fs::read(&full).map_err(|e| e.to_string())?;
     let (text, encoding) = decode_note_text(&bytes)?;
     let kind = note_kind(&full);
@@ -1562,6 +1589,15 @@ fn save_note_impl(
     force: bool,
 ) -> Result<NoteMeta, String> {
     let full = resolve_in_root(root, rel)?;
+    // Cap the save path too: a note opened below 64 MB can grow externally
+    // (sync client, another editor) and the next autosave would otherwise
+    // read/allocate the whole file on the UI thread.
+    if fs::metadata(&full)
+        .map(|m| m.len() > MAX_NOTE_BYTES)
+        .unwrap_or(false)
+    {
+        return Err("note is too large (> 64 MB)".into());
+    }
     // Read the old bytes once and use them for both the conflict hash and
     // compose. Re-reading after the hash check allowed an external edit in
     // between to pass the hash while composing from the older content.
@@ -1571,7 +1607,10 @@ fn save_note_impl(
         Err(e) => return Err(e.to_string()),
     };
     if !force {
-        if let Some(expected) = base_hash {
+        // An empty hash comes from the oversized-note metadata placeholder;
+        // treating it as a real token made every later autosave a false
+        // conflict. Fall through to the mtime check instead.
+        if let Some(expected) = base_hash.filter(|hash| !hash.is_empty()) {
             let actual = existing_bytes
                 .as_ref()
                 .map(|bytes| content_hash(bytes))
@@ -1827,7 +1866,13 @@ fn search_notes_impl(
     query: &str,
     folder: Option<&str>,
     recursive: bool,
+    locale: &str,
 ) -> Result<Vec<SearchHit>, String> {
+    let zh = locale.to_ascii_lowercase().starts_with("zh");
+    let title_label = if zh { "标题" } else { "Title" };
+    let file_label = if zh { "文件名" } else { "File" };
+    let tag_label = if zh { "标签" } else { "Tag" };
+    let label_sep = if zh { "：" } else { ": " };
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -1840,7 +1885,16 @@ fn search_notes_impl(
         };
         // A note with an unsupported encoding stays visible in the list and
         // findable by title/filename/tag; use lossy text for the body scan.
-        let text = fs::read(&full).ok().map(|bytes| decode_text_lossy(&bytes));
+        // Oversized notes are still findable by title/filename/tag, but the
+        // body is not read (same 64 MB cap as list/open).
+        let too_large = fs::metadata(&full)
+            .map(|m| m.len() > MAX_NOTE_BYTES)
+            .unwrap_or(true);
+        let text = if too_large {
+            None
+        } else {
+            fs::read(&full).ok().map(|bytes| decode_text_lossy(&bytes))
+        };
         // Search visible text for HTML notes, not markup: a hit on `class=`
         // or a tag name is not something the user can see in the preview.
         // CSV/TXT/JSON are plain text, so their values/keys are searchable.
@@ -1864,11 +1918,11 @@ fn search_notes_impl(
         let snippet = if let Some(pos) = body_lower.find(&q) {
             Some(snippet_window(&body_lower, &body, pos, q.len()))
         } else if title_lower.contains(&q) {
-            Some(format!("标题：{}", meta.title))
+            Some(format!("{title_label}{label_sep}{}", meta.title))
         } else if name_lower.contains(&q) {
-            Some(format!("文件名：{file_name}"))
+            Some(format!("{file_label}{label_sep}{file_name}"))
         } else if tags_lower.contains(&q) {
-            Some(format!("标签：{}", meta.tags.join(", ")))
+            Some(format!("{tag_label}{label_sep}{}", meta.tags.join(", ")))
         } else {
             None
         };
@@ -1889,6 +1943,7 @@ fn search_notes(
     query: String,
     folder: Option<String>,
     recursive: Option<bool>,
+    locale: Option<String>,
 ) -> Result<Vec<SearchHit>, String> {
     require_main(&window)?;
     search_notes_impl(
@@ -1896,6 +1951,7 @@ fn search_notes(
         &query,
         folder.as_deref(),
         recursive.unwrap_or(true),
+        locale.as_deref().unwrap_or(""),
     )
 }
 
@@ -1904,7 +1960,7 @@ fn search_notes(
 /// one the user picked in the OS dialog, so a compromised webview cannot use
 /// export as an arbitrary-file-write primitive.
 #[tauri::command]
-fn save_export(
+async fn save_export(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     default_name: String,
@@ -1913,24 +1969,31 @@ fn save_export(
     data: Vec<u8>,
 ) -> Result<Option<String>, String> {
     require_main(&window)?;
-    use tauri_plugin_dialog::DialogExt;
-    let default_name = sanitize_filename(default_name.trim());
-    let mut builder = app.dialog().file().set_file_name(&default_name);
-    if !extensions.is_empty() {
-        let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
-        let name = if filter_name.trim().is_empty() {
-            "文件"
-        } else {
-            filter_name.as_str()
+    // The dialog plugin documents blocking_save_file as forbidden on the main
+    // thread (on macOS the sheet can never be serviced). Run the dialog and
+    // the write on the blocking pool instead of the async/main thread.
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
+        use tauri_plugin_dialog::DialogExt;
+        let default_name = sanitize_filename(default_name.trim());
+        let mut builder = app.dialog().file().set_file_name(&default_name);
+        if !extensions.is_empty() {
+            let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
+            let name = if filter_name.trim().is_empty() {
+                "文件"
+            } else {
+                filter_name.as_str()
+            };
+            builder = builder.add_filter(name, &exts);
+        }
+        let Some(file_path) = builder.blocking_save_file() else {
+            return Ok(None);
         };
-        builder = builder.add_filter(name, &exts);
-    }
-    let Some(file_path) = builder.blocking_save_file() else {
-        return Ok(None);
-    };
-    let path = file_path.into_path().map_err(|e| e.to_string())?;
-    atomic_write(&path, &data)?;
-    Ok(Some(path.to_string_lossy().to_string()))
+        let path = file_path.into_path().map_err(|e| e.to_string())?;
+        atomic_write(&path, &data)?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---------------- Vector PDF export (platform print pipeline) ----------------
@@ -2181,7 +2244,10 @@ fn macos_print_webview(
         info.setBottomMargin(margins[1] * 72.0);
         info.setLeftMargin(margins[2] * 72.0);
         info.setRightMargin(margins[3] * 72.0);
-        info.setScalingFactor(options.scale);
+        // NSPrintInfo.scalingFactor is a PERCENTAGE (100 = 100%), unlike
+        // WebView2's ScaleFactor and GTK's scale*100 handling above/below.
+        // Passing the 1.0 fraction here laid every macOS PDF out at 1%.
+        info.setScalingFactor(options.scale * 100.0);
         info.setJobDisposition(NSPrintSaveJob);
         {
             let dict = info.dictionary();
@@ -2899,9 +2965,16 @@ fn fetch_image_bytes_impl(url_str: &str) -> Result<FetchedImage, String> {
 /// taint), which is why external pictures came out blank. The backend
 /// fetch refuses loopback/private targets and validates every redirect.
 #[tauri::command]
-fn fetch_image_bytes(window: tauri::WebviewWindow, url: String) -> Result<FetchedImage, String> {
+async fn fetch_image_bytes(
+    window: tauri::WebviewWindow,
+    url: String,
+) -> Result<FetchedImage, String> {
     require_main(&window)?;
-    fetch_image_bytes_impl(&url)
+    // reqwest blocking can wait up to 20 s per image; never do that on the
+    // main (UI) thread.
+    tauri::async_runtime::spawn_blocking(move || fetch_image_bytes_impl(&url))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ---------------- Vault image serving (`rmd` protocol) ----------------
@@ -3195,6 +3268,25 @@ fn set_notes_roots(
 /// images from the rmd origin into its canvas (foreign origin), so the
 /// export inlines them as data: URLs built from these bytes — the same
 /// proven path used for remote images.
+fn read_local_image_impl(
+    roots: &[PathBuf],
+    cache: &VaultFileCache,
+    path: &str,
+) -> Result<LocalImage, String> {
+    let file = resolve_vault_file_in_roots(roots, path)?;
+    let mime = mime_for_path(&file).to_string();
+    // This command is named "image" and the note-controlled asset inliner
+    // feeds it <img src>. Without a type check an HTML note could point it at
+    // any file under the vault (e.g. .env or an SSH key) and read the base64
+    // data URL back from the preview DOM. CSS/JS go through the rmd protocol
+    // in the trusted parent window instead.
+    if !mime.starts_with("image/") {
+        return Err("not an image file".into());
+    }
+    let bytes = cache.read(&file)?;
+    Ok(LocalImage { bytes, mime })
+}
+
 #[tauri::command]
 fn read_local_image(
     window: tauri::WebviewWindow,
@@ -3202,10 +3294,57 @@ fn read_local_image(
     path: String,
 ) -> Result<LocalImage, String> {
     require_main(&window)?;
-    let file = resolve_vault_file_in_roots(&state.roots(), &path)?;
+    read_local_image_impl(&state.roots(), &state.cache, &path)
+}
+
+/// Read a CSS/JS asset from the open vault for HTML-note asset inlining.
+/// Deliberately separate from `read_local_image` so an `<img src="secret.js">`
+/// cannot turn a script/stylesheet into a data URL that the note's own scripts
+/// can read. Only these two asset types are accepted.
+fn read_local_asset_impl(
+    roots: &[PathBuf],
+    cache: &VaultFileCache,
+    path: &str,
+) -> Result<LocalImage, String> {
+    let file = resolve_vault_file_in_roots(roots, path)?;
     let mime = mime_for_path(&file).to_string();
-    let bytes = state.cache.read(&file)?;
+    if !matches!(
+        mime.as_str(),
+        "text/css; charset=utf-8" | "text/javascript; charset=utf-8"
+    ) {
+        return Err("not a CSS/JS asset".into());
+    }
+    let bytes = cache.read(&file)?;
     Ok(LocalImage { bytes, mime })
+}
+
+#[tauri::command]
+fn read_local_asset(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, VaultState>,
+    path: String,
+) -> Result<LocalImage, String> {
+    require_main(&window)?;
+    read_local_asset_impl(&state.roots(), &state.cache, &path)
+}
+
+/// The sandboxed preview is a null origin; the hidden HTML render window
+/// uses the rmdhtml origin. Match the HOST exactly (an origin like
+/// http://rmdhtml.localhost.evil.com must not pass a prefix check).
+fn is_preview_origin(origin: &str) -> bool {
+    if origin == "null" {
+        return true;
+    }
+    let rest = if let Some(rest) = origin.strip_prefix("http://rmdhtml.localhost") {
+        Some(rest)
+    } else {
+        origin.strip_prefix("rmdhtml://localhost")
+    };
+    match rest {
+        Some("") => true,
+        Some(rest) => rest.starts_with(':'),
+        None => false,
+    }
 }
 
 /// The `rmd` protocol handler body (kept out of the closure so it can be
@@ -3243,11 +3382,7 @@ fn serve_rmd(
         .headers()
         .get("sec-fetch-dest")
         .and_then(|value| value.to_str().ok());
-    let preview_origin = origin.is_some_and(|o| {
-        o == "null"
-            || o.starts_with("http://rmdhtml.localhost")
-            || o.starts_with("rmdhtml://localhost")
-    });
+    let preview_origin = origin.is_some_and(is_preview_origin);
     // WebKit sends `Origin: null` for classic scripts/stylesheets in the
     // null-origin preview (WebView2 usually does not). Allow those subresource
     // destinations, plus fonts, while keeping fetch/XHR (empty destination)
@@ -3328,28 +3463,105 @@ struct HtmlRender {
 }
 
 /// Remove `<base>` tags so our vault-relative base is the one that wins.
+fn starts_ci(s: &str, pat: &str) -> bool {
+    s.len() >= pat.len() && s.as_bytes()[..pat.len()].eq_ignore_ascii_case(pat.as_bytes())
+}
+
+/// Byte ranges of <script>/<style> bodies and comments: markup-looking text
+/// inside them (a JS string containing "<base" or "<head>") is data, not a tag.
+fn raw_text_ranges(html: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut i = 0;
+    while i < html.len() {
+        let spec = if starts_ci(&html[i..], "<!--") {
+            Some(("-->", 4, false))
+        } else if starts_ci(&html[i..], "<script") {
+            Some(("</script", 7, true))
+        } else if starts_ci(&html[i..], "<style") {
+            Some(("</style", 6, true))
+        } else {
+            None
+        };
+        if let Some((close, name_len, needs_boundary)) = spec {
+            let after = i + name_len;
+            let boundary = !needs_boundary
+                || html[after..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+            if boundary {
+                // Scan forward once for a closer; an unclosed raw element
+                // consumes the rest of the document (so the scan is linear,
+                // never a rescan-per-character quadratic).
+                let mut search = 0usize;
+                let mut found = None;
+                while let Some(rel) = find_ascii_ci(&html[after..], close, search) {
+                    let end = after + rel + close.len();
+                    let valid_end = !needs_boundary
+                        || html[end..]
+                            .chars()
+                            .next()
+                            .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+                    if valid_end {
+                        found = Some(end);
+                        break;
+                    }
+                    search = rel + close.len();
+                }
+                match found {
+                    Some(end) => {
+                        ranges.push((i, end));
+                        i = end;
+                        continue;
+                    }
+                    None => {
+                        ranges.push((i, html.len()));
+                        break;
+                    }
+                }
+            }
+        }
+        i += html[i..].chars().next().map_or(1, char::len_utf8);
+    }
+    ranges
+}
+
 fn strip_base_tags(html: &str) -> String {
+    let ranges = raw_text_ranges(html);
     let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while let Some(pos) = find_ascii_ci(rest, "<base", 0) {
-        let after = pos + 5;
-        let boundary = rest[after..]
-            .chars()
-            .next()
-            .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
-        if !boundary {
-            // `<basefont>` / text such as `<base...` is not a base element.
-            out.push_str(&rest[..after]);
-            rest = &rest[after..];
+    let mut i = 0;
+    let mut range_idx = 0;
+    while i < html.len() {
+        while range_idx < ranges.len() && ranges[range_idx].1 <= i {
+            range_idx += 1;
+        }
+        if let Some(&(start, end)) = ranges.get(range_idx)
+            && start <= i
+            && i < end
+        {
+            out.push_str(&html[i..end]);
+            i = end;
             continue;
         }
-        out.push_str(&rest[..pos]);
-        let Some(end) = find_tag_end(rest, pos + 1) else {
-            return out + rest;
-        };
-        rest = &rest[end + 1..];
+        if starts_ci(&html[i..], "<base") {
+            let after = i + 5;
+            let boundary = html[after..]
+                .chars()
+                .next()
+                .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+            if boundary {
+                if let Some(end) = find_tag_end(html, i + 1) {
+                    i = end + 1;
+                    continue;
+                }
+                break;
+            }
+        }
+        let ch = html[i..].chars().next().unwrap_or('�');
+        out.push(ch);
+        i += ch.len_utf8();
     }
-    out.push_str(rest);
+    out.push_str(&html[i..]);
     out
 }
 
@@ -3525,8 +3737,13 @@ fn set_html_preview(
 }
 
 fn insert_after_first_tag(html: &str, tag: &str, injection: &str) -> Option<String> {
+    let raw = raw_text_ranges(html);
     let mut from = 0usize;
     while let Some(pos) = find_ascii_ci(html, tag, from) {
+        if let Some(&(_, end)) = raw.iter().find(|&&(start, end)| start <= pos && pos < end) {
+            from = end;
+            continue;
+        }
         let after = pos + tag.len();
         let boundary = html[after..]
             .chars()
@@ -3664,9 +3881,16 @@ fn build_webview_document(html: &str, parent: &Path, token: &str, mode: &str) ->
     if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = '#ffffff';
     return {{ w: w, h: h, bg: bg }};
   }}
+  function fitScale(w, h, maxScale, target) {{
+    // The Rust side validates decoded PNGs: <= 16000px wide and <= 128 MP.
+    // Clamp here too, otherwise a wide long page is captured and then rejected.
+    var scale = Math.min(maxScale, target / h);
+    scale = Math.min(scale, 16000 / w, Math.sqrt(120000000 / (w * h)));
+    return Math.max(0.5, scale);
+  }}
   function single(size) {{
     var maxScale = '{mode}' === 'pdf' ? (size.h <= 5000 ? 3 : 2) : 3;
-    var scale = Math.max(1, Math.min(maxScale, 30000 / size.h));
+    var scale = fitScale(size.w, size.h, maxScale, 30000);
     html2canvas(document.body, {{
       scale: scale, useCORS: true, allowTaint: false, logging: false,
       backgroundColor: size.bg, width: size.w, height: size.h,
@@ -3687,7 +3911,7 @@ fn build_webview_document(html: &str, parent: &Path, token: &str, mode: &str) ->
     // slices and let Rust stitch them into one PNG. Scale targets ~48k device
     // px of height, matching the old external-browser quality.
     var maxScale = '{mode}' === 'pdf' ? (size.h <= 5000 ? 3 : 2) : 3;
-    var scale = Math.max(1, Math.min(maxScale, 48000 / size.h));
+    var scale = fitScale(size.w, size.h, maxScale, 48000);
     var segCss = Math.max(2000, Math.floor(16000 / scale));
     var parts = [];
     function next(offset) {{
@@ -4337,6 +4561,7 @@ fn main() {
             set_notes_root,
             set_notes_roots,
             read_local_image,
+            read_local_asset,
             render_html_note,
             html_preview_finish,
             set_html_preview,
@@ -4860,10 +5085,10 @@ plain
             "<html><head><title>Page</title><style>.secret{}</style></head><body><p>Find me here</p></body></html>",
         )
         .unwrap();
-        let hits = search_notes_impl(&dir, "find me", None, true).unwrap();
+        let hits = search_notes_impl(&dir, "find me", None, true, "zh").unwrap();
         assert_eq!(hits.len(), 1);
         assert!(hits[0].snippet.contains("Find me here"));
-        let none = search_notes_impl(&dir, "secret", None, true).unwrap();
+        let none = search_notes_impl(&dir, "secret", None, true, "zh").unwrap();
         assert!(none.is_empty());
         cleanup(&dir);
     }
@@ -4887,7 +5112,7 @@ plain
     fn non_utf8_note_is_searchable_by_filename() {
         let dir = test_dir("non_utf8_search");
         fs::write(dir.join("legacy-needle.md"), [0xff, 0xfe, b'x']).unwrap();
-        let hits = search_notes_impl(&dir, "needle", None, true).unwrap();
+        let hits = search_notes_impl(&dir, "needle", None, true, "zh").unwrap();
         assert_eq!(
             hits.len(),
             1,
@@ -5372,6 +5597,79 @@ Real text here
     }
 
     #[test]
+    fn read_local_image_rejects_non_image_files() {
+        let dir = test_dir("local_image_type");
+        fs::write(dir.join("pic.png"), b"png").unwrap();
+        fs::write(dir.join("secret.txt"), b"secret").unwrap();
+        fs::write(dir.join("style.css"), b"body{}").unwrap();
+        let roots = vec![dir.clone()];
+        let fwd = dir.to_string_lossy().replace('\\', "/");
+        let cache = VaultFileCache::new();
+        let image = read_local_image_impl(&roots, &cache, &format!("{fwd}/pic.png")).unwrap();
+        assert_eq!(image.mime, "image/png");
+        assert_eq!(image.bytes, b"png");
+        // A note that points <img src> at a text/secret file must not get its
+        // bytes back as a data URL inside the preview document.
+        assert_eq!(
+            read_local_image_impl(&roots, &cache, &format!("{fwd}/secret.txt")).unwrap_err(),
+            "not an image file"
+        );
+        // CSS/JS go through their own narrow command; images are refused there.
+        assert_eq!(
+            read_local_asset_impl(&roots, &cache, &format!("{fwd}/style.css"))
+                .unwrap()
+                .mime,
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(
+            read_local_asset_impl(&roots, &cache, &format!("{fwd}/pic.png")).unwrap_err(),
+            "not a CSS/JS asset"
+        );
+        assert_eq!(
+            read_local_asset_impl(&roots, &cache, &format!("{fwd}/secret.txt")).unwrap_err(),
+            "not a CSS/JS asset"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn oversized_notes_are_listed_but_not_loaded_or_saved() {
+        let dir = test_dir("note_size_cap");
+        let big = dir.join("big.md");
+        let file = fs::File::create(&big).unwrap();
+        file.set_len(MAX_NOTE_BYTES + 1).unwrap();
+        drop(file);
+        let meta = read_meta(Path::new("big.md"), &big).unwrap();
+        assert!(
+            meta.hash.is_empty(),
+            "no hash is computed for an unloaded file"
+        );
+        assert_eq!(meta.snippet, "> 64 MB");
+        assert!(
+            read_note_impl(&dir, "big.md")
+                .unwrap_err()
+                .contains("too large")
+        );
+        assert!(
+            save_note_impl(&dir, "big.md", &[], "x", None, None, true)
+                .unwrap_err()
+                .contains("too large")
+        );
+        // Title/name search still works without reading the body.
+        fs::write(
+            dir.join("small.md"),
+            "# Small
+needle
+",
+        )
+        .unwrap();
+        let hits = search_notes_impl(&dir, "big", None, true, "en").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].snippet, "Title: big");
+        cleanup(&dir);
+    }
+
+    #[test]
     fn resolve_vault_file_in_roots_serves_any_open_vault() {
         let a = test_dir("vault_multi_a");
         let b = test_dir("vault_multi_b");
@@ -5484,14 +5782,14 @@ plain body
 ",
         )
         .unwrap();
-        let by_title = search_notes_impl(&dir, "alpha", None, true).unwrap();
+        let by_title = search_notes_impl(&dir, "alpha", None, true, "zh").unwrap();
         assert_eq!(by_title.len(), 1);
         assert!(
             by_title[0].snippet.contains("标题"),
             "unexpected snippet: {}",
             by_title[0].snippet
         );
-        let by_tag = search_notes_impl(&dir, "secret", None, true).unwrap();
+        let by_tag = search_notes_impl(&dir, "secret", None, true, "zh").unwrap();
         assert_eq!(by_tag.len(), 1);
         assert!(by_tag[0].snippet.contains("标签"));
         // A heading hides the filename fallback title; the filename itself
@@ -5504,10 +5802,10 @@ plain
 ",
         )
         .unwrap();
-        let by_name = search_notes_impl(&dir, "beta", None, true).unwrap();
+        let by_name = search_notes_impl(&dir, "beta", None, true, "zh").unwrap();
         assert_eq!(by_name.len(), 1);
         assert!(by_name[0].snippet.contains("文件名"));
-        let none = search_notes_impl(&dir, "missing", None, true).unwrap();
+        let none = search_notes_impl(&dir, "missing", None, true, "zh").unwrap();
         assert!(none.is_empty());
         cleanup(&dir);
     }
@@ -5520,18 +5818,18 @@ plain
         fs::write(dir.join("sub/child.md"), "# Child\nneedle in child\n").unwrap();
         fs::write(dir.join("sub/deep/grand.md"), "# Grand\nneedle in grand\n").unwrap();
 
-        let root_only = search_notes_impl(&dir, "needle", None, false).unwrap();
+        let root_only = search_notes_impl(&dir, "needle", None, false, "zh").unwrap();
         assert_eq!(root_only.len(), 1);
         assert_eq!(root_only[0].meta.path, "root.md");
 
-        let all = search_notes_impl(&dir, "needle", None, true).unwrap();
+        let all = search_notes_impl(&dir, "needle", None, true, "zh").unwrap();
         assert_eq!(all.len(), 3);
 
-        let sub_only = search_notes_impl(&dir, "needle", Some("sub"), false).unwrap();
+        let sub_only = search_notes_impl(&dir, "needle", Some("sub"), false, "zh").unwrap();
         assert_eq!(sub_only.len(), 1);
         assert_eq!(sub_only[0].meta.path, "sub/child.md");
 
-        let sub_recursive = search_notes_impl(&dir, "needle", Some("sub"), true).unwrap();
+        let sub_recursive = search_notes_impl(&dir, "needle", Some("sub"), true, "zh").unwrap();
         assert_eq!(sub_recursive.len(), 2);
         assert!(
             sub_recursive
@@ -5540,7 +5838,7 @@ plain
         );
 
         assert!(
-            search_notes_impl(&dir, "needle", Some("missing"), false).is_err(),
+            search_notes_impl(&dir, "needle", Some("missing"), false, "zh").is_err(),
             "a missing scope folder must not be searched"
         );
         cleanup(&dir);
@@ -5609,6 +5907,28 @@ plain
         );
         assert!(!cleaned.contains("<base href"));
         assert!(cleaned.contains("<basefont>text"));
+        // Markup-looking text inside <script>/comments is data, not a tag.
+        let script_base =
+            strip_base_tags("<script>const s = '<base href=x>';</script><base href=y>");
+        assert!(script_base.contains("'<base href=x>'"), "got {script_base}");
+        assert!(!script_base.contains("<base href=y>"));
+        // A lookalike closing tag inside JS must not end the raw range.
+        let lookalike = strip_base_tags("<script>var s = '</scripture><base href=x>';</script>");
+        assert!(
+            lookalike.contains("</scripture><base href=x>"),
+            "lookalike close must be data: {lookalike}"
+        );
+        let script_head = insert_after_first_tag(
+            "<script>var h = '<head>';</script><html lang=\"en\">",
+            "<html",
+            "<script>1</script>",
+        )
+        .unwrap();
+        assert!(
+            script_head.find("<script>1</script>").unwrap()
+                > script_head.find("<html lang").unwrap(),
+            "injection must not land inside the script: {script_head}"
+        );
         let header = insert_after_head("<html><header>x</header></html>", "<script>1</script>");
         assert!(
             header.find("<script>1</script>").unwrap() > header.find("<html>").unwrap(),
@@ -5733,6 +6053,32 @@ plain
                 &request(Some("http://rmdhtml.localhost/p-x"))
             )
             .status(),
+            403
+        );
+        // The hidden render window's real origin may load a style/script
+        // subresource from the vault.
+        let hidden_style = tauri::http::Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("origin", "http://rmdhtml.localhost")
+            .header("sec-fetch-dest", "style")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(std::slice::from_ref(&dir), &cache, &hidden_style).status(),
+            200
+        );
+        // A lookalike host must not pass a prefix check when it asks for a
+        // script subresource.
+        let lookalike = tauri::http::Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("origin", "http://rmdhtml.localhost.evil.example")
+            .header("sec-fetch-dest", "script")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(
+            serve_rmd(std::slice::from_ref(&dir), &cache, &lookalike).status(),
             403
         );
         assert_eq!(

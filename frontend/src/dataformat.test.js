@@ -207,3 +207,31 @@ test('TXT header detection ignores stock data but recognizes a text header', () 
     false
   );
 });
+
+test('delimiter sniffing prefers the structural separator over embedded text', () => {
+  // A 3-column TSV whose text fields contain commas: the comma candidate also
+  // yields a consistent field count, and used to win the "fewer fields"
+  // tie-break, leaving tabs inside cells.
+  const tsv = 'name,en\tnote\tqty\nalpha\tred, green\t2\nbeta\tx, y\t3\n';
+  assert.equal(detectDelimiter(tsv), '\t');
+  assert.equal(parseDelimited(tsv, detectDelimiter(tsv)).rows[0].length, 3);
+
+  // Quoted semicolon fields containing commas: comma parsing leaves stray
+  // quotes behind, which is now evidence against it.
+  const semicolon = '"x,y";"1,2"\n"a,b";"3,4"\n';
+  assert.equal(detectDelimiter(semicolon), ';');
+  assert.equal(parseDelimited(semicolon, detectDelimiter(semicolon)).rows[0].length, 2);
+
+  // Decimal commas with a semicolon separator and no header.
+  const decimal = 'a;b\n1,5;2,5\n2,5;3,5\n';
+  assert.equal(detectDelimiter(decimal), ';');
+  assert.equal(parseDelimited(decimal, detectDelimiter(decimal)).rows[0].length, 2);
+});
+
+test('a tab inside a comma CSV cell does not flip the delimiter', () => {
+  // Both comma and tab readings are 2x2 here; the tab-in-cell evidence must
+  // only count when the tab reading has MORE columns (a real TSV).
+  assert.equal(detectDelimiter('a,hello\tworld\nb,foo\tbar\n'), ',');
+  assert.equal(detectDelimiter('name,desc\na,hello\tworld\nb,foo\tbar\n'), ',');
+  assert.equal(detectDelimiter('a\tb\nx,y\tz\n'), '\t');
+});

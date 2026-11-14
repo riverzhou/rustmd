@@ -21,7 +21,12 @@ if (-not (Test-Path $exe)) {
   throw "missing $exe; run 'npx tauri build --no-bundle' first"
 }
 $productVersion = (Get-Item $exe).VersionInfo.ProductVersion
-if ($productVersion -notlike "$version*") {
+# Exact match, not a prefix: "1.10.30" must not sign an intended 1.10.3 release.
+# ProductVersion may carry a trailing space or "+<sha>" suffix.
+$productBase = $productVersion.Trim()
+if ($productBase.Contains(' ')) { $productBase = $productBase.Split(' ')[0] }
+if ($productBase.Contains('+')) { $productBase = $productBase.Split('+')[0] }
+if ($productBase -ne $version) {
   throw "target/release/rustmd.exe reports '$productVersion', expected '$version'; run 'npx tauri build --no-bundle' again"
 }
 

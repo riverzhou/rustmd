@@ -461,24 +461,65 @@ export async function runSelfTest({ getState }) {
           await renderPreview(body, box, 'html');
           await progress('note:html-preview', meta.path);
           const frame = box.querySelector('iframe.html-preview-frame');
+          // The preview/export inliner must actually remove the relative
+          // CSS/JS/image references (a release-only CSP/command regression
+          // would otherwise still pass the iframe checks below).
+          const inlinedDoc = await inlineLocalAssetsInHtml(body, {
+            root: SELFTEST_EXAMPLES_DIR,
+            notePath: meta.path,
+          });
           entry.render = {
             ms: Math.round(performance.now() - t0),
             iframe: !!frame,
             ready: frame?.dataset.ready === '1',
             localScript: frame?.dataset.localScript || '',
             inlineScript: frame?.dataset.scriptRan || '',
+            bodyClass: frame?.dataset.bodyClass || '',
+            htmlLang: frame?.dataset.htmlLang || '',
+            headDefer: frame?.dataset.headDefer || '',
+            assetsInlined:
+              !/(?:href|src)=["']assets\//i.test(inlinedDoc) &&
+              inlinedDoc.includes('data:image/') &&
+              /headDefer/.test(inlinedDoc),
           };
           if (!frame || frame.dataset.ready !== '1') {
             report.errors.push(
               `${meta.path}: HTML preview did not become ready`
             );
-          }          if (
-            meta.path.endsWith('html-page-demo.html') &&
-            entry.render.localScript !== 'yes'
-          ) {
-            report.errors.push(
-              `${meta.path}: local relative JS did not run in the preview`
-            );
+          }
+          if (meta.path.endsWith('html-page-demo.html')) {
+            if (entry.render.localScript !== 'yes') {
+              report.errors.push(
+                `${meta.path}: local relative JS did not run in the preview`
+              );
+            }
+            if (entry.render.inlineScript !== 'yes-inline') {
+              report.errors.push(
+                `${meta.path}: inline JS did not run after the local script`
+              );
+            }
+            // Asset inlining must keep the document wrappers and defer the
+            // head script until <body> exists (regression: template flatten).
+            if (entry.render.bodyClass !== 'html-demo') {
+              report.errors.push(
+                `${meta.path}: <body class> was lost during asset inlining`
+              );
+            }
+            if (entry.render.htmlLang !== 'zh-CN') {
+              report.errors.push(
+                `${meta.path}: <html lang> was lost during asset inlining`
+              );
+            }
+            if (entry.render.headDefer !== 'body-ok') {
+              report.errors.push(
+                `${meta.path}: deferred head script ran before <body> existed`
+              );
+            }
+            if (entry.render.assetsInlined !== true) {
+              report.errors.push(
+                `${meta.path}: local CSS/JS/images were not inlined`
+              );
+            }
           }
         } catch (e) {
           report.errors.push(`${meta.path}: HTML preview failed: ${e}`);
@@ -544,9 +585,10 @@ export async function runSelfTest({ getState }) {
           }
           entry.png.localImages = refs.length;
           entry.png.inlinedImages = (exportBody.match(/data:image\//g) || []).length;
-          if (refs.length && entry.png.inlinedImages === 0) {
+          if (refs.length && entry.png.inlinedImages < refs.length) {
             report.errors.push(
-              `${meta.path}: HTML local images were not inlined for export`
+              `${meta.path}: HTML local images were not inlined for export ` +
+                `(${entry.png.inlinedImages}/${refs.length})`
             );
           }
           await api.selftestWrite(`${meta.path}.png`, shot.png);
@@ -986,6 +1028,19 @@ export async function runSelfTest({ getState }) {
       report.errors.push('HTML export did not normalize a legacy charset to UTF-8');
     }
 
+    // 5b) Standalone Markdown HTML export must carry highlight.js colours
+    //     (the app gets them from the /hljs/*.css link, not from inline CSS).
+    const codeExport = await buildExportHtml(
+      'Code',
+      '```js\nconst answer = 42;\n```\n',
+      'light',
+      'markdown'
+    );
+    report.hljsExport = { ok: /.hljs/.test(codeExport) };
+    if (!report.hljsExport.ok) {
+      report.errors.push('HTML export is missing highlight.js colours');
+    }
+
     // 6) Inline-SVG PNG regression (viewBox-only image must not be cropped
     //    by html2canvas's drawImage source rectangle).
     report.inlineSvg = await verifyInlineSvgExport();
@@ -999,7 +1054,7 @@ export async function runSelfTest({ getState }) {
     //    localize which stage (blob decode / drawImage / html2canvas)
     //    drops the image from the export.
     const probeUrl = report.entries
-      .flatMap((e) => e.render.remoteFetch || [])
+      .flatMap((e) => e.render?.remoteFetch || [])
       .filter((f) => f.ok)
       .map((f) => f.url)[0];
     if (probeUrl) {
@@ -1015,6 +1070,25 @@ export async function runSelfTest({ getState }) {
     // AND local (vault) images — a missing one is a failure, not just a
     // data point.
     for (const e of report.entries) {
+      // Rendered-preview quality gates: these values were recorded before but
+      // never asserted, so a note with raw $...$ / broken Mermaid / MathJax
+      // errors or a blank PNG could still report green.
+      if (e.render) {
+        if ((e.render.residualRawMath || []).length) {
+          report.errors.push(
+            `${e.path}: raw math delimiters remained in the preview`
+          );
+        }
+        if (e.render.mermaidErrors > 0) {
+          report.errors.push(`${e.path}: Mermaid diagram failed to render`);
+        }
+        if (e.render.mjxErrors > 0) {
+          report.errors.push(`${e.path}: MathJax formula failed to render`);
+        }
+      }
+      if (e.png?.pixels && !(e.png.pixels.nonWhitePixels > 100)) {
+        report.errors.push(`${e.path}: exported PNG is essentially blank`);
+      }
       for (const p of e.png.imagePresence || []) {
         if (!p.present) {
           report.errors.push(

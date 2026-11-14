@@ -140,22 +140,34 @@ function languageExtension(kind) {
 export function createEditor(holder, { onChange }) {
   const languageCompartment = new Compartment();
   const wrapCompartment = new Compartment();
-  const state = EditorState.create({
-    doc: '',
-    extensions: [
-      basicSetup,
-      languageCompartment.of(languageExtension('markdown')),
-      wrapCompartment.of(EditorView.lineWrapping),
-      theme, // already an extension array from EditorView.theme() — don't re-wrap
-      syntaxHighlighting(highlight),
-      EditorView.updateListener.of((u) => {
-        if (u.docChanged) onChange();
-      }),
-    ],
-  });
+  // One factory for every note state: loading a note builds a FRESH state so
+  // CodeMirror's undo history never spans two notes (Ctrl+Z after switching
+  // notes must not restore the previous note's text into the new file).
+  const createState = (doc, kind, wrap, selection) =>
+    EditorState.create({
+      doc,
+      selection,
+      extensions: [
+        basicSetup,
+        languageCompartment.of(languageExtension(kind)),
+        wrapCompartment.of(wrap ? EditorView.lineWrapping : []),
+        theme, // already an extension array from EditorView.theme() — don't re-wrap
+        syntaxHighlighting(highlight),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) onChange();
+        }),
+      ],
+    });
+  const state = createState('', 'markdown', true);
   const view = new EditorView({ state, parent: holder });
   view.noteKind = 'markdown';
   view.wrapEnabled = true;
+  /** Replace the document with a fresh history (used when opening a note). */
+  view.loadDocument = (doc, kind, { selection } = {}) => {
+    const nextKind = kind || view.noteKind;
+    view.noteKind = nextKind;
+    view.setState(createState(doc, nextKind, view.wrapEnabled, selection));
+  };
   /** Toggle soft wrapping without touching the document/undo history. */
   view.setLineWrapping = (enabled) => {
     if (view.wrapEnabled === enabled) return;

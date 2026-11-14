@@ -100,8 +100,8 @@ export const api = {
   deleteNote: (dir, path) => invoke('delete_note', { dir, path }),
   moveNote: (dir, path, destFolder) =>
     invoke('move_note', { dir, path, destFolder }),
-  searchNotes: (dir, query, folder = null, recursive = true) =>
-    invoke('search_notes', { dir, query, folder, recursive }),
+  searchNotes: (dir, query, folder = null, recursive = true, locale = '') =>
+    invoke('search_notes', { dir, query, folder, recursive, locale }),
   /// Open the native save dialog in Rust and write the bytes to the path the
   /// user picked. The frontend never supplies a destination path, so a
   /// compromised webview cannot use export as an arbitrary-file-write API.
@@ -137,6 +137,11 @@ export const api = {
   /// as the `rmd` protocol). `path` is an absolute path.
   readLocalImage: async (path) =>
     normalizeImage(await invoke('read_local_image', { path })),
+  /// Read a CSS/JS asset for HTML-note inlining. Separate from
+  /// readLocalImage so note scripts can never turn arbitrary vault files into
+  /// readable data URLs.
+  readLocalAsset: async (path) =>
+    normalizeImage(await invoke('read_local_asset', { path })),
   async setFullscreen(enabled) {
     if (!isTauri) {
       if (enabled) {
@@ -148,6 +153,14 @@ export const api = {
     }
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow().setFullscreen(Boolean(enabled));
+  },
+  /// Ask the platform to run `handler` before the window closes. Returning
+  /// without calling preventDefault lets the close proceed; the handler may be
+  /// async (Tauri awaits it). Browser mode has no window to close.
+  async onCloseRequested(handler) {
+    if (!isTauri) return () => {};
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    return getCurrentWindow().onCloseRequested(handler);
   },
   async isFullscreen() {
     if (!isTauri) return Boolean(document.fullscreenElement);
@@ -550,8 +563,9 @@ function mockNoteInScope(path, scope, recursive) {
     : folder === selected;
 }
 
-function mockSearch(notes, query, scope = null, recursive = true) {
+function mockSearch(notes, query, scope = null, recursive = true, locale = '') {
   const q = String(query || '').trim().toLowerCase();
+  const zh = String(locale || '').toLowerCase().startsWith('zh');
   if (!q) return [];
   const hits = [];
   for (const [path, n] of notes) {
@@ -576,11 +590,13 @@ function mockSearch(notes, query, scope = null, recursive = true) {
         .replace(/\n/g, ' ');
       snippet = (idx > 0 ? '…' : '') + window.trim();
     } else if (titleLower.includes(q)) {
-      snippet = `标题：${meta.title}`;
+      snippet = zh ? `标题：${meta.title}` : `Title: ${meta.title}`;
     } else if (nameLower.includes(q)) {
-      snippet = `文件名：${fileStem}`;
+      snippet = zh ? `文件名：${fileStem}` : `File: ${fileStem}`;
     } else if (tagsLower.includes(q)) {
-      snippet = `标签：${meta.tags.join(', ')}`;
+      snippet = zh
+        ? `标签：${meta.tags.join(', ')}`
+        : `Tag: ${meta.tags.join(', ')}`;
     }
     if (snippet) hits.push({ meta, snippet });
     if (hits.length >= 500) break;
@@ -764,7 +780,13 @@ function mockInvoke(command, args) {
           }
           case 'search_notes':
             return resolve(
-              mockSearch(notes, args.query, args.folder, args.recursive)
+              mockSearch(
+                notes,
+                args.query,
+                args.folder,
+                args.recursive,
+                args.locale
+              )
             );
           case 'save_export':
             // Browser mock: no native dialog, caller falls back to download.
@@ -774,7 +796,23 @@ function mockInvoke(command, args) {
             throw new Error('浏览器模拟模式不支持矢量 PDF 导出');
           case 'fetch_image_bytes': {
             // Best-effort real fetch in browser dev (works for hosts that
-            // send CORS headers); the Tauri backend has no such restriction.
+            // send CORS headers), with the same http(s)-only / obvious
+            // private-host rejection as Rust's SSRF guard.
+            const target = new URL(args.url);
+            if (!/^https?:$/.test(target.protocol)) {
+              throw new Error('only http(s) image URLs are allowed');
+            }
+            const host = target.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+            if (
+              host === 'localhost' ||
+              host === '::1' ||
+              /^127\./.test(host) ||
+              /^10\./.test(host) ||
+              /^192\.168\./.test(host) ||
+              /^169\.254\./.test(host)
+            ) {
+              throw new Error('private/local image hosts are not allowed');
+            }
             fetch(args.url)
               .then((response) => {
                 if (!response.ok) {
@@ -793,11 +831,16 @@ function mockInvoke(command, args) {
               .catch((e) => reject(e.message || String(e)));
             return;
           }
+          case 'render_html_note':
+            throw new Error(
+              'browser mock cannot capture HTML notes; use the Tauri dev window'
+            );
           case 'set_notes_root':
           case 'set_notes_roots':
             return resolve(null);
           case 'read_local_image':
-            throw new Error('read_local_image 在浏览器模拟模式下不可用');
+          case 'read_local_asset':
+            throw new Error('浏览器模拟模式不能读取笔记库资源');
           case 'selftest_config':
           case 'selftest_write':
           case 'selftest_finish':

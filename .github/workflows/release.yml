@@ -122,11 +122,19 @@ jobs:
 
       - name: Verify the executable signature
         shell: powershell
+        env:
+          RUSTMD_WIN_CERT_BASE64: ${{ secrets.RUSTMD_WIN_CERT_BASE64 }}
         run: |
           $ErrorActionPreference = 'Stop'
           $sig = Get-AuthenticodeSignature 'target/release/rustmd.exe'
           Write-Host "signature status: $($sig.Status)"
-          if ($sig.Status -in @('HashMismatch', 'NotSigned')) {
+          if ($env:RUSTMD_WIN_CERT_BASE64) {
+            # A real Authenticode build must have a fully valid signature,
+            # not merely "something other than HashMismatch".
+            if ($sig.Status -ne 'Valid') {
+              throw "real certificate signed rustmd.exe with status '$($sig.Status)', expected Valid"
+            }
+          } elseif ($sig.Status -in @('HashMismatch', 'NotSigned')) {
             throw "rustmd.exe is not signed correctly ($($sig.Status))"
           }
 
@@ -141,11 +149,27 @@ jobs:
       - name: Stage flat release assets
         shell: powershell
         run: |
+          # A missing zip must fail the job: Copy-Item with an unmatched glob
+          # succeeds silently, and the .cer alone would keep artifacts/ non-empty
+          # so upload-artifact's if-no-files-found=error would never fire.
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          Copy-Item release/*/*.zip artifacts/
-          Copy-Item release/*/*.zip.sha256 artifacts/
-          $cer = Get-ChildItem release -Recurse -Filter *.cer -ErrorAction SilentlyContinue
-          if ($cer) { $cer | Copy-Item -Destination artifacts/ }
+          $zip = @(Get-ChildItem release -Recurse -Filter '*-win-x64-portable.zip' -File)
+          if ($zip.Count -ne 1) {
+            throw "expected exactly one portable zip under release/, found $($zip.Count)"
+          }
+          $zipPath = $zip[0].FullName
+          if (-not (Test-Path "$zipPath.sha256")) {
+            throw "missing checksum file $zipPath.sha256"
+          }
+          Copy-Item $zipPath artifacts/
+          Copy-Item "$zipPath.sha256" artifacts/
+          $cer = @(Get-ChildItem release -Recurse -Filter '*.cer' -File)
+          if ($cer.Count -ne 1) {
+            throw "expected the self-signed certificate next to the release, found $($cer.Count)"
+          }
+          $cer | Copy-Item -Destination artifacts/
+          Get-ChildItem artifacts | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v7
         with:
@@ -311,17 +335,38 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - name: Include the repository LICENSE as a release asset
+        run: cp LICENSE assets/LICENSE
+
+      - name: Assert every platform asset is present
+        run: |
+          set -euo pipefail
+          for pattern in \
+            '*-win-x64-portable.zip' \
+            '*-win-x64-portable.zip.sha256' \
+            '*-macos-arm64.dmg' \
+            '*-macos-arm64.dmg.sha256' \
+            '*_amd64.deb' \
+            '*_amd64.AppImage' \
+            'SHA256SUMS-linux.txt' \
+            'LICENSE'; do
+            if ! compgen -G "assets/$pattern" > /dev/null; then
+              echo "missing release asset: $pattern"
+              ls -la assets
+              exit 1
+            fi
+          done
+
       - name: Combined checksums
         run: |
           set -euo pipefail
           cd assets
+          # LICENSE is included; the per-platform .sha256 files and the
+          # combined file itself are excluded (self-referential).
           find . -maxdepth 1 -type f ! -name '*.sha256' ! -name 'SHA256SUMS*' -print0 \
             | sort -z \
             | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
-
-      - name: Include the repository LICENSE as a release asset
-        run: cp LICENSE assets/LICENSE
 
       - name: Render release notes
         run: node scripts/release-notes.mjs "$RELEASE_TAG" > .release-notes.md
@@ -330,7 +375,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: rustmd ${{ env.RELEASE_TAG }}
+          name: "rustmd ${{ env.RELEASE_TAG }} — local-first Markdown, HTML & data notes"
           body_path: .release-notes.md
           files: assets/*
           fail_on_unmatched_files: true

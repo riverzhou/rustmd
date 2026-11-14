@@ -1,10 +1,115 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-13（v1.10.3 全量复核；v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.3（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
-**审计方式**：全量阅读 Rust/前端/脚本/配置/文档；独立子代理审计 + 针对最新工作区的复核；多轮静态检查与运行时回归；针对 HTML 渲染、数据视图、编码、可调布局、导出、路径、IPC、Origin、CSP 做边界测试；Windows 本机真实 WebView2 自测（10 篇示例、HTML/PNG/PDF）+ 真实 GBK 股票信号文件 + 浏览器 mock/拖拽/截图回归；macOS arm64 CI 构建；GitHub Actions 三端构建与 Linux Xvfb E2E（发布时验证）。
+**审计日期**：2026-11-14（v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.4（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：四个独立子代理分别全量审计 Rust 后端、前端核心（main/api/preview/export/editor/selftest）、纯模块+CSS 与脚本/CI/配置，并由主代理复核与修复；随后对修复做第二轮独立复查与全量回归；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）+ 发布包构建/签名/zip；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.3 数据 HTML 导出全宽（当前版本）
+## v1.10.4 全量审计与回归（当前版本）
+
+本轮从四个方向全量审计（Rust 后端、前端核心、纯模块/CSS、构建/发布/CI），确认并修复
+**2 个阻断级、9 个高优先级**以及一批中低风险问题；修复后再次独立复查，未发现新的阻断/
+高危缺陷。功能与文件格式未变，属于稳定性/安全补丁版。
+
+### 阻断级修复
+
+- **macOS 矢量 PDF 只有 1% 大小**：`NSPrintInfo.scalingFactor` 需要百分比（100 = 100%），
+  之前传入 1.0 被解释为 1%，所有 macOS Markdown/HTML PDF 都缩成角落一小块。改为
+  `options.scale * 100.0`（Windows WebView2 用比例、GTK 乘 100 的既有写法保持不变）。
+- **`read_local_image` 可被 HTML 笔记用于读取任意库内文件**：命令只做路径包含检查，
+  但会把字节交给“受信任的”资源内联器并写入笔记文档，恶意笔记可用
+  `<img src=".env">` 把自己的脚本能读到的 data URL 发到远端。现在只接受图片扩展名；
+  CSS/JS 内联限定 `.css`/`.js`/`.mjs` 并经 `rmd` 从应用窗口读取。
+
+### 高优先级修复
+
+- **切换笔记后撤销会覆盖新笔记**：CodeMirror 状态被复用，Ctrl+Z 可恢复上一篇文本，
+  500ms 后自动保存进当前文件。打开笔记现在重建 `EditorState`（每篇独立历史）。
+- **HTML 资源内联破坏文档结构**：`<template>` 往返丢失 `<html>/<head>/<body>` 及其属性，
+  并把 `defer` 头部脚本变成过早执行的内联脚本。改用 `DOMParser` 保留文档，
+  deferred/async 脚本内联后移到 body 末尾。
+- **旧 Markdown 渲染污染新预览**：MathJax/Mermaid 异步结束后无代数检查，会 sanitize
+  掉刚挂载的 HTML iframe。加入 `htmlRenderSeq` 收尾守卫。
+- **栅格 PDF 短页转置/裁切**：jsPDF 在方向与页面框不符时会交换 `format`；现在每页
+  按自身宽高选择方向，分页数学抽到纯函数 `exportgeom.js` 并加单测。
+- **深色主题 PDF 可能浅字白纸**：macOS/Linux 打印路径不保证绘制页面背景；打印时强制
+  浅色变量 + `print-color-adjust: exact`。
+- **栅格导出可能超过画布面积上限**：原先只限制宽/高，5400×9000 的宽表在 3× 下为
+  437 MP，超过 WebView 上限；现在同时约束总像素面积（常规仍 0.25–3×）。
+- **保存对话框/远程图片阻塞主线程**：`save_export` 使用 dialog 插件明确禁止主线程的
+  阻塞 API；`fetch_image_bytes` 每次最多等待 20 秒。两者改为 async + 阻塞线程池。
+- **超大笔记无上限**：打开库会整文件读取每篇笔记；现在单篇 64 MB 上限，超限仍列出
+  文件名但不加载正文，搜索跳过正文。
+- **CSV/TSV 分隔符误判**：文本字段里每行都有逗号时，逗号候选凭“字段更少”赢过真正的
+  制表符。现在把解析后残留的引号/制表符作为错误证据，并补 3 组回归用例。
+
+### 其他修复（择要）
+
+- 关闭窗口注册 `onCloseRequested`，先 flush 保存再关闭；删除期间禁止延迟保存写回。
+- 预览源 Origin 改为精确 host 匹配；发布 CSP 拆分出 `devCsp`，不再携带开发服务器源。
+- HTML 注入助手跳过 script/style/注释正文，脚本字符串里的 `<base`/`<head>` 不再被误处理。
+- 导出串行化；图片在解码后才按 naturalWidth 固定宽度；独立 HTML 内联 hljs 配色。
+- 搜索命中前缀按 UI 语言本地化；排序对大小写/变音符等价提供确定性 tie-break。
+- 数据视图切换释放监听器/ResizeObserver；长表头/长 TXT 行/深 JSON 可读；
+  尊重 `prefers-reduced-motion`；深/浅主题声明 `color-scheme`。
+- 标签输入支持批量粘贴；搜索高亮不再破坏 HTML 实体；mock 补非 http(s)/内网地址拒绝。
+
+### 第二轮独立复查（对修复本身的对抗性复审）
+
+四个子代理完成后，另派两个子代理只审阅 v1.10.4 的 diff；它们找出并已修复以下**新引入**
+问题，随后再次复查通过：
+
+- **关闭窗口后无法退出**：`onCloseRequested` 最终调用 `plugin:window|destroy`，而
+  capabilities 没有 `core:window:allow-destroy`。已补权限，并新增 check:repo 断言。
+- **CSS/JS 内联在发布版被 CSP 拦截**：v1.10.4 早先版本改用主窗口 `fetch(rmd:)`，
+  但发布 CSP 的 `connect-src` 不允许该源。改为新增窄命令 `read_local_asset`
+  （只接受 .css/.js/.mjs，require_main），不再依赖 fetch；selftest 现在直接断言
+  CSS/JS/图片真的被内联。
+- **按容器的渲染代数**：最初的全局 `htmlRenderSeq` 会让导出离屏渲染取消主预览的
+  sanitize/typeset。改为每个容器独立序号。
+- **raw-text 扫描二次复杂度**：未闭合的 `<script`/`<style`/`<!--` 会反复扫描剩余
+  文档；改为一次线性扫描，未闭合元素吞掉剩余内容，并校验 `</scripture>` 之类伪闭合。
+- **保存路径漏掉 64 MB 上限**：外部增长后的笔记自动保存仍会整文件读取；保存前先
+  stat 拒绝，并忽略超限占位产生的空 hash（避免永久假冲突）。
+- **多库搜索被单个坏库拖垮**：改用 `Promise.allSettled`，保留健康库结果。
+- **删除失败/删除期间切换笔记**：失败恢复“未保存”状态；删除期间 selectNote 直接
+  返回，且只清除仍为当前笔记的删除目标。
+- **打印配色残留**：补 `--accent`/`--accent-soft`/`--danger` 与 `color-scheme: light`。
+- **doctype/无 body 文档**：只接受源码开头的 doctype；`<frameset>` 文档把内联脚本
+  追加到根元素而不是抛错。
+- **分隔符启发式回归**：只有“tab 解析确实多出列”时才把制表符算作错误证据，
+  无表头的逗号 CSV 内出现 tab 不再被误判为 TSV。
+
+### 发布链路加固
+
+- **selftest 报告不再可伪造/复用**：runner 启动前删除旧 `report.json`；校验器要求
+  每个 PNG/PDF/HTML 产物真实存在且字节数与报告一致、示例笔记全覆盖、时间戳合法；
+  selftest 新增残留公式/Mermaid/MathJax/空白 PNG、HTML 文档属性、`defer` 脚本时序、
+  内联脚本与 hljs 导出断言。
+- **CI 打包 dry run**：Windows 签名 + 绿色 zip、macOS app bundle + ad-hoc 签名在
+  PR/push 阶段就执行，打包脚本回归不再等到 tag 之后。
+- **Release 资产断言**：Windows staging 缺 zip/sha256/证书直接失败；publish 在创建
+  Release 前逐一断言 zip/DMG/deb/AppImage/校验文件/LICENSE 存在；合并
+  `SHA256SUMS.txt` 现在包含 LICENSE。
+- 绿色 zip 改用 `/` 条目分隔符并断言文档、20 张截图、证书与无临时文件；
+  签名版本检查从前缀匹配改为精确匹配。
+- `check:repo` 新增 IPC 数量/api 桥接、README 版本横幅、CHANGELOG/Release Notes
+  存在性、capabilities codegen 同步、CSP 开发源、大小写敏感链接、引用式链接与
+  git 不可用报错等不变量。
+
+### 残余边界（未在本版消除）
+
+- macOS/Linux 的打印缩放与页面几何仅由代码审查/CI 编译覆盖，没有真机运行时 CI；
+  本版修复了缩放单位与浅色打印，但仍建议在发布前于真实 Mac 上导出一次 PDF 复核。
+- 浏览器 mock 仍是内存模型（无编码/front matter/真实文件系统），不作为编码或导出
+  测试；其已知简化已写入 AGENTS.md。
+- 极宽/极高 HTML 报告仍受 WebView 画布上限约束，会给出明确错误而不是无限放大；
+  64 MB 以上的单篇笔记不会加载正文。
+- 编码歧义、DNS rebinding、并发 TOCTOU、localStorage 明文等既有取舍保持不变，
+  见 docs/SECURITY.md。
+- 系统保存对话框改为阻塞线程池后，macOS 的行为由插件文档与源码推断，仍需真机确认；
+  其余平台在 E2E/发布构建中验证。
+
+## v1.10.3 数据 HTML 导出全宽（历史）
 
 本版只调整 CSV/TXT/JSON 的独立 HTML 导出布局，表格内容与 PNG/PDF 逻辑不变。
 

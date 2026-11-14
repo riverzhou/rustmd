@@ -5,6 +5,7 @@
 }
 
 body[data-theme='light'] {
+  color-scheme: light;
   --bg: #f4f5f9;
   --bg-sidebar: #eef0f6;
   --card: #ffffff;
@@ -68,6 +69,7 @@ body[data-theme='light'] {
 }
 
 body[data-theme='dark'] {
+  color-scheme: dark;
   --bg: #14161b;
   --bg-sidebar: #101216;
   --card: #1a1d23;
@@ -1691,8 +1693,64 @@ body.divider-resizing .html-preview-frame {
     overflow: visible !important;
   }
 
+  /* Print always uses the light palette. Dark text/backgrounds come from the
+     app theme; WebKitGTK/macOS print paths cannot be relied on to paint the
+     page background, which would leave light text on white paper. */
   body.rmd-printing {
-    background: var(--card) !important;
+    --bg: #ffffff;
+    --card: #ffffff;
+    --text: #1f2430;
+    --text-dim: #4b5260;
+    --text-faint: #6b7280;
+    --border: #d9dce3;
+    --code-bg: #f4f5f8;
+    --code-border: #e2e5ec;
+    --mark: #ffe28a;
+    --mark-text: #4a3b00;
+    --data-row-even: rgba(20, 24, 40, 0.03);
+    --data-grid: rgba(20, 24, 40, 0.08);
+    --data-ink-1: #1f2430;
+    --data-ink-2: #235c94;
+    --data-ink-3: #8a4b0f;
+    --data-ink-4: #663a99;
+    --json-key: #4859c6;
+    --json-object: #1f63c9;
+    --json-object-soft: rgba(47, 111, 219, 0.11);
+    --json-object-wash: rgba(47, 111, 219, 0.06);
+    --json-array: #6a3bc0;
+    --json-array-soft: rgba(123, 75, 211, 0.11);
+    --json-array-wash: rgba(123, 75, 211, 0.06);
+    --json-string: #0f7a55;
+    --json-number: #b35c00;
+    --json-boolean: #c0266b;
+    --json-null: #5f6b7f;
+    --data-warning: #8a4b0f;
+    --data-danger: #b42318;
+    --hl-comment: #8b93a7;
+    --hl-number: #c26a2e;
+    --hl-link: #2f6fdb;
+    --hl-tag: #2f6fdb;
+    --hl-attr: #b26a00;
+    --hl-string: #177a4b;
+    --hl-keyword: #a626a4;
+    --hl-var: #2f8fa3;
+    --hl-func: #4078f2;
+    --hl-class: #b26a00;
+    --hl-punct: #69707f;
+    --accent: #4f6df5;
+    --accent-soft: rgba(79, 109, 245, 0.1);
+    --accent-soft-2: rgba(79, 109, 245, 0.16);
+    --danger: #e5484d;
+    color-scheme: light;
+    background: #ffffff !important;
+    color: var(--text) !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body.rmd-printing .markdown-body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   body.rmd-printing > *:not(.export-stage) {
@@ -1911,10 +1969,10 @@ body.divider-resizing .html-preview-frame {
 .html-preview-warning {
   margin: 0 0 18px;
   padding: 10px 14px;
-  border: 1px solid #f0c4c4;
+  border: 1px solid var(--data-danger);
   border-radius: 8px;
-  background: #fdf2f2;
-  color: #7a1f1f;
+  background: rgba(180, 35, 24, 0.08);
+  color: var(--data-danger);
   font-size: 12.5px;
   line-height: 1.6;
 }
@@ -2235,5 +2293,17 @@ body.divider-resizing .html-preview-frame {
   .topbar-actions {
     flex: 1 0 100%;
     justify-content: flex-end;
+  }
+}
+
+/* Accessibility: honor the OS reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

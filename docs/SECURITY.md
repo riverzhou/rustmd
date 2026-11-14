@@ -36,13 +36,15 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - 主应用 `img-src` 允许 `data: blob: http: https: rmd:`（远程图 + 笔记库本地图）；
 - 主应用 `connect-src` 只放 IPC 和本地 dev server；`worker-src 'self' blob:`；
 - `rmdhtml` 预览文档另有两套更窄的 CSP：sandbox iframe 允许内联/HTTPS/本地 `rmd` 脚本、样式、字体、图片、嵌套 frame，但 `connect-src` 不含 IPC；隐藏导出窗口同样允许这些资源，并额外允许 `ipc:` 供 `html_preview_finish` 回传截图。两套 CSP 都设置 `object-src 'none'`、`form-action 'none'`。
+- 发布版 `app.security.csp` 不含 dev server 的 `127.0.0.1`/`ws://` 来源，这些只在 `app.security.devCsp` 中启用；`npm run check:repo` 会阻止把开发源写回发布 CSP。
 
 ### 3. 路径封闭
 
 - 所有笔记路径经 `resolve_in_root`：拒绝绝对路径/`..`，已存在路径 canonicalize 后前缀检查；新路径检查最深已存在祖先，阻止 junction/symlink 写逃逸。
-- `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` 当作笔记。
+- `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json` 当作笔记，其他扩展名不会出现在列表中，也无法通过笔记命令打开。
 - 范围搜索的 `folder` 参数来自 webview，后端仍先 `canonical_root` 再 `resolve_in_root`：非法/缺失目录直接报错，不会越出笔记库扫描。
-- `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file_in_roots`：逐个检查所有已注册的库根（多库同开时可能多个），只有规范化后位于至少一个根下的文件才会被服务；不会因为多库而放弃前缀检查。
+- `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file_in_roots`：逐个检查所有已注册的库根（多库同开时可能多个），只有规范化后位于至少一个根下的文件才会被服务；不会因为多库而放弃前缀检查。`read_local_image` 还要求图片扩展名：它把字节交给“受信任的”资源内联器并写进笔记文档，若不限制类型，恶意 HTML 笔记可以把库内任意文本/密钥文件变成 `<img>` 的 data URL，再从自己的脚本里读出来。CSS/JS 内联使用独立的 `read_local_asset`，只接受 `.css`/`.js`/`.mjs`；其他扩展名一律拒绝。
+- 预览源的 Origin 采用精确 host 匹配（`null`、`rmdhtml.localhost`），`http://rmdhtml.localhost.evil.example` 之类前缀域名不会通过。
 - Windows `\\?\UNC\` 正确还原，不会把网络共享路径改坏。
 - 唯一的前端可触发“库外写”是 `save_export`，它在 Rust 内打开系统保存对话框，前端不提供目标路径。
 - `print_note_pdf` / `print_html_note`（矢量 PDF）只把已经渲染好的文档（主窗口离屏舞台 / 隐藏 `html-render-*` 窗口）交给系统打印引擎，不接收输出路径；导出的字节仍由 `save_export` 落盘。Windows 不写文件；macOS/Linux 的打印引擎只能写文件，因此写到系统临时目录下随机命名的 `.pdf` 并在读回后删除。HTML 打印窗口与截图窗口使用同一套 label 校验，笔记脚本依然只能调用 `html_preview_finish`。
@@ -59,6 +61,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 ### 5. 保存与导出
 
+- 笔记读取有 64 MB 单文件上限：超限文件仍会出现在列表里（按文件名、空 hash/encoding、提示过大），但 `read_note` 报错、搜索不读正文，避免恶意或损坏的超大文件在打开库时冻结 UI 或耗尽内存。
 - 文本笔记按 BOM → UTF-8 → GBK → GB18030 自动解码；合法的 UTF-8 始终优先。保存沿用原编码与 BOM；GBK 文件写入 GB18030 可表示的四字节字符时兼容升级为 GB18030，保存后状态栏同步。无法识别编码的文件仍会出现在列表中，打开时返回明确错误，不会被静默隐藏或覆盖。极少数字节序列同时是合法 UTF-8 和 GBK，此时按 UTF-8 读取（见残余风险）；其余原编码无法表示的字符会让保存失败，而不是写入实体。CSV/TXT/JSON 预览全部用 DOM `textContent` 构建，不执行笔记中的 HTML。
 - 笔记保存用同目录临时文件 + rename，避免半截文件。
 - `baseHash` 冲突检测；外部修改不会被静默覆盖，必须用户确认。
@@ -76,12 +79,12 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 2. **Windows 自签名**：只保证完整性，不建立公共信任；SmartScreen 仍会警告。真实证书需要用户自行配置。
 3. **macOS ad-hoc**：未公证，首次打开需要用户放行；不能防止用户主动运行被篡改的包。请用 SHA256 校验。
 4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
-5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
+5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联（CSS/JS 仅限这两类扩展名，其他文件不会内联）；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
 6. **编码歧义**：约 1920 个常用汉字的 GBK 两字节序列也构成合法 UTF-8。检测器没有用户编码选择，选择“合法 UTF-8 优先”，因此这类短 GBK 文件可能显示为乱码并在编辑后被按 UTF-8 保存。这是有意的取舍：若反向猜测 GBK，会破坏合法的非中文 UTF-8 笔记。遇到类似文件请先在外部转换为 UTF-8；应用不会声称能消除这种字节级歧义。
 7. **大数据视图**：CSV/TXT/JSON 不再有行/列/节点显示上限，完整内容进入 DOM；超大文件会占用更多内存和渲染时间，用户应避免同时在 4K 窗口打开多个超大数据笔记。宽表采用卡片内滚动和上下同步横向滚动条，不会把列压成一字一行。
 8. **Unix 反斜杠文件名**：笔记协议以 `/` 为分隔符；Unix 上含字面 `\` 的文件名无法无歧义表示，扫描时跳过，不会错误打开同名的嵌套路径。
 9. **导出 HTML**：Markdown 导出是消毒后的快照；HTML 笔记导出保留原始源码（含脚本/样式），只规范化 charset。用户若在原笔记中放入了敏感文字，导出文件会原样包含。
-10. **本地明文**：笔记是普通 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件，不加密；依赖操作系统/磁盘加密保护。最近打开的笔记库路径（最多 20 条，含置顶标记）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”与“多库同开”偏好保存在 `localStorage.rustmd-include-subfolders` / `rustmd-multi-vault`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
+10. **本地明文**：笔记是普通 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件，不加密；依赖操作系统/磁盘加密保护。单个笔记 >64 MB 时不加载正文（限制见上），但文件本身仍可被其他程序读取。最近打开的笔记库路径（最多 20 条，含置顶标记）保存在 WebView 的 `localStorage.rustmd-recent-dirs` 中，“包含子文件夹”与“多库同开”偏好保存在 `localStorage.rustmd-include-subfolders` / `rustmd-multi-vault`；均不加密、只在本机使用，不会上传或随笔记库同步；清除应用数据即可删除。
 11. **无自动更新**：应用不会自行下载/执行代码；用户手动安装新版本。
 12. **依赖供应链**：CI 使用 `npm ci` + `Cargo.lock`；Dependabot 每周检查。当前没有 SLSA/签名软件物料清单，发布资产用 SHA256 校验。
 13. **GPL-3.0-or-later**：源码与二进制的分发、修改需遵守 GPL 条款；这是许可证边界，不是安全控制。

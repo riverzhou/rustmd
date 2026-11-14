@@ -13,21 +13,45 @@ const notes = [];
 
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8');
 const exists = (rel) => {
-  try {
-    statSync(path.join(root, rel));
-    return true;
-  } catch {
-    return false;
+  // Case-exact existence check: Windows/macOS filesystems are usually
+  // case-insensitive, so a link written with the wrong case would pass
+  // locally and 404 on GitHub (whose storage is case-sensitive).
+  const parts = String(rel)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((part) => part && part !== '.');
+  let current = root;
+  for (const part of parts) {
+    if (part === '..') {
+      current = path.dirname(current);
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    if (!entries.some((entry) => entry.name === part)) return false;
+    current = path.join(current, part);
   }
+  return true;
 };
 
 const REQUIRED = [
   'package.json',
+  'package-lock.json',
   'Cargo.toml',
   'Cargo.lock',
   'build.rs',
+  'rust-toolchain.toml',
   'tauri.conf.json',
   'src/main.rs',
+  'README.md',
+  'README.en.md',
+  'AGENTS.md',
+  'CHANGELOG.md',
+  'AUDIT_REPORT.md',
   'frontend/index.html',
   'frontend/src/main.js',
   'frontend/src/api.js',
@@ -51,6 +75,11 @@ const REQUIRED = [
   'LINUX_BUILD.md',
   'frontend/shims/katex.js',
   'scripts/linux-headless-smoke.sh',
+  'docs/ARCHITECTURE.md',
+  'docs/TESTING.md',
+  'docs/RELEASING.md',
+  'docs/SECURITY.md',
+  'docs/GITHUB_PROJECT_COPY.md',
   'icons/icon.ico',
   'icons/icon.icns',
   'icons/icon.png',
@@ -64,6 +93,7 @@ const REQUIRED = [
   'scripts/dev-server.mjs',
   'scripts/cargo.mjs',
   '.gitignore',
+  '.gitattributes',
 ];
 for (const file of REQUIRED) {
   if (!exists(file)) errors.push(`missing required file: ${file}`);
@@ -73,6 +103,33 @@ const pkg = JSON.parse(read('package.json'));
 const config = JSON.parse(read('tauri.conf.json'));
 const capabilities = JSON.parse(read('capabilities/default.json'));
 const cargoToml = read('Cargo.toml');
+
+// gen/schemas/capabilities.json is Tauri codegen; it must reflect the
+// capability source, otherwise the built app's permission set can drift from
+// the file that was reviewed.
+if (exists('gen/schemas/capabilities.json')) {
+  const generated = JSON.parse(read('gen/schemas/capabilities.json'));
+  const generatedDefault = generated.default;
+  if (!generatedDefault) {
+    errors.push('gen/schemas/capabilities.json: no "default" capability');
+  } else {
+    const expected = [...(capabilities.permissions || [])].sort();
+    const actual = [...(generatedDefault.permissions || [])].sort();
+    if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+      errors.push(
+        'gen/schemas/capabilities.json is stale: run `npx tauri build`/`dev` to regenerate ' +
+          `(source: ${expected.join(', ')}; generated: ${actual.join(', ')})`
+      );
+    }
+    if (
+      Array.isArray(capabilities.windows) &&
+      JSON.stringify([...capabilities.windows].sort()) !==
+        JSON.stringify([...(generatedDefault.windows || [])].sort())
+    ) {
+      errors.push('gen/schemas/capabilities.json: window list differs from capabilities/default.json');
+    }
+  }
+}
 
 if (pkg.license !== 'GPL-3.0-or-later') {
   errors.push(`package.json: license must be GPL-3.0-or-later (got ${pkg.license})`);
@@ -90,6 +147,62 @@ for (const script of ['build', 'lint', 'test:unit', 'check', 'tauri']) {
   }
 }
 
+// --- version / release-notes documentation consistency ---
+// check-version.mjs verifies the build inputs; these checks keep the docs
+// that the release workflow publishes in sync with the same number.
+const version = pkg.version;
+if (version) {
+  for (const readme of ['README.md', 'README.en.md']) {
+    if (!read(readme).includes(`**${version}**`)) {
+      errors.push(`${readme}: current version banner **${version}** is missing`);
+    }
+  }
+  if (!new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm').test(read('CHANGELOG.md'))) {
+    errors.push(`CHANGELOG.md: missing "## [${version}]" section`);
+  }
+  if (!exists(`RELEASE_NOTES-${version}.md`)) {
+    errors.push(`missing RELEASE_NOTES-${version}.md for the current version`);
+  }
+}
+
+// --- IPC surface: handler list, docs count, frontend bridge ---
+const mainRs = read('src/main.rs');
+const handlerMatch = mainRs.match(/generate_handler!\[([\s\S]*?)\]/);
+if (!handlerMatch) {
+  errors.push('src/main.rs: tauri::generate_handler![...] not found');
+} else {
+  const commands = handlerMatch[1]
+    .split(/[\s,]+/)
+    .filter((name) => /^[a-z][a-z0-9_]*$/.test(name));
+  const unique = [...new Set(commands)];
+  const agents = read('AGENTS.md');
+  const claimed = agents.match(/IPC commands \((\d+)\)/);
+  if (!claimed) {
+    errors.push('AGENTS.md: "IPC commands (N)" header not found');
+  } else if (Number(claimed[1]) !== unique.length) {
+    errors.push(
+      `AGENTS.md: claims ${claimed[1]} IPC commands, generate_handler has ${unique.length}`
+    );
+  }
+  const api = read('frontend/src/api.js');
+  // html_preview_finish is invoked by the hidden renderer window's injected
+  // script, not through api.js.
+  const missing = unique.filter(
+    (command) => command !== 'html_preview_finish' && !api.includes(command)
+  );
+  if (missing.length) {
+    errors.push(`frontend/src/api.js: no wrapper for IPC command(s): ${missing.join(', ')}`);
+  }
+  const declared = [...mainRs.matchAll(/#\[tauri::command\]\s*\n(?:pub\s+)?(?:async\s+)?fn\s+([a-z][a-z0-9_]*)/g)].map(
+    (match) => match[1]
+  );
+  for (const command of unique) {
+    if (!declared.includes(command)) {
+      errors.push(`src/main.rs: generate_handler lists ${command} but no #[tauri::command] fn exists`);
+    }
+  }
+}
+
 // --- CSP ---
 const csp = config.app && config.app.security && config.app.security.csp;
 if (!csp || typeof csp !== 'string') {
@@ -97,6 +210,16 @@ if (!csp || typeof csp !== 'string') {
 } else {
   for (const directive of ["default-src 'self'", "object-src 'none'"]) {
     if (!csp.includes(directive)) errors.push(`CSP missing: ${directive}`);
+  }
+  // The release policy must not carry the dev server's arbitrary localhost /
+  // websocket surface; that belongs to app.security.devCsp.
+  if (/(?:127\.0\.0\.1|ws:\/\/|http:\/\/localhost)/.test(csp)) {
+    errors.push(
+      'tauri.conf.json: release csp contains dev-server origins; move them to app.security.devCsp'
+    );
+  }
+  if (typeof config.app.security.devCsp !== 'string' || !config.app.security.devCsp) {
+    errors.push('tauri.conf.json: app.security.devCsp must be set for the Vite dev server');
   }
 }
 
@@ -124,6 +247,18 @@ for (const needed of ['icons/icon.ico', 'icons/icon.icns']) {
   if (!bundleIcons.includes(needed)) errors.push(`bundle.icon must include ${needed}`);
 }
 
+// --- window close guard permission ---
+// @tauri-apps/api's onCloseRequested awaits the handler and then calls
+// plugin:window|destroy; without allow-destroy the app becomes unclosable.
+if (
+  read('frontend/src/main.js').includes('onCloseRequested') &&
+  !(capabilities.permissions || []).includes('core:window:allow-destroy')
+) {
+  errors.push(
+    'capabilities/default.json: onCloseRequested requires "core:window:allow-destroy"'
+  );
+}
+
 // --- plugin permissions ---
 const pluginNames = [...cargoToml.matchAll(/^tauri-plugin-([a-z0-9-]+)\s*=/gm)].map(
   (m) => m[1]
@@ -139,7 +274,14 @@ for (const name of pluginNames) {
 }
 
 // --- machine-specific paths ---
-const MACHINE_PATH = /(?:[A-Za-z]:[\\/](?:Users|GitHub)[\\/]|\/Users\/[A-Za-z0-9._-]+\/)/;
+// Drive-letter paths under a user/checkout folder (case-insensitive: Windows
+// paths are), plus the classic macOS home layout. Deliberately not "any
+// absolute path": docs legitimately show /home/..., /usr, /Applications and
+// URL paths.
+const MACHINE_PATHS = [
+  /[A-Za-z]:[\\/](?:Users|GitHub|Projects|Documents|Desktop|Dev|Work)[\\/]/i,
+  /\/Users\/[A-Za-z0-9._-]+\//,
+];
 const SCAN_ROOTS = ['src', 'frontend/src', 'frontend/vite.config.js', 'scripts', '.github'];
 const SCAN_FILES = [
   'README.md',
@@ -181,8 +323,13 @@ for (const rel of scanFiles) {
   } catch {
     continue;
   }
-  const match = MACHINE_PATH.exec(text);
-  if (match) errors.push(`machine-specific path in ${rel}: ${match[0]}`);
+  for (const pattern of MACHINE_PATHS) {
+    const match = pattern.exec(text);
+    if (match) {
+      errors.push(`machine-specific path in ${rel}: ${match[0]}`);
+      break;
+    }
+  }
 }
 
 // --- docs links ---
@@ -218,9 +365,20 @@ function checkDocLink(doc, rawTarget) {
   if (/^(https?:|mailto:|#|data:)/i.test(target)) return;
   target = target.split('#')[0].split('?')[0];
   if (!target) return;
+  let decoded;
+  try {
+    decoded = decodeURI(target);
+  } catch {
+    errors.push(`${doc}: malformed escape in link ${rawTarget}`);
+    return;
+  }
   const resolved = path.posix.normalize(
-    path.posix.join(path.posix.dirname(doc), decodeURI(target))
+    path.posix.join(path.posix.dirname(doc), decoded)
   );
+  if (resolved.startsWith('../')) {
+    errors.push(`${doc}: link escapes the repository: ${rawTarget}`);
+    return;
+  }
   if (!exists(resolved)) errors.push(`${doc}: broken link ${rawTarget}`);
 }
 
@@ -232,6 +390,11 @@ for (const doc of docs) {
   for (const match of text.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
     checkDocLink(doc, match[1]);
   }
+  // Reference-style definitions: [ref]: ../path. Their targets are resolved
+  // by Markdown renderers even when the inline form is not used.
+  for (const match of text.matchAll(/^ {0,3}\[[^\]]+\]:\s*(\S+)/gm)) {
+    checkDocLink(doc, match[1]);
+  }
   for (const match of text.matchAll(
     /<(?:img|a)[^>]*?\s(?:src|href)=["']([^"']+)["']/gi
   )) {
@@ -241,7 +404,9 @@ for (const doc of docs) {
 
 // --- build output must not be tracked ---
 const git = spawnSync('git', ['ls-files', 'frontend/dist'], { cwd: root, encoding: 'utf8' });
-if (!git.error && git.status === 0 && git.stdout.trim()) {
+if (git.error || git.status !== 0) {
+  errors.push('cannot run "git ls-files frontend/dist"; is git installed?');
+} else if (git.stdout.trim()) {
   errors.push('frontend/dist is tracked by git (it is a build artifact)');
 }
 

@@ -244,3 +244,20 @@ test('noteKindOf and noteStemOf cover every supported note format', () => {
   assert.equal(noteStemOf('data/示例数据.csv'), '示例数据');
   assert.equal(noteStemOf('data/config.JSON'), 'config');
 });
+
+test('name sorting is deterministic for case-only and diacritic ties', () => {
+  const notes = [
+    { path: '苹果.md', mtime: 1 },
+    { path: 'banana.md', mtime: 1 },
+    { path: 'Apple.md', mtime: 1 },
+    { path: 'apple.md', mtime: 1 },
+    { path: 'äpple.md', mtime: 1 },
+  ];
+  const sorted = sortNotes(notes, { key: 'name', dir: 'asc' }).map((n) => n.path);
+  // Case-only variants must not depend on input order.
+  assert.deepEqual(
+    sortNotes([...notes].reverse(), { key: 'name', dir: 'asc' }).map((n) => n.path),
+    sorted
+  );
+  assert.ok(sorted.indexOf('Apple.md') < sorted.indexOf('apple.md'));
+});
