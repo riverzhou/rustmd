@@ -10,7 +10,7 @@
 ## 1. About 描述（英文，推荐）
 
 GitHub 的 About 描述会出现在搜索、仓库列表和社交预览中，是“被别人搜到”的第一入口。
-当前线上文案（253 字符，低于 350 上限）：
+当前线上文案（256 字符，低于 350 上限）：
 
 > Local-first notes app for Markdown, HTML, CSV, TXT & JSON — Windows, macOS & Linux. Edit HTML and preview full pages in the built-in WebView; Mermaid, LaTeX, smart tables, JSON inspector, HTML/PNG/PDF export. Rust + Tauri 2, offline, plain files, EN/中文.
 
@@ -21,7 +21,7 @@ GitHub 的 About 描述会出现在搜索、仓库列表和社交预览中，是
 - 第二句把 **HTML + 内置 WebView 整页预览**放在最显眼的位置——这是与普通 Markdown 应用最强的差异点；
 - 末尾覆盖 `Rust`、`Tauri`、`offline`、`plain files`、`Mermaid`、`LaTeX`、`HTML/PNG/PDF export`
   等高意图搜索词；
-- 比上一版短 85 字符，搜索结果的截断更少；macOS 仅 Apple Silicon 的限制放在 README 下载表里，
+- 比上一版短 82 字符，搜索结果的截断更少；macOS 仅 Apple Silicon 的限制放在 README 下载表里，
   避免 About 过长。
 
 中文备选（仓库 About 目前用英文；中文可用于社交分享/README 首段）：
@@ -174,7 +174,7 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 
 按“访客从看到仓库到点 Star / 下载”的顺序检查：
 
-- [x] About 描述包含品类 + 差异化 + 技术栈 + 平台，253 字符；
+- [x] About 描述包含品类 + 差异化 + 技术栈 + 平台，256 字符；
 - [x] 20 个 topics 覆盖 HTML、数据格式、技术栈、平台与受众；
 - [x] README 首屏有下载按钮、10 秒动图、对比表和“为什么是 rustmd”；
 - [x] PR/Issue 模板、CODE_OF_CONDUCT 与 Discussions 让外部反馈有地方落地；
@@ -198,4 +198,4 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 - 英文说明：`README.en.md`；中文说明：`README.md`
 - About homepage：暂为空（可选 GitHub Pages 落地页，见 PROMOTION.md 第 9 节）
 - 社交预览：`docs/social-preview.png`（待上传）
-- 最近一次核对（v1.10.4）：About 为第 1 节的 253 字符文案，20 个 topics 为第 2 节列表。
+- 最近一次核对（v1.10.4）：About 为第 1 节的 256 字符文案，20 个 topics 为第 2 节列表。
