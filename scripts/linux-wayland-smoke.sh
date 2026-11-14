@@ -103,8 +103,15 @@ grim "$OUT/wayland-smoke.png" >"$OUT/grim.log" 2>&1 || {
 }
 [ -s "$OUT/wayland-smoke.png" ] || die "grim produced an empty screenshot"
 
-read -r mean sd < <("$IMAGE_TOOL" "$OUT/wayland-smoke.png" -colorspace Gray \
-  -format "%[fx:mean] %[fx:standard_deviation]" info:)
+stats="$("$IMAGE_TOOL" "$OUT/wayland-smoke.png" -colorspace Gray \
+  -format "%[fx:mean] %[fx:standard_deviation]" info:)" || {
+  die "ImageMagick could not read the screenshot"
+}
+read -r mean sd <<<"$stats"
+if [ -z "${mean:-}" ] || [ -z "${sd:-}" ]; then
+  die "ImageMagick returned no frame statistics (mean='${mean:-}', stddev='${sd:-}')"
+fi
+echo "frame stats: mean=$mean stddev=$sd"
 if ! awk -v mean="$mean" -v sd="$sd" 'BEGIN { exit !(mean > 0.01 && sd > 0.02) }'; then
   die "the Wayland frame looks blank (mean=$mean, stddev=$sd)"
 fi

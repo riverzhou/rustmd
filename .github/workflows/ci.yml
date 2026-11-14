@@ -262,6 +262,7 @@ jobs:
             curl \
             file \
             xdg-utils \
+            xwayland \
             sway \
             grim \
             imagemagick
