@@ -13,10 +13,14 @@
 | 14 天外部 referrer | 1（github.com） | **没有外部入口** |
 | v1.10.4 Release 下载 | 10（全部版本累计 207） | 其中包含 LICENSE / SHA256 等小文件；不是“下载页做得不好”，是没人到达 |
 | GitHub Topics | 20 / 20 | About 与 topics 已按 [GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 更新 |
-| 包管理器 | 0 | `packaging/` 已备好 winget / Scoop / AUR / Homebrew 清单，待提交 |
+| 包管理器 | Scoop + Homebrew 已发布 | winget 待 CLA，AUR 待 AUR 账号；清单在 `packaging/` |
 
 结论：**当前瓶颈不是转化，而是流量入口**。仓库资料优化只能接住已有流量，必须主动建立外部入口。
 目标不用虚高：30 天内 **50 stars、300 次 Release 下载、10 个外部 referrer** 就是很好的第一步。
+
+> **2026-11-14 已自动执行**：3 个 awesome list PR 已提交（awesome-local-first #66、
+> awesome-markdown-editors #316、awesome-note-taking #190）；Scoop bucket 与 Homebrew tap
+> 已发布；Discussions 欢迎帖已创建。winget 需要本人签 Microsoft CLA，AUR 需要 AUR 账号。
 
 ## 1. 定位：不要卖“又一个 Markdown 编辑器”
 
@@ -63,10 +67,10 @@
 | # | 渠道 | 类型 | 预期 | 需要 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | GitHub About / topics / 社交预览 / pinned repo | 基础转化 | 决定 10 秒留存 | GitHub 设置 | 部分完成，社交预览待上传 |
-| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | 清单已就绪 |
-| 3 | AUR（Arch Linux） | 长期搜索入口 | 中高 | AUR 账号 | 清单已就绪 |
-| 4 | Scoop / Homebrew tap | 长期搜索入口 | 中 | 建 bucket/tap 仓库 | 清单已就绪 |
-| 5 | awesome-markdown-editors、awesome-rust、awesome-local-first | 精准推荐 | 高 | 3 个 PR | 文案已备好 |
+| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | 清单已校验；待签 Microsoft CLA |
+| 3 | AUR（Arch Linux） | 长期搜索入口 | 中高 | AUR 账号 | 清单已就绪；待提交 |
+| 4 | Scoop / Homebrew tap | 长期搜索入口 | 中 | 建 bucket/tap 仓库 | ✅ 已发布：`riverzhou/scoop-bucket`、`riverzhou/homebrew-tap` |
+| 5 | awesome-markdown-editors、awesome-local-first、awesome-note-taking | 精准推荐 | 高 | 3 个 PR | ✅ 已提交（awesome-rust 需 50 stars，暂缓） |
 | 6 | AlternativeTo | SEO / 对比搜索 | 高 | 账号 | 文案已备好 |
 | 7 | Hacker News（Show HN） | 单次爆发 | 高 | 账号 + 时间窗口 | 文案已备好 |
 | 8 | Reddit（r/rust、r/tauri、r/markdown 等） | 单次爆发 | 中高 | 账号 + 遵守版规 | 文案已备好 |
@@ -88,8 +92,8 @@
 
 **第 1 周：建立长期入口**
 
-1. 提交 winget PR（步骤见 [../packaging/README.md](../packaging/README.md)）；
-2. 给 3 个 awesome list 提 PR（文案见 5.11）；
+1. winget 需要先签 Microsoft CLA 再提 PR（步骤见 [../packaging/README.md](../packaging/README.md)）；
+2. 已给 3 个 awesome list 提 PR（见 5.11 的实际链接）；
 3. 向小众软件投稿（文案见 5.7）；
 4. V2EX「分享创造」发帖（文案见 5.6）。
 
@@ -105,7 +109,7 @@
 1. 少数派 Matrix / 知乎文章（见 5.7 / 5.8）；
 2. AlternativeTo 收录（见 5.12）；
 3. Product Hunt 发布（见 5.13）；
-4. AUR / Scoop / Homebrew tap 提交（见 [../packaging/README.md](../packaging/README.md)）。
+4. AUR 提交（需 AUR 账号）；Scoop / Homebrew 已完成（见 [../packaging/README.md](../packaging/README.md)）。
 
 **第 4 周：复盘与复利**
 
@@ -331,8 +335,13 @@ README 与 Releases。Discussions 能把外部流量沉淀成可搜索的内容�
 目标仓库：
 
 - [mundimark/awesome-markdown-editors](https://github.com/mundimark/awesome-markdown-editors)
-- [rust-unofficial/awesome-rust](https://github.com/rust-unofficial/awesome-rust)
+- [tehtbl/awesome-note-taking](https://github.com/tehtbl/awesome-note-taking)
+- [rust-unofficial/awesome-rust](https://github.com/rust-unofficial/awesome-rust)（50 stars 门槛，暂缓）
 - [schickling/awesome-local-first](https://github.com/schickling/awesome-local-first)
+
+已在 2026-11-14 提交的 PR：[awesome-local-first #66](https://github.com/schickling/awesome-local-first/pull/66)、
+[awesome-markdown-editors #316](https://github.com/mundimark/awesome-markdown-editors/pull/316)、
+[awesome-note-taking #190](https://github.com/tehtbl/awesome-note-taking/pull/190)。
 
 **awesome-markdown-editors**（先加到 `UPCOMING.md`，再按维护者要求进主列表）：
 
@@ -347,7 +356,7 @@ no account, folder tree, full-text search, multi-vault view, UTF-8/GBK/GB18030 a
 HTML/PNG/PDF export.
 ```
 
-**awesome-rust**（`Applications → Text editors`，按字母序插在 `ox` 与 `SoloMD` 之间）：
+**awesome-rust**（`Applications → Text editors`；维护者要求 **50 stars 或 2000 下载**，当前 2 stars，达到后再提）：
 
 ```markdown
 * [riverzhou/rustmd](https://github.com/riverzhou/rustmd) - A local-first Markdown/HTML/CSV/TXT/JSON notes app built with Tauri 2, with full-page HTML preview in the built-in WebView, math/Mermaid, smart tables and HTML/PNG/PDF export.
@@ -357,6 +366,12 @@ HTML/PNG/PDF export.
 
 ```markdown
 - [rustmd](https://github.com/riverzhou/rustmd): Local-first notes for Markdown, HTML, CSV, TXT and JSON; plain files, offline, with full-page HTML rendering in a built-in WebView.
+```
+
+**awesome-note-taking**（`Open Source → Tauri`，📖 表示纯文本存储）：
+
+```markdown
+- 📖 [rustmd](https://github.com/riverzhou/rustmd) - Local-first notes for Markdown, HTML, CSV, TXT and JSON with full-page HTML rendering in a built-in WebView. `GPL-3.0-or-later` `Tauri/Rust`
 ```
 
 PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文件 → PR 描述里写清“作者自荐、
@@ -391,12 +406,13 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 
 1. **winget**：fork `microsoft/winget-pkgs`，把 `packaging/winget/*` 放到
    `manifests/r/RiverZhou/rustmd/1.10.4/`，本地 `winget validate --manifest` 通过后提 PR；
-2. **Scoop**：先建 `riverzhou/scoop-bucket` 仓库（或向 Extras 提 PR），放入
-   `packaging/scoop/rustmd.json`；
+   **需要先签 Microsoft CLA**（本人操作）；
+2. **Scoop**：✅ 已发布到自建 [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket)；
+   如需进 Extras，再按 Extras 的知名度门槛提交；
 3. **AUR**：创建 `rustmd-bin` 包，推 `PKGBUILD` 与 `makepkg --printsrcinfo` 生成的
-   `.SRCINFO`；
-4. **Homebrew**：建 `riverzhou/homebrew-tap`，把 `packaging/homebrew/Casks/rustmd.rb`
-   放到 `Casks/`；官方 cask 的知名度门槛更高，等 star/fork 上来再提。
+   `.SRCINFO`（需要 AUR 账号）；
+4. **Homebrew**：✅ 已发布到自建 [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap)；
+   官方 cask 的知名度门槛更高，等 star/fork 上来再提。
 
 采纳后，把 README 的“下载与安装”增加对应的 `winget install RiverZhou.rustmd` /
 `brew install --cask riverzhou/tap/rustmd` 行——这会显著提高“看到即安装”的比例。

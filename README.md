@@ -231,6 +231,24 @@ macOS 包仅支持 **Apple Silicon（arm64，M 系列）**，不支持 Intel Mac
 
 彻底消除提示需要 Developer ID + 公证（见 [docs/RELEASING.md](docs/RELEASING.md)）。
 
+### 包管理器
+
+Windows（Scoop，自建 bucket）：
+
+```powershell
+scoop bucket add riverzhou https://github.com/riverzhou/scoop-bucket
+scoop install rustmd
+```
+
+macOS（Homebrew，Apple Silicon）：
+
+```bash
+brew tap riverzhou/tap
+brew install --cask rustmd
+```
+
+winget 与 AUR 清单已经在 [packaging/](packaging/README.md) 准备好；提交采纳后会补上对应的一行命令。
+
 ### 校验下载
 
 ```bash

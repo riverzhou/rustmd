@@ -236,6 +236,25 @@ xattr -dr com.apple.quarantine /Applications/rustmd.app
 
 Removing the warning completely requires Developer ID + notarization; see [docs/RELEASING.md](docs/RELEASING.md).
 
+### Package managers
+
+Windows (Scoop, self-hosted bucket):
+
+```powershell
+scoop bucket add riverzhou https://github.com/riverzhou/scoop-bucket
+scoop install rustmd
+```
+
+macOS (Homebrew, Apple Silicon):
+
+```bash
+brew tap riverzhou/tap
+brew install --cask rustmd
+```
+
+winget and AUR manifests are ready in [packaging/](packaging/README.md); their one-line
+install commands will be added once accepted.
+
 ## Quick start
 
 1. Launch the app and choose or type a notes folder. Later launches reopen the last vault, and the sidebar switch button brings back recent folders in one click.

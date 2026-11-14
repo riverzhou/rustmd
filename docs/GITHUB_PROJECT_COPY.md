@@ -192,7 +192,9 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 - 仓库：`https://github.com/riverzhou/rustmd`
 - 发布页：`https://github.com/riverzhou/rustmd/releases`
 - Issues：`https://github.com/riverzhou/rustmd/issues`
-- Discussions：`https://github.com/riverzhou/rustmd/discussions`（2026-11-14 开启）
+- Discussions：`https://github.com/riverzhou/rustmd/discussions`（2026-11-14 开启，欢迎帖 #2）
+- 包管理器：Scoop / Homebrew 已发布；winget 待签 Microsoft CLA；AUR 待账号
+- 已提交的 awesome list PR：[awesome-local-first #66](https://github.com/schickling/awesome-local-first/pull/66)、[awesome-markdown-editors #316](https://github.com/mundimark/awesome-markdown-editors/pull/316)、[awesome-note-taking #190](https://github.com/tehtbl/awesome-note-taking/pull/190)
 - CI：`https://github.com/riverzhou/rustmd/actions/workflows/ci.yml`
 - 镜像：GitLab `http://gitlab.riverzhou.cn/river/rustmd`（镜像仓库，不跑 CI）
 - 英文说明：`README.en.md`；中文说明：`README.md`
