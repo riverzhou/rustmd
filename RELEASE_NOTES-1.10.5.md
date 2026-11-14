@@ -22,6 +22,9 @@
 - 仍在使用 Ubuntu 22.04 的用户请保留 1.10.4，或按 `LINUX_BUILD.md` 从源码构建。
 - 普通 CI 仍保留 Ubuntu 22.04 的编译与 Xvfb E2E；发布 workflow 另外在
   Ubuntu 26.04 上执行 deb/AppImage 打包 dry run。
+- 新增非阻塞的 **Wayland smoke**（sway headless + grim）：以
+  `GDK_BACKEND=wayland` 启动 release 二进制并检查首帧非空白；失败只报告，
+  不阻塞发布。应用仍自动适配 Wayland 与 X11/XWayland，不需要手动设置后端。
 
 ## 修复与验证
 

@@ -226,6 +226,9 @@ AppImage 需要 FUSE；没有 FUSE 时使用 `--appimage-extract-and-run`。
 glibc 2.39，并需要 GTK 3 与 WebKitGTK 4.1 运行库。仍在使用 Ubuntu 22.04 的用户
 请保留 1.10.4，或按 [LINUX_BUILD.md](LINUX_BUILD.md) 从源码构建。
 
+应用使用 GTK 3，启动时自动适配 Wayland 与 X11/XWayland，无需手动设置
+`GDK_BACKEND`；CI 另有非阻塞的 Wayland headless smoke。
+
 ### macOS
 
 macOS 包仅支持 **Apple Silicon（arm64，M 系列）**，不支持 Intel Mac。DMG 内的 `.app` 使用 **ad-hoc 签名**（没有 Apple Developer ID，未公证）。首次打开会被 Gatekeeper 拦截：

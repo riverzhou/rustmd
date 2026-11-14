@@ -26,7 +26,9 @@ lopdf 两个 PR 的 CI 检查为红，合并后的 master push CI 也失败：�
 发布链路同步调整：Linux 发布构建固定 `ubuntu-26.04`（与 `LINUX_BUILD.md` 的
 26.04 基线一致，运行基线 Ubuntu 24.04+ / glibc 2.39），`ci.yml` 增加 Ubuntu
 26.04 的 deb/AppImage 打包 dry run，同时保留 Ubuntu 22.04 编译与 Xvfb E2E；
-`publish` 固定 `ubuntu-24.04`，不再跟随 `ubuntu-latest` 标签迁移。
+`publish` 固定 `ubuntu-24.04`，不再跟随 `ubuntu-latest` 标签迁移。普通 CI 另加
+非阻塞的 sway/headless Wayland smoke（`continue-on-error`），只做前向兼容提示，
+不进入发布门禁。
 
 ## v1.10.4 全量审计与回归（历史）
 

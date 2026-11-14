@@ -17,6 +17,7 @@ this file is the developer/agent contract.
 | Linux release binary | `npx tauri build --no-bundle` → `target/release/rustmd` |
 | Linux Rust tests | `source "$HOME/.cargo/env" && cargo test` |
 | Linux headless release smoke | `scripts/linux-headless-smoke.sh` (isolated Xvfb) |
+| Linux headless Wayland smoke | `scripts/linux-wayland-smoke.sh` (sway headless + grim; non-blocking in CI) |
 | Windows release shortcut | `scripts\run-build.bat` |
 | Frontend pure unit tests | `npm run test:unit` |
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
@@ -42,7 +43,8 @@ this file is the developer/agent contract.
 - CI: `.github/workflows/ci.yml` (quality gate on Ubuntu 22.04, compile on
   Windows / Ubuntu 22.04 / Ubuntu 26.04 / macOS, Windows sign/portable-zip dry
   run, macOS app bundle + ad-hoc sign, Ubuntu 26.04 deb/AppImage dry run, Ubuntu
-  22.04 Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
+  22.04 Xvfb E2E, non-blocking sway/headless Wayland smoke); release:
+  `.github/workflows/release.yml` (Windows portable
   zip, Linux deb/AppImage built on Ubuntu 26.04, macOS Apple Silicon (arm64)
   DMG). Details: `docs/RELEASING.md`.
 - Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4

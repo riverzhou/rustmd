@@ -24,6 +24,10 @@
 - **CI 同步调整**：`ci.yml` 增加 Ubuntu 26.04 的 deb/AppImage 打包 dry run，
   同时保留 Ubuntu 22.04 的编译与 Xvfb E2E；`publish` 固定 `ubuntu-24.04`，
   不再依赖 `ubuntu-latest` 标签迁移。
+- **Wayland 前向兼容检查**：新增非阻塞 `wayland-smoke` job 和
+  `scripts/linux-wayland-smoke.sh`（sway headless + grim 截图），在
+  `GDK_BACKEND=wayland` 下验证窗口能渲染；失败只报告、不阻塞发布。应用本身
+  不强制后端，GTK 会在 Wayland 与 X11/XWayland 之间自动选择。
 
 ### 质量（Quality）
 

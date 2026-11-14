@@ -67,7 +67,9 @@ publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 Linux 发布构建固定使用 `ubuntu-26.04`（最新 Ubuntu，与 `LINUX_BUILD.md` 的
 构建基线一致），产物的运行基线是 Ubuntu 24.04+ / glibc 2.39；普通 CI 仍保留
 Ubuntu 22.04 的编译与 Xvfb E2E，覆盖旧发行版。`publish` 不构建，固定
-`ubuntu-24.04`，不跟随 `ubuntu-latest` 标签迁移。
+`ubuntu-24.04`，不跟随 `ubuntu-latest` 标签迁移。普通 CI 另有一个
+`wayland-smoke` job（sway headless + grim，`continue-on-error`），只做
+Wayland 前向兼容提示，不进入发布门禁。
 
 只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会运行
 `npm run selftest` 并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物真实存在且字节数一致，`npm run selftest` 也会先删除旧报告，避免复用上一次的绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。

@@ -231,6 +231,10 @@ Ubuntu 24.04+ / glibc 2.39, with GTK 3 and WebKitGTK 4.1 runtime libraries.
 Ubuntu 22.04 users should stay on 1.10.4 or build from source following
 [LINUX_BUILD.md](LINUX_BUILD.md).
 
+The app uses GTK 3 and selects Wayland or X11/XWayland automatically at
+startup; no `GDK_BACKEND` override is needed. CI also runs a non-blocking
+headless Wayland smoke test.
+
 ### macOS
 
 The macOS build supports **Apple Silicon (arm64, M-series) only**; Intel Macs are not supported. The `.app` is **ad-hoc signed** (no Apple Developer ID, not notarized). On first launch, allow it in System Settings → Privacy & Security → “Open Anyway”, or run:

@@ -131,6 +131,17 @@ localStorage 迁移：
 | `quality` | Ubuntu 22.04：安装 Tauri 依赖，`npm ci`，`npm run check`（含 lint/单测/仓库检查/Rust 测试/构建） |
 | `build` | Windows / Ubuntu 22.04 编译（Windows 额外跑 `cargo test`，并执行签名 + 绿色 zip 的打包 dry run）；Ubuntu 26.04 执行 deb/AppImage 打包 dry run；macOS 构建 `aarch64-apple-darwin --bundles app` 并 ad-hoc 签名验证（Apple Silicon only） |
 | `selftest` | Ubuntu 22.04 + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
+| `wayland-smoke` | Ubuntu 26.04 + sway headless：`GDK_BACKEND=wayland` 启动 release 二进制，用 grim 截图并校验非空白；`continue-on-error`，只报告不阻塞 |
+
+Wayland smoke 是前向兼容检查，不是发布门禁。本地（有 release 二进制时）可运行：
+
+```bash
+scripts/linux-wayland-smoke.sh
+```
+
+脚本使用临时 `XDG_RUNTIME_DIR` 和临时 `HOME`，不会连接当前桌面；需要
+`sway`、`grim` 和 ImageMagick。产物写入 `target/wayland-smoke/`
+（`sway.log`、`app.log`、`wayland-smoke.png`）。
 
 依赖 Linux 系统包：
 

@@ -213,6 +213,21 @@ scripts/linux-headless-smoke.sh
 依赖：`python3`、`xwininfo`（`x11-utils`）、`dbus-run-session`（可选，有则
 使用隔离的 D-Bus session）。运行前需要先构建 `target/release/rustmd`。
 
+### Wayland smoke
+
+应用本身不依赖 X11：GTK 3 会在 Wayland 与 X11/XWayland 之间自动选择后端，
+无需设置 `GDK_BACKEND`。可选的 Wayland 冒烟测试在 sway 的 headless 后端上
+以 `GDK_BACKEND=wayland` 启动 release 二进制，用 grim 截图并校验首帧非空白：
+
+```bash
+scripts/linux-wayland-smoke.sh
+```
+
+它使用临时 `XDG_RUNTIME_DIR` / `HOME`，不会影响当前桌面；产物写入
+`target/wayland-smoke/`。依赖 `sway`、`grim`、ImageMagick。CI 的
+`wayland-smoke` job 使用同一脚本，并设为 `continue-on-error`：Wayland 在
+无头 runner 上仍可能有 WebKitGTK/DMABUF 兼容性问题，因此只报告、不阻塞发布。
+
 ## 附录 A：没有 sudo / 缺 dev 包时
 
 如果目标机器是公司/受控环境，拿不到 root，但运行库已经安装，可以把 `-dev`
