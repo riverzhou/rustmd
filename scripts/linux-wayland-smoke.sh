@@ -86,34 +86,39 @@ APP_HOME="$(mktemp -d "$OUT/home-XXXXXX")"
 HOME="$APP_HOME" "$BIN" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 
-# Let GTK map the window and WebKit paint the onboarding page. The process
-# must stay alive the whole time; a crash is the most common headless failure.
-for _ in $(seq 1 50); do
+# GTK/WebKit can need several seconds to map and paint on a cold software
+# renderer. Poll compositor frames instead of sleeping a fixed amount: the
+# first frames may legitimately be black while WebKit starts its processes.
+STATS="$OUT/frame-stats.txt"
+: >"$STATS"
+MEAN=""
+SD=""
+READY=0
+for attempt in $(seq 1 15); do
+  sleep 2
   if ! kill -0 "$APP_PID" 2>/dev/null; then
     tail -40 "$OUT/app.log" >&2 || true
     die "rustmd exited before the first frame"
   fi
-  sleep 0.1
+  grim "$OUT/wayland-smoke.png" >"$OUT/grim.log" 2>&1 || {
+    tail -40 "$OUT/grim.log" >&2 || true
+    die "grim could not capture the Wayland output"
+  }
+  [ -s "$OUT/wayland-smoke.png" ] || die "grim produced an empty screenshot"
+  stats="$("$IMAGE_TOOL" "$OUT/wayland-smoke.png" -colorspace Gray \
+    -format "%[fx:mean] %[fx:standard_deviation]" info:)" || {
+    die "ImageMagick could not read the screenshot"
+  }
+  read -r MEAN SD <<<"$stats"
+  if [ -z "${MEAN:-}" ] || [ -z "${SD:-}" ]; then
+    die "ImageMagick returned no frame statistics (mean='${MEAN:-}', stddev='${SD:-}')"
+  fi
+  echo "frame $attempt: mean=$MEAN stddev=$SD" | tee -a "$STATS"
+  if awk -v mean="$MEAN" -v sd="$SD" 'BEGIN { exit !(mean > 0.01 && sd > 0.02) }'; then
+    READY=1
+    break
+  fi
 done
-sleep 3
+[ "$READY" = 1 ] || die "no non-blank frame after 30s (last mean=$MEAN, stddev=$SD)"
 
-grim "$OUT/wayland-smoke.png" >"$OUT/grim.log" 2>&1 || {
-  tail -40 "$OUT/grim.log" >&2 || true
-  die "grim could not capture the Wayland output"
-}
-[ -s "$OUT/wayland-smoke.png" ] || die "grim produced an empty screenshot"
-
-stats="$("$IMAGE_TOOL" "$OUT/wayland-smoke.png" -colorspace Gray \
-  -format "%[fx:mean] %[fx:standard_deviation]" info:)" || {
-  die "ImageMagick could not read the screenshot"
-}
-read -r mean sd <<<"$stats"
-if [ -z "${mean:-}" ] || [ -z "${sd:-}" ]; then
-  die "ImageMagick returned no frame statistics (mean='${mean:-}', stddev='${sd:-}')"
-fi
-echo "frame stats: mean=$mean stddev=$sd"
-if ! awk -v mean="$mean" -v sd="$sd" 'BEGIN { exit !(mean > 0.01 && sd > 0.02) }'; then
-  die "the Wayland frame looks blank (mean=$mean, stddev=$sd)"
-fi
-
-echo "wayland smoke OK: mean=$mean stddev=$sd screenshot=$OUT/wayland-smoke.png"
+echo "wayland smoke OK: mean=$MEAN stddev=$SD screenshot=$OUT/wayland-smoke.png"
