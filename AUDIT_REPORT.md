@@ -23,6 +23,11 @@ lopdf 两个 PR 的 CI 检查为红，合并后的 master push CI 也失败：�
 `N / M` 页脚正确；单测新增“原有字体不得被替换”的断言。`npm audit --omit=dev`
 报告 0 个漏洞。未发现新的安全或数据风险；功能与文件格式未变。
 
+发布链路同步调整：Linux 发布构建固定 `ubuntu-26.04`（与 `LINUX_BUILD.md` 的
+26.04 基线一致，运行基线 Ubuntu 24.04+ / glibc 2.39），`ci.yml` 增加 Ubuntu
+26.04 的 deb/AppImage 打包 dry run，同时保留 Ubuntu 22.04 编译与 Xvfb E2E；
+`publish` 固定 `ubuntu-24.04`，不再跟随 `ubuntu-latest` 标签迁移。
+
 ## v1.10.4 全量审计与回归（历史）
 
 本轮从四个方向全量审计（Rust 后端、前端核心、纯模块/CSS、构建/发布/CI），确认并修复

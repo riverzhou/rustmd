@@ -14,6 +14,15 @@
 - `marked` 18.1.3 → **18.2.0**（Markdown 解析修复）
 - `vite` 8.3.6 → **8.3.8**（构建链修复）
 
+## Linux 兼容性
+
+- 本版 Linux deb/AppImage 改在 **Ubuntu 26.04** 上构建（与 `LINUX_BUILD.md` 的
+  构建基线一致），运行基线为 **Ubuntu 24.04+ / glibc 2.39**，需要 GTK 3 与
+  WebKitGTK 4.1 运行库。
+- 仍在使用 Ubuntu 22.04 的用户请保留 1.10.4，或按 `LINUX_BUILD.md` 从源码构建。
+- 普通 CI 仍保留 Ubuntu 22.04 的编译与 Xvfb E2E；发布 workflow 另外在
+  Ubuntu 26.04 上执行 deb/AppImage 打包 dry run。
+
 ## 修复与验证
 
 - 适配 `libloading` 0.9 的 `AsFilename` API，Linux 打印代码恢复编译。

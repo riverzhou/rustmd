@@ -39,12 +39,17 @@ this file is the developer/agent contract.
   report checker enforces HTML + data coverage (`--require-html --require-data`),
   freshness (24 h default), and verifies every reported PNG/PDF/HTML artifact
   exists with the exact recorded byte length.
-- CI: `.github/workflows/ci.yml` (quality gate + three-platform compile,
-  Windows sign/portable-zip dry run, macOS app bundle + ad-hoc sign, Linux Xvfb
-  E2E); release: `.github/workflows/release.yml` (Windows portable zip, Linux
-  deb/AppImage, macOS Apple Silicon (arm64) DMG). Details: `docs/RELEASING.md`.
+- CI: `.github/workflows/ci.yml` (quality gate on Ubuntu 22.04, compile on
+  Windows / Ubuntu 22.04 / Ubuntu 26.04 / macOS, Windows sign/portable-zip dry
+  run, macOS app bundle + ad-hoc sign, Ubuntu 26.04 deb/AppImage dry run, Ubuntu
+  22.04 Xvfb E2E); release: `.github/workflows/release.yml` (Windows portable
+  zip, Linux deb/AppImage built on Ubuntu 26.04, macOS Apple Silicon (arm64)
+  DMG). Details: `docs/RELEASING.md`.
 - Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4
   backend); install/packaging/no-root sysroot notes live in `LINUX_BUILD.md`.
+  Release packages are built on the latest Ubuntu (26.04) per that guide, with
+  an Ubuntu 24.04+ / glibc 2.39 runtime baseline; CI still compiles on Ubuntu
+  22.04 for older-distro coverage.
   `scripts/linux-headless-smoke.sh` can smoke-test the release binary on an
   isolated Xvfb display (artifacts in `target/headless-smoke/`).
 
@@ -557,8 +562,9 @@ If a new Tauri *plugin* is used:
   warns). **macOS** is ad-hoc (Gatekeeper still asks for approval). See
   `docs/RELEASING.md`.
 - **Linux runtime deps**: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0`,
-  `libsoup-3.0.so.0`; the app is dynamically linked, so build on the oldest
-  distro you intend to support. See `LINUX_BUILD.md`.
+  `libsoup-3.0.so.0`; the app is dynamically linked. Release packages are built
+  on Ubuntu 26.04 and target Ubuntu 24.04+ / glibc 2.39; CI still compiles on
+  22.04. See `LINUX_BUILD.md`.
 - Shell here is git-bash on Windows: quote paths with spaces; `ls`/`grep`
   work, PowerShell-style syntax does not.
 

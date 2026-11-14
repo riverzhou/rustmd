@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-latest]
+        os: [windows-latest, ubuntu-22.04, ubuntu-26.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -72,7 +72,7 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Install Linux system dependencies
+      - name: Install Linux system dependencies (Ubuntu 22.04)
         if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
@@ -83,6 +83,23 @@ jobs:
             librsvg2-dev \
             patchelf \
             libxdo-dev \
+            build-essential \
+            curl \
+            file \
+            xdg-utils
+
+      - name: Install Linux system dependencies (Ubuntu 26.04)
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libfuse2t64 \
             build-essential \
             curl \
             file \
@@ -119,8 +136,22 @@ jobs:
         run: node scripts/cargo.mjs test
 
       - name: Compile desktop binary
-        if: matrix.os != 'macos-latest'
+        if: matrix.os == 'windows-latest' || matrix.os == 'ubuntu-22.04'
         run: npx tauri build --no-bundle
+
+      # Exercise deb/AppImage packaging on the latest Ubuntu before a release
+      # tag uses the same runner. Keep the 22.04 compile above as the
+      # older-distro compatibility check.
+      - name: Build Linux packages (Ubuntu 26.04 dry run)
+        if: matrix.os == 'ubuntu-26.04'
+        run: npx tauri build --bundles deb,appimage
+
+      - name: Verify Linux packages were produced
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          ls -l target/release/bundle/deb/*.deb
+          ls -l target/release/bundle/appimage/*.AppImage
 
       # The signing and portable-zip scripts are custom and only ran on a
       # release tag before: exercise them on every CI run so a packaging

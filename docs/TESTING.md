@@ -129,17 +129,24 @@ localStorage 迁移：
 | Job | 内容 |
 | --- | --- |
 | `quality` | Ubuntu 22.04：安装 Tauri 依赖，`npm ci`，`npm run check`（含 lint/单测/仓库检查/Rust 测试/构建） |
-| `build` | Windows / Ubuntu 构建（Windows 额外跑 `cargo test`，并执行签名 + 绿色 zip 的打包 dry run）；macOS 构建 `aarch64-apple-darwin --bundles app` 并 ad-hoc 签名验证（Apple Silicon only） |
-| `selftest` | Ubuntu + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
+| `build` | Windows / Ubuntu 22.04 编译（Windows 额外跑 `cargo test`，并执行签名 + 绿色 zip 的打包 dry run）；Ubuntu 26.04 执行 deb/AppImage 打包 dry run；macOS 构建 `aarch64-apple-darwin --bundles app` 并 ad-hoc 签名验证（Apple Silicon only） |
+| `selftest` | Ubuntu 22.04 + Xvfb：安装 WebKitGTK 与中文字体，跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
 
 依赖 Linux 系统包：
 
 ```bash
+# Ubuntu 22.04（quality / selftest）
 sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libssl-dev librsvg2-dev \
   patchelf libxdo-dev build-essential curl file xdg-utils xvfb fonts-noto-cjk
+
+# Ubuntu 26.04（发布构建 / 打包 dry run）
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libssl-dev \
+  librsvg2-dev patchelf libxdo-dev libfuse2t64 build-essential curl file xdg-utils
 ```
 
-发布 workflow 的 `verify` job 也会在 Ubuntu + Xvfb 跑 `npm run selftest`，并用 `--require-html --require-data` 校验报告；详见 [RELEASING.md](RELEASING.md)。
+发布 workflow 的 `verify` job 在 Ubuntu 26.04 + Xvfb 跑 `npm run selftest`，并用
+`--require-html --require-data` 校验报告；Linux deb/AppImage 也在 26.04 构建。
+详见 [RELEASING.md](RELEASING.md)。
 
 ## 加测试的原则
 

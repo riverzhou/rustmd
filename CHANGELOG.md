@@ -16,6 +16,15 @@
   修正 `&&str` 调用；`lopdf` 0.47 的 `get_page_content` 直接返回 `Vec<u8>`
   （不再包 `Result`），更新 PDF 页码测试。
 
+### 兼容性（Compatibility）
+
+- **Linux 发布包改在 Ubuntu 26.04 上构建**：`release.yml` 的 verify 与 linux job
+  固定 `ubuntu-26.04`（与 `LINUX_BUILD.md` 的构建基线一致），deb/AppImage 的运行
+  基线为 Ubuntu 24.04+ / glibc 2.39。Ubuntu 22.04 用户请保留 1.10.4 或从源码构建。
+- **CI 同步调整**：`ci.yml` 增加 Ubuntu 26.04 的 deb/AppImage 打包 dry run，
+  同时保留 Ubuntu 22.04 的编译与 Xvfb E2E；`publish` 固定 `ubuntu-24.04`，
+  不再依赖 `ubuntu-latest` 标签迁移。
+
 ### 质量（Quality）
 
 - **PDF 页码回归加强**：页码压印测试新增“原有页面字体必须保留”断言；另用真实

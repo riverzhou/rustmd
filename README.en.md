@@ -203,7 +203,7 @@ Get the latest from [GitHub Releases](https://github.com/riverzhou/rustmd/releas
 | Platform | Asset | Notes |
 | --- | --- | --- |
 | Windows | `rustmd-<version>-win-x64-portable.zip` | Portable: unzip and run `rustmd.exe`, no installer |
-| Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu package / portable AppImage |
+| Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu package / portable AppImage; requires Ubuntu 24.04+ (glibc ≥ 2.39) |
 | macOS | `rustmd-<version>-macos-arm64.dmg` | Apple Silicon (arm64) only; Intel Macs are not supported |
 
 Windows and macOS assets have a `.sha256`; Linux ships `SHA256SUMS-linux.txt`; releases also include a combined `SHA256SUMS.txt` (it requires all release assets in one folder). For a single-platform download, use that platform’s checksum file.
@@ -225,6 +225,11 @@ chmod +x rustmd_<version>_amd64.AppImage
 ```
 
 AppImage needs FUSE; without it use `--appimage-extract-and-run`.
+
+Starting with 1.10.5, Linux packages are built on **Ubuntu 26.04** and target
+Ubuntu 24.04+ / glibc 2.39, with GTK 3 and WebKitGTK 4.1 runtime libraries.
+Ubuntu 22.04 users should stay on 1.10.4 or build from source following
+[LINUX_BUILD.md](LINUX_BUILD.md).
 
 ### macOS
 

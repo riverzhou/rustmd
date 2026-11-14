@@ -22,7 +22,9 @@ env:
 jobs:
   verify:
     name: release quality gate
-    runs-on: ubuntu-22.04
+    # Build and test the release on the latest Ubuntu (26.04), matching
+    # LINUX_BUILD.md. Normal CI still runs the gate/E2E on 22.04.
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -39,7 +41,7 @@ jobs:
           sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
           sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             libssl-dev \
             librsvg2-dev \
             patchelf \
@@ -262,7 +264,9 @@ jobs:
   linux:
     name: linux packages
     needs: verify
-    runs-on: ubuntu-22.04
+    # Release packages are built on the latest Ubuntu (26.04), the baseline
+    # documented in LINUX_BUILD.md; the deb/AppImage target Ubuntu 24.04+.
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -279,12 +283,12 @@ jobs:
           sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
           sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             libssl-dev \
             librsvg2-dev \
             patchelf \
             libxdo-dev \
-            libfuse2 \
+            libfuse2t64 \
             build-essential \
             curl \
             file \
@@ -324,7 +328,9 @@ jobs:
   publish:
     name: publish GitHub Release
     needs: [verify, windows, macos, linux]
-    runs-on: ubuntu-latest
+    # No build here: only assemble and publish the uploaded artifacts. Pin a
+    # stable runner instead of following the ubuntu-latest migration.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write

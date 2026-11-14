@@ -197,7 +197,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 | 平台 | 产物 | 说明 |
 | --- | --- | --- |
 | Windows | `rustmd-<version>-win-x64-portable.zip` | **绿色版**：解压后直接运行 `rustmd.exe`，不写注册表 |
-| Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu 安装包 / 便携 AppImage |
+| Linux | `rustmd_<version>_amd64.deb` / `rustmd_<version>_amd64.AppImage` | Debian/Ubuntu 安装包 / 便携 AppImage；需要 Ubuntu 24.04+（glibc ≥ 2.39） |
 | macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 
 Windows / macOS 资产旁提供 `.sha256`；Linux 提供 `SHA256SUMS-linux.txt`；Release 里还有合并的 `SHA256SUMS.txt`（需要全部资产在同一目录才能校验）。只下载单平台时请用对应平台的校验文件。
@@ -221,6 +221,10 @@ chmod +x rustmd_<version>_amd64.AppImage
 ```
 
 AppImage 需要 FUSE；没有 FUSE 时使用 `--appimage-extract-and-run`。
+
+1.10.5 起 Linux 发布包在 **Ubuntu 26.04** 上构建，运行基线为 Ubuntu 24.04+ /
+glibc 2.39，并需要 GTK 3 与 WebKitGTK 4.1 运行库。仍在使用 Ubuntu 22.04 的用户
+请保留 1.10.4，或按 [LINUX_BUILD.md](LINUX_BUILD.md) 从源码构建。
 
 ### macOS
 
