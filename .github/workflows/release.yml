@@ -153,10 +153,14 @@ jobs:
           # succeeds silently, and the .cer alone would keep artifacts/ non-empty
           # so upload-artifact's if-no-files-found=error would never fire.
           $ErrorActionPreference = 'Stop'
+          $version = (node -p "require('./package.json').version").Trim()
+          $releaseDir = Join-Path 'release' $version
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          $zip = @(Get-ChildItem release -Recurse -Filter '*-win-x64-portable.zip' -File)
+          # Scope to release/<version>/: the portable folder inside it also
+          # contains a copy of the .cer, so a recursive search finds two.
+          $zip = @(Get-ChildItem $releaseDir -Filter '*-win-x64-portable.zip' -File)
           if ($zip.Count -ne 1) {
-            throw "expected exactly one portable zip under release/, found $($zip.Count)"
+            throw "expected exactly one portable zip under $releaseDir, found $($zip.Count)"
           }
           $zipPath = $zip[0].FullName
           if (-not (Test-Path "$zipPath.sha256")) {
@@ -164,11 +168,14 @@ jobs:
           }
           Copy-Item $zipPath artifacts/
           Copy-Item "$zipPath.sha256" artifacts/
-          $cer = @(Get-ChildItem release -Recurse -Filter '*.cer' -File)
-          if ($cer.Count -ne 1) {
-            throw "expected the self-signed certificate next to the release, found $($cer.Count)"
+          $cer = @(Get-ChildItem $releaseDir -Filter '*.cer' -File)
+          if ($cer.Count -eq 1) {
+            $cer | Copy-Item -Destination artifacts/
+          } elseif ($cer.Count -gt 1) {
+            throw "expected at most one certificate in $releaseDir, found $($cer.Count)"
+          } else {
+            Write-Host 'No self-signed certificate (real PFX build); skipping'
           }
-          $cer | Copy-Item -Destination artifacts/
           Get-ChildItem artifacts | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v7
