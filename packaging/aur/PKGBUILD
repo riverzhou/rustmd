@@ -1,7 +1,7 @@
 # Maintainer: River Zhou <riverzhou2000@163.com>
 
 pkgname=rustmd-bin
-pkgver=1.10.4
+pkgver=1.10.5
 pkgrel=1
 pkgdesc='Local-first Markdown, HTML, CSV, TXT and JSON notes (prebuilt AppImage)'
 arch=('x86_64')
@@ -12,7 +12,7 @@ provides=('rustmd')
 conflicts=('rustmd' 'rustmd-git')
 options=('!strip' '!debug')
 source=("rustmd-${pkgver}.AppImage::https://github.com/riverzhou/rustmd/releases/download/v${pkgver}/rustmd_${pkgver}_amd64.AppImage")
-sha256sums=('54117e81e52214123f027dcc6646a6152be1839c320b4642948b49ed9f767847')
+sha256sums=('3e5640f0bc0f0c38fbe2672d849950272b32274abe5ea1eb0206fd3361d29f19')
 
 prepare() {
   chmod +x "${srcdir}/rustmd-${pkgver}.AppImage"
