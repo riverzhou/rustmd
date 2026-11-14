@@ -27,7 +27,7 @@ getrandom = "0.3"
 # Page-number footer stamping for the macOS/Linux vector PDFs (Windows uses
 # WebView2's own header/footer). Kept platform-independent so it is compiled
 # and unit-tested on every host.
-lopdf = "0.36"
+lopdf = "0.47"
 # Loading the system WebKitGTK/GTK C APIs at runtime on Linux: the app already
 # links them, so no dev headers are needed to build this code.
 libloading = "0.9"
