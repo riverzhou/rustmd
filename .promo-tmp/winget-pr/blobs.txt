@@ -1,0 +1,4 @@
+RiverZhou.rustmd.yaml 39e29814146741f76860e730f4fe07df800feab1
+RiverZhou.rustmd.installer.yaml 56a47ff05da8d43480810942e599cbc0c248c334
+RiverZhou.rustmd.locale.en-US.yaml bd6fff8bb9dbfc1779f833e14875bde8228ce656
+RiverZhou.rustmd.locale.zh-CN.yaml d18d384933ba96a7e10a30c713d7604462d68893

@@ -20,7 +20,8 @@
 
 > **2026-11-14 已自动执行**：3 个 awesome list PR 已提交（awesome-local-first #66、
 > awesome-markdown-editors #316、awesome-note-taking #190）；Scoop bucket 与 Homebrew tap
-> 已发布；Discussions 欢迎帖已创建。winget 需要本人签 Microsoft CLA，AUR 需要 AUR 账号。
+> 已发布；Discussions 欢迎帖已创建；winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)
+> 已提交，只差在 PR 里回复 `@microsoft-github-policy-service agree` 完成 CLA；AUR 需要 AUR 账号。
 
 ## 1. 定位：不要卖“又一个 Markdown 编辑器”
 
@@ -67,7 +68,7 @@
 | # | 渠道 | 类型 | 预期 | 需要 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | GitHub About / topics / 社交预览 / pinned repo | 基础转化 | 决定 10 秒留存 | GitHub 设置 | 部分完成，社交预览待上传 |
-| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | 清单已校验；待签 Microsoft CLA |
+| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提；待签 Microsoft CLA |
 | 3 | AUR（Arch Linux） | 长期搜索入口 | 中高 | AUR 账号 | 清单已就绪；待提交 |
 | 4 | Scoop / Homebrew tap | 长期搜索入口 | 中 | 建 bucket/tap 仓库 | ✅ 已发布：`riverzhou/scoop-bucket`、`riverzhou/homebrew-tap` |
 | 5 | awesome-markdown-editors、awesome-local-first、awesome-note-taking | 精准推荐 | 高 | 3 个 PR | ✅ 已提交（awesome-rust 需 50 stars，暂缓） |
@@ -404,9 +405,8 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 
 详细清单与校验命令在 [../packaging/README.md](../packaging/README.md)。提交顺序建议：
 
-1. **winget**：fork `microsoft/winget-pkgs`，把 `packaging/winget/*` 放到
-   `manifests/r/RiverZhou/rustmd/1.10.4/`，本地 `winget validate --manifest` 通过后提 PR；
-   **需要先签 Microsoft CLA**（本人操作）；
+1. **winget**：PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提交，
+   在 PR 里回复 `@microsoft-github-policy-service agree` 即完成 CLA（本人操作）；
 2. **Scoop**：✅ 已发布到自建 [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket)；
    如需进 Extras，再按 Extras 的知名度门槛提交；
 3. **AUR**：创建 `rustmd-bin` 包，推 `PKGBUILD` 与 `makepkg --printsrcinfo` 生成的
