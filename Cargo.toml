@@ -23,7 +23,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 # Stitch full-page HTML captures split into multiple canvas-sized segments.
 png = "0.18"
 # Unpredictable tokens for rmdhtml preview/render documents.
-getrandom = "0.3"
+getrandom = "0.4"
 # Page-number footer stamping for the macOS/Linux vector PDFs (Windows uses
 # WebView2's own header/footer). Kept platform-independent so it is compiled
 # and unit-tested on every host.
