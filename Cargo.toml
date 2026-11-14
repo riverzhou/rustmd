@@ -30,7 +30,7 @@ getrandom = "0.3"
 lopdf = "0.36"
 # Loading the system WebKitGTK/GTK C APIs at runtime on Linux: the app already
 # links them, so no dev headers are needed to build this code.
-libloading = "0.8"
+libloading = "0.9"
 
 # Native vector PDF export: WebView2's print-to-PDF stream API. Text, fonts and
 # pagination come from the engine instead of html2canvas + jsPDF image slices.
