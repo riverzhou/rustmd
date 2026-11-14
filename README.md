@@ -1,21 +1,54 @@
 # rustmd
 
-**Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**.
+**本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用** —— Windows、macOS（Apple Silicon）、Linux。笔记就是普通文件夹里的 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件：不需要导入、没有数据库、不用登录；HTML 笔记直接编辑源码，右侧由**应用内置 WebView** 渲染完整页面，无需外部浏览器。
 
-**本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用（macOS 仅 Apple Silicon）**：编辑 HTML 源码即可在应用内置 WebView 中预览整页效果（脚本、样式、本地资源和图表原生执行，无需外部浏览器）；文件夹树、文件名卡片、全文搜索、Mermaid 图表、LaTeX 公式、HTML / PNG / PDF 导出；一个笔记库就是一个普通文件夹。
-
-[English](README.en.md) · [简体中文](README.md)
+<sub>**English** · Local-first Markdown, HTML, CSV, TXT & JSON notes for Windows, macOS (Apple Silicon) and Linux. Plain files, no account, no cloud lock-in — a lightweight desktop app built with Rust + Tauri 2. → **[README.en.md](README.en.md)**</sub>
 
 [![CI](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml/badge.svg)](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/riverzhou/rustmd?display_name=tag&sort=semver)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/riverzhou/rustmd/total)](https://github.com/riverzhou/rustmd/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4f6df5)](#下载与安装)
 [![Rust](https://img.shields.io/badge/Rust-2024-000?logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://tauri.app/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
 当前版本 **1.10.4** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+
+[![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
+[![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
+
+<img src="docs/demo.gif" alt="rustmd 十秒巡览：Markdown 公式与 Mermaid、HTML 笔记整页渲染、CSV/TXT 智能表格、JSON 检查器和深浅色主题" width="880">
+
+<sub>10 秒巡览：Markdown 公式与 Mermaid → HTML 笔记整页渲染 → CSV/TXT 智能表格 → JSON 检查器 → 深浅色主题。</sub>
+
+## 为什么是 rustmd
+
+如果你想要一个**不把笔记锁进数据库、不强制登录、打开就能写**的工具：
+
+- **HTML 笔记是主角**：直接编辑 `.html`，右侧由内置 WebView 渲染整页；页面样式、脚本、本地图片/CSS/JS 和图表原生执行，导出 HTML/PNG/PDF 时保持一致——不需要 Edge/Chrome，也不用把 HTML 塞进 Markdown。
+- **五种格式，一个列表**：Markdown（MathJax + Mermaid + 代码高亮）、HTML、CSV、TXT、JSON。CSV/TXT 有智能列宽、数字右对齐和隔行底色；JSON 是键值分列、可折叠的检查器；搜索同时覆盖标题、文件名、标签和正文。
+- **纯文件存储**：笔记就是文件夹里的普通文件，可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理；没有数据库、账号或专有格式。
+- **本地优先 + 多库**：核心编辑、预览、搜索、导出全部离线可用；最近笔记库、置顶、多库同开、当前文件夹范围、front matter 标签。
+- **轻量跨平台**：Rust + Tauri 2，Windows 绿色 zip、Linux deb/AppImage、macOS Apple Silicon；没有 Electron 运行时。
+- **安全边界**：Markdown 消毒、HTML 在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
+- **迁移成本低**：直接打开 Obsidian / Typora / VS Code 使用的文件夹；Markdown front matter 的其他字段原样保留；UTF-8 / GBK / GB18030 自动解码。
+
+适合：个人知识库、技术笔记、写作草稿、课程笔记、HTML 报告与本地文档库。
+
+### 和其他工具比
+
+| 能力 | rustmd | Obsidian | Typora | VS Code | Notepad++ |
+| --- | --- | --- | --- | --- | --- |
+| 打开任意文件夹，无需导入 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| HTML 笔记整页预览 | ✅ 内置 WebView | ❌ | ❌ | ⚠️ 需扩展 | ❌ |
+| CSV / TXT / JSON 原生视图 | ✅ | ❌ | ❌ | ⚠️ 需扩展 | ❌ |
+| Markdown 公式 / Mermaid | ✅ | ✅ | ✅ | ⚠️ 需扩展 | ❌ |
+| 离线、无账号 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 开源 | ✅ GPL-3.0 | ❌ | ❌ | ✅ | ✅ |
+| 价格 | 免费 | 免费（同步/发布付费） | 付费 | 免费 | 免费 |
+
+> 对比基于 2026 年 11 月的公开信息，只列出与本项目定位相关的维度；各工具都在持续更新，以官方说明为准。
 
 ## 截图
 
@@ -64,21 +97,6 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 英文界面示例：
 
 <img src="docs/screenshots/overview.en.png" alt="rustmd English interface with language selector and markdown preview" width="880">
-
-## 为什么是 rustmd
-
-如果你想要一个**不把笔记锁进数据库、不强制登录、打开就能写**的 Markdown 工具：
-
-- **纯文件存储**：笔记就是 `.md` / `.html` / `.csv` / `.txt` / `.json`，文件夹就是文件夹；可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理。
-- **本地优先**：核心编辑、预览、搜索、导出全部离线可用；拉取远程图片、加载 HTML 报告里的 CDN 脚本等场景才需要网络。
-- **轻量跨平台**：Rust + Tauri 2，Windows / macOS / Linux 三端；Windows 提供解压即用的绿色 zip。
-- **不只是编辑器**：文件夹树、全文搜索、front matter 标签、**MD / HTML / CSV / TXT / JSON 格式徽标**、**内置 WebView 渲染 HTML 页面/报告**、MathJax、Mermaid、代码高亮、HTML / PNG / PDF 导出。
-- **安全边界认真做**：Markdown HTML 消毒、HTML 笔记在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
-- **适合从 Obsidian / Typora / VS Code 迁移**：直接打开已有 `.md` / `.html` / `.csv` / `.txt` / `.json` 文件夹即可；Markdown front matter 中的 `title:`、`date:` 等字段保存时原样保留。CSV/TXT/JSON 使用表格、制表符与 JSON 检查器视图，并提供 UTF-8 / GBK / GB18030 自动解码。
-
-适合：个人知识库、技术笔记、写作草稿、课程笔记、本地 Markdown 文档库。
-
-关键词：local-first、Markdown 笔记、HTML 笔记、HTML 编辑器、HTML 网页预览、内置 WebView、HTML 报告、CSV 表格、TXT 文本、JSON 查看器、GBK 编码、Markdown 编辑器、最近笔记库、置顶笔记库、多库同开、多语言界面、English / 中文、离线笔记、Windows 绿色版、Tauri、Rust。
 
 ## 功能
 
@@ -350,6 +368,9 @@ Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性�
 - [Audit Report / 审计报告](AUDIT_REPORT.md)
 - [Developer & Agent Guide / 开发指南](AGENTS.md)
 - [GitHub 项目文案与 topics](docs/GITHUB_PROJECT_COPY.md)
+- [推广与增长手册](docs/PROMOTION.md)
+- [包管理器清单（winget / Scoop / AUR / Homebrew）](packaging/README.md)
+- [贡献指南](CONTRIBUTING.md)
 
 ## License
 

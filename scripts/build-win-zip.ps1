@@ -53,6 +53,19 @@ $docs = Join-Path $root 'docs'
 if (Test-Path $docs) {
   Copy-Item $docs (Join-Path $green 'docs') -Recurse
 }
+# GitHub-only promo artwork is not needed in the portable zip (the README GIF is).
+foreach ($promo in @('docs/social-preview.png', 'docs/social-preview.html')) {
+  $promoPath = Join-Path $green $promo
+  if (Test-Path $promoPath) { Remove-Item $promoPath -Force }
+}
+# docs/PROMOTION.md links to the package-manager README; ship it so the
+# offline docs have no dead relative links.
+$packagingReadme = Join-Path $root 'packaging/README.md'
+if (Test-Path $packagingReadme) {
+  $greenPackaging = Join-Path $green 'packaging'
+  New-Item -ItemType Directory -Force -Path $greenPackaging | Out-Null
+  Copy-Item $packagingReadme (Join-Path $greenPackaging 'README.md')
+}
 # README/RELEASING link the CI/release workflow files; ship them so the
 # offline copy has no dead repository links.
 $workflows = Join-Path $root '.github/workflows'
@@ -101,6 +114,8 @@ try {
     'CHANGELOG.md',
     'docs/screenshots/overview.png',
     'docs/ARCHITECTURE.md',
+    'docs/PROMOTION.md',
+    'packaging/README.md',
     '.github/workflows/ci.yml',
     '.github/workflows/release.yml'
   )

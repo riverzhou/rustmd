@@ -1,0 +1,72 @@
+name: Bug report
+description: Something broke or rendered incorrectly.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please **do not paste private note
+        contents** — a small anonymized sample is enough. Security issues belong in
+        [SECURITY.md](https://github.com/riverzhou/rustmd/blob/master/docs/SECURITY.md), not in a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Open a folder with ...
+        2. Click ...
+        3. The preview shows ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: rustmd version
+      description: Shown in the About/top bar or in the release name (e.g. 1.10.4).
+      placeholder: "1.10.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - Linux (deb / AppImage)
+        - Linux (built from source)
+        - Other / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Note format
+      options:
+        - Markdown (.md)
+        - HTML (.html / .htm)
+        - CSV (.csv)
+        - TXT (.txt)
+        - JSON (.json)
+        - Multiple / not format-specific
+        - Not applicable (app shell, settings, …)
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Screenshots, console errors (F12 in dev builds), or a self-test report.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked that this is not a known limitation documented in the README FAQ.
+          required: true
+        - label: I am willing to test a fix (optional).
+          required: false

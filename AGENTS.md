@@ -534,6 +534,11 @@ If a new Tauri *plugin* is used:
   checker rejects reports older than 24h, verifies every artifact's existence
   and byte length, requires one entry per example note, and prints warnings. It
   restores the user’s notes root afterwards and exits with 0/1.
+- **Promo assets**: `docs/social-preview.html` is the source for the 1280×640
+  `docs/social-preview.png` (headless Edge `--screenshot`, see the file header); upload it
+  manually in Settings → Social preview (no API). `docs/demo.gif` is the README hero tour
+  (880×550, ~1.3 MB) built from five `docs/screenshots/` images with ffmpeg crossfades.
+  Re-render both when the UI or the copy changes.
 - **README screenshots** (`docs/screenshots/*.png`) are generated from the
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
@@ -566,5 +571,8 @@ If a new Tauri *plugin* is used:
 - `docs/SECURITY.md` — threat model and residual risks.
 - `CHANGELOG.md` — history; `AUDIT_REPORT.md` — current audit status.
 - `docs/screenshots/` — README screenshots (regenerate with `scripts/capture-screenshots.mjs`).
-- `docs/GITHUB_PROJECT_COPY.md` — About description, topics and discoverability copy.
+- `docs/GITHUB_PROJECT_COPY.md` — About description, topics, social preview and discoverability copy.
+- `docs/PROMOTION.md` — external launch kit (channels, ready-to-post copy, 30-day plan, metrics).
+- `packaging/` — winget / Scoop / AUR / Homebrew manifests (see `packaging/README.md`).
+- `CONTRIBUTING.md` — contribution workflow and PR checklist.
 - `LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.

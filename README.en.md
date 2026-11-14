@@ -1,19 +1,54 @@
 # rustmd
 
-**Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows, macOS (Apple Silicon) and Linux.** Plain `.md` / `.html` / `.csv` / `.txt` / `.json` files, no account, no cloud lock-in — a lightweight desktop notes app built with **Rust + Tauri 2**. Edit HTML and preview the full page in the built-in WebView: page scripts, styles, local assets and charts run natively, with no external browser required.
+**Local-first, offline-capable notes for Markdown, HTML, CSV, TXT and JSON** — Windows, macOS (Apple Silicon) and Linux. A note is just a `.md` / `.html` / `.csv` / `.txt` / `.json` file in a folder: no import, no database, no sign-in. Edit HTML source and preview the fully rendered page in the app's **built-in WebView**, with no external browser.
 
-[简体中文](README.md) · [English](README.en.md)
+<sub>**简体中文** · 本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用；HTML 源码编辑 + 内置 WebView 整页预览，无需外部浏览器。→ **[README.md](README.md)**</sub>
 
 [![CI](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml/badge.svg)](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/riverzhou/rustmd?display_name=tag&sort=semver)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/riverzhou/rustmd/total)](https://github.com/riverzhou/rustmd/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4f6df5)](#download)
 [![Rust](https://img.shields.io/badge/Rust-2024-000?logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://tauri.app/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
 Current version **1.10.4** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+
+[![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
+[![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
+
+<img src="docs/demo.gif" alt="rustmd 10-second tour: Markdown math and Mermaid, HTML notes rendered as full pages, CSV/TXT smart tables, JSON inspector and light/dark themes" width="880">
+
+<sub>10-second tour: Markdown math & Mermaid → HTML notes rendered as full pages → CSV/TXT smart tables → JSON inspector → light and dark themes.</sub>
+
+## Why rustmd
+
+If you want a tool that keeps notes as **plain files** instead of locking them in a database:
+
+- **HTML notes are first-class** — edit `.html` and see the full page on the right, rendered by the built-in WebView. Page styles, scripts, local images/CSS/JS and charts run natively; HTML/PNG/PDF exports keep the same layout. No Edge/Chrome, and no HTML stuffed into Markdown.
+- **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
+- **Plain files** — notes are ordinary files in a folder you own; use Git, Syncthing, iCloud, OneDrive or any sync tool. No database, account or proprietary format.
+- **Local-first + multi-vault** — editing, preview, search and export work offline; recent vaults, pinned vaults, a multi-vault view, current-folder scope and front-matter tags.
+- **Lightweight and cross-platform** — Rust + Tauri 2, with a portable Windows zip, Linux deb/AppImage and a macOS Apple Silicon DMG. No Electron runtime.
+- **Security-minded** — sanitized Markdown, HTML rendered in an isolated sandboxed iframe / hidden WebView, CSP, path containment, SSRF protection, and exports through the native save dialog.
+- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save; UTF-8/GBK/GB18030 decoding is automatic.
+
+Good for personal knowledge bases, engineering notes, writing drafts, course notes, HTML reports and local documentation.
+
+### How it compares
+
+| Capability | rustmd | Obsidian | Typora | VS Code | Notepad++ |
+| --- | --- | --- | --- | --- | --- |
+| Open any folder, no import | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Full-page HTML note preview | ✅ built-in WebView | ❌ | ❌ | ⚠️ extension | ❌ |
+| Native CSV / TXT / JSON views | ✅ | ❌ | ❌ | ⚠️ extension | ❌ |
+| Markdown math / Mermaid | ✅ | ✅ | ✅ | ⚠️ extension | ❌ |
+| Offline, no account | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Open source | ✅ GPL-3.0 | ❌ | ❌ | ✅ | ✅ |
+| Price | Free | Free (sync/publish paid) | Paid | Free | Free |
+
+> Based on public information as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official documentation.
 
 ## Screenshots
 
@@ -62,19 +97,6 @@ The first launch **follows the system language**: Chinese systems start in Simpl
 Chinese interface example:
 
 <img src="docs/screenshots/overview.png" alt="rustmd Simplified Chinese interface" width="880">
-
-## Why rustmd
-
-If you want a Markdown tool that keeps your notes as **plain files** instead of a database:
-
-- **Plain-text storage** — a note is a `.md` / `.html` / `.csv` / `.txt` / `.json` file, a folder is a folder. Use Git, Syncthing, iCloud, OneDrive or any sync tool.
-- **Offline by default** — editing, search, preview and export work without a network; only remote images and remote scripts/styles/fonts embedded in HTML notes need one.
-- **Lightweight and cross-platform** — Rust + Tauri 2 on Windows, macOS and Linux. Windows ships a portable zip.
-- **More than an editor** — folder tree, full-text search, front matter tags, MD/HTML/CSV/TXT/JSON format badges, **HTML pages and reports rendered in the built-in WebView**, UTF-8/GBK/GB18030 decoding, MathJax, Mermaid, syntax highlighting, HTML/PNG/PDF export.
-- **Security-minded** — sanitized Markdown HTML, isolated sandboxed/hidden-WebView rendering for HTML notes, CSP, path containment, SSRF protection, native save dialog for exports.
-- **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder with Markdown, HTML, CSV, TXT or JSON; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save. CSV/TXT/JSON get table, tab-column and JSON-inspector views with automatic UTF-8/GBK/GB18030 decoding.
-
-Good for personal knowledge bases, engineering notes, writing drafts, course notes and local Markdown documentation.
 
 ## Features
 
@@ -310,6 +332,9 @@ Open an [issue](https://github.com/riverzhou/rustmd/issues) or PR. Run `npm run 
 - [Audit report](AUDIT_REPORT.md)
 - [Developer & agent guide](AGENTS.md)
 - [GitHub project copy & topics](docs/GITHUB_PROJECT_COPY.md)
+- [Promotion and launch kit](docs/PROMOTION.md)
+- [Package-manager manifests (winget / Scoop / AUR / Homebrew)](packaging/README.md)
+- [Contributing guide](CONTRIBUTING.md)
 
 ## License
 

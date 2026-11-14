@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and usage help
+    url: https://github.com/riverzhou/rustmd/discussions
+    about: Ask in Discussions — setup, encoding, HTML preview, export and workflow questions.
+  - name: Security policy
+    url: https://github.com/riverzhou/rustmd/blob/master/docs/SECURITY.md
+    about: Please report vulnerabilities privately instead of opening a public issue.
+  - name: Testing and self-test reports
+    url: https://github.com/riverzhou/rustmd/blob/master/docs/TESTING.md
+    about: How to run the unit tests and the E2E self-test before reporting a rendering bug.
