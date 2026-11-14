@@ -2325,7 +2325,7 @@ fn linux_print_webview(
 
     fn load(names: &[&str]) -> Result<libloading::Library, String> {
         let mut last = String::from("library not found");
-        for name in names {
+        for &name in names {
             match unsafe { libloading::Library::new(name) } {
                 Ok(lib) => return Ok(lib),
                 Err(err) => last = err.to_string(),
@@ -4607,6 +4607,11 @@ mod tests {
 "
                 .to_vec(),
             )));
+            let font_id = doc.add_object(dictionary! {
+                "Type" => "Font",
+                "Subtype" => "Type1",
+                "BaseFont" => "Helvetica",
+            });
             let page_id = doc.add_object(dictionary! {
                 "Type" => "Page",
                 "Parent" => pages_id,
@@ -4617,7 +4622,7 @@ mod tests {
                     Object::Integer(842),
                 ],
                 "Contents" => content_id,
-                "Resources" => dictionary! {},
+                "Resources" => dictionary! { "Font" => dictionary! { "F1" => font_id } },
             });
             let pages = dictionary! {
                 "Type" => "Pages",
@@ -4638,11 +4643,14 @@ mod tests {
         assert_ne!(stamped, original, "the stamp must modify the document");
         let reloaded = Document::load_mem(&stamped).expect("stamped PDF must parse");
         assert_eq!(reloaded.get_pages().len(), 1);
-        let content =
-            String::from_utf8_lossy(&reloaded.get_page_content(page_id).unwrap()).to_string();
+        let content = String::from_utf8_lossy(&reloaded.get_page_content(page_id)).to_string();
         assert!(content.contains("1 / 1"), "got: {content}");
         assert!(content.contains("0 0 50 50 re f"), "original content lost");
         let fonts = reloaded.get_page_fonts(page_id).expect("fonts");
+        assert!(
+            fonts.keys().any(|name| name.as_slice() == b"F1"),
+            "the original font was replaced"
+        );
         assert!(
             fonts.keys().any(|name| name.as_slice() == b"RMDPageNumber"),
             "stamp font missing from page resources"
