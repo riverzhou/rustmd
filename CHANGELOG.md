@@ -5,6 +5,26 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.5] - 2026-11-14
+
+### 依赖（Dependencies）
+
+- **依赖升级**：`libloading` 0.9.0、`lopdf` 0.47.0、`getrandom` 0.4.3、
+  `tauri-plugin-opener` 2.7.3、`marked` 18.2.0、`vite` 8.3.8。`lopdf` 0.47 带有
+  大量畸形 PDF 的解析/解压加固，但升级跨越多个破坏性 API 版本。
+- **适配新 API**：`libloading` 0.9 的 `Library::new` 改用 `AsFilename` trait，
+  修正 `&&str` 调用；`lopdf` 0.47 的 `get_page_content` 直接返回 `Vec<u8>`
+  （不再包 `Result`），更新 PDF 页码测试。
+
+### 质量（Quality）
+
+- **PDF 页码回归加强**：页码压印测试新增“原有页面字体必须保留”断言；另用真实
+  9 页 WebView2 导出 PDF 验证页数、正文、字体与 `N / M` 页脚，确认 `lopdf`
+  0.47 的重写路径没有破坏打印输出。
+- `npm run check` 全绿：60 个前端单测、77 个 Rust 测试、fmt/clippy/ESLint、
+  仓库/版本检查与 Vite build；真实 WebView2 E2E 10 篇示例通过（远程图片主机
+  不可达时为警告，不影响发布）。
+
 ## [1.10.4] - 2026-11-14
 
 ### 安全（Security）

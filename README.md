@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.10.4** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.10.5** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)

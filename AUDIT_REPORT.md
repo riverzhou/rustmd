@@ -1,10 +1,29 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-14（v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.4（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
-**审计方式**：四个独立子代理分别全量审计 Rust 后端、前端核心（main/api/preview/export/editor/selftest）、纯模块+CSS 与脚本/CI/配置，并由主代理复核与修复；随后对修复做第二轮独立复查与全量回归；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）+ 发布包构建/签名/zip；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+**审计日期**：2026-11-14（v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.5（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：对 GitHub 合并的 5 个 Dependabot PR 做组合树复审与修复；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）+ 真实 9 页导出 PDF 页码压印验证；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.4 全量审计与回归（当前版本）
+## v1.10.5 依赖升级复审（当前版本）
+
+GitHub 上合并了 5 个 Dependabot PR（libloading 0.9、lopdf 0.47、getrandom 0.4、
+tauri-plugin-opener 2.7.3，以及 marked/vite/opener 的前端组），但 libloading 与
+lopdf 两个 PR 的 CI 检查为红，合并后的 master push CI 也失败：组合树无法编译。
+复审确认并修复：
+
+- **`libloading` 0.9**：`Library::new` 接受 `impl AsFilename`；遍历 `&[&str]`
+  得到 `&&str` 不再实现该 trait。改为解引用后，Linux 打印 FFI 恢复编译。
+- **`lopdf` 0.47**：`get_page_content` 自 v0.44 起直接返回 `Vec<u8>`（不再包
+  `Result`）；删除测试中的 `.unwrap()`。其余页面字典、资源与保存 API 不变。
+- **其余升级**：`getrandom` 0.4 的 `fill`、`tauri-plugin-opener` 2.7.3、
+  `marked` 18.2.0、`vite` 8.3.8 与现有代码兼容。
+
+修复后 `npm run check` 全绿，真实 WebView2 E2E 10 篇示例通过；另用 `lopdf` 0.47
+对真实 9 页 WebView2 导出 PDF 做页码压印，页数、正文、嵌入字体均保留，每页
+`N / M` 页脚正确；单测新增“原有字体不得被替换”的断言。`npm audit --omit=dev`
+报告 0 个漏洞。未发现新的安全或数据风险；功能与文件格式未变。
+
+## v1.10.4 全量审计与回归（历史）
 
 本轮从四个方向全量审计（Rust 后端、前端核心、纯模块/CSS、构建/发布/CI），确认并修复
 **2 个阻断级、9 个高优先级**以及一批中低风险问题；修复后再次独立复查，未发现新的阻断/

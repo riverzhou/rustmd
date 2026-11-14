@@ -24,8 +24,8 @@ body:
     id: version
     attributes:
       label: rustmd version
-      description: Shown in the About/top bar or in the release name (e.g. 1.10.4).
-      placeholder: "1.10.4"
+      description: Shown in the About/top bar or in the release name (e.g. 1.10.5).
+      placeholder: "1.10.5"
     validations:
       required: true
   - type: dropdown
