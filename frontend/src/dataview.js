@@ -164,6 +164,7 @@ function renderTable(
     scroll.appendChild(table);
     view.appendChild(scroll);
     const syncTopScroll = () => {
+      const wasHidden = topScroll.hidden;
       const overflow = scroll.scrollWidth - scroll.clientWidth > 1;
       topScroll.hidden = !overflow;
       // The upper bar has no vertical scrollbar, so matching its box to the
@@ -174,6 +175,7 @@ function renderTable(
       }
       topSpacer.style.width = `${scroll.scrollWidth}px`;
       if (!overflow && topScroll.scrollLeft !== 0) topScroll.scrollLeft = 0;
+      return wasHidden !== topScroll.hidden;
     };
     topScroll.addEventListener('scroll', () => {
       if (scroll.scrollLeft !== topScroll.scrollLeft) {
@@ -185,42 +187,110 @@ function renderTable(
         topScroll.scrollLeft = scroll.scrollLeft;
       }
     });
+    // The card, not the viewport, owns the scroll area: a fixed
+    // `100vh - Npx` guess ignored the card head, the top scrollbar, the
+    // preview padding and the bottom margin, so an 18-row table that filled
+    // the pane still showed a vertical scrollbar (and the padding below it
+    // overflowed the preview holder).
+    const measureAvailable = () => {
+      const holder = container.closest('.preview-holder');
+      if (!holder || !table.offsetHeight || holder.clientHeight === 0) {
+        return null;
+      }
+      const holderStyle = getComputedStyle(holder);
+      const viewStyle = getComputedStyle(view);
+      const paddingTop = parseFloat(holderStyle.paddingTop) || 0;
+      const paddingBottom = parseFloat(holderStyle.paddingBottom) || 0;
+      const marginBottom = parseFloat(viewStyle.marginBottom) || 0;
+      const borderBottom = parseFloat(viewStyle.borderBottomWidth) || 0;
+      const holderRect = holder.getBoundingClientRect();
+      const scrollRect = scroll.getBoundingClientRect();
+      const contentTop = holderRect.top + paddingTop - holder.scrollTop;
+      // Notices are appended after the scroll box; keep them inside the pane.
+      let after = 0;
+      let seenScroll = false;
+      for (const child of view.children) {
+        if (seenScroll) after += child.getBoundingClientRect().height;
+        else if (child === scroll) seenScroll = true;
+      }
+      return Math.max(
+        120,
+        holder.clientHeight -
+          paddingTop -
+          paddingBottom -
+          (scrollRect.top - contentTop) -
+          marginBottom -
+          borderBottom -
+          after
+      );
+    };
+
     const fitRows = () => {
-      // Re-measure from natural row heights every time the preview becomes
-      // visible or its width changes; the previous stretch must not compound.
+      const available = measureAvailable();
+      if (available === null) return;
+      // Use the real space below the card head/top bar. Do not add a
+      // tolerance here: even 2-3px past the content edge re-creates the
+      // outer preview scrollbar this measurement exists to remove.
+      const maxHeight = Math.floor(available);
+      scroll.style.maxHeight = `${maxHeight}px`;
       const rows = [...tbody.children];
+      // Re-measure from natural row heights every time; the previous stretch
+      // must not compound.
       for (const tr of rows) tr.style.removeProperty('height');
-      if (body.length < 18 || !container.closest('.preview-holder')) return;
-      if (!table.offsetHeight) return;
-      const target = window.innerHeight - 170;
+      if (body.length < 18) return;
+      const horizontalBar = Math.max(
+        0,
+        scroll.offsetHeight - scroll.clientHeight
+      );
+      const target = maxHeight - horizontalBar;
       const extra = target - table.offsetHeight;
       if (extra > 0 && rows.length) {
         const add = extra / rows.length;
         for (const tr of rows) {
-          tr.style.height = `${Math.ceil(tr.getBoundingClientRect().height + add)}px`;
+          // Fractional row heights keep the total on target; Math.ceil used
+          // to add up to one extra pixel per row and re-create the scrollbar.
+          tr.style.height = `${tr.getBoundingClientRect().height + add}px`;
         }
       }
     };
-    container.addEventListener('rustmd:layout', fitRows);
+
+    const layoutTable = () => {
+      syncTopScroll();
+      fitRows();
+    };
+    container.addEventListener('rustmd:layout', layoutTable);
     // Window resizing changes the clamp()-based font/table width; keep the
     // top bar geometry in sync on both 1440×900 and 4K/200% viewports.
     let observer = null;
-    const onResize = () => requestAnimationFrame(syncTopScroll);
+    let holderObserver = null;
+    const holder = container.closest('.preview-holder');
+    const onScrollResize = () =>
+      requestAnimationFrame(() => {
+        // fitRows also resizes the scroll box; only re-fit when the top bar
+        // visibility changed, so the observer cannot feed itself.
+        if (syncTopScroll()) fitRows();
+      });
+    const onHolderResize = () => requestAnimationFrame(layoutTable);
     if (typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(onResize);
+      observer = new ResizeObserver(onScrollResize);
       observer.observe(scroll);
+      if (holder) {
+        holderObserver = new ResizeObserver(onHolderResize);
+        holderObserver.observe(holder);
+      }
     } else {
-      window.addEventListener('resize', onResize);
+      window.addEventListener('resize', onHolderResize);
     }
     container.__dataTeardown = () => {
-      container.removeEventListener('rustmd:layout', fitRows);
+      container.removeEventListener('rustmd:layout', layoutTable);
       if (observer) observer.disconnect();
-      else window.removeEventListener('resize', onResize);
+      if (holderObserver) holderObserver.disconnect();
+      if (typeof ResizeObserver === 'undefined') {
+        window.removeEventListener('resize', onHolderResize);
+      }
+      scroll.style.removeProperty('max-height');
     };
-    requestAnimationFrame(() => {
-      fitRows();
-      syncTopScroll();
-    });
+    requestAnimationFrame(layoutTable);
   }
   for (const notice of notices) addNotice(view, notice.text, notice.tone);
 }

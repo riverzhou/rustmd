@@ -12,6 +12,10 @@
   overflow: hidden;
 }
 
+.markdown-body.data-mode .data-view {
+  margin-bottom: 0;
+}
+
 /* Deep JSON indents per level; let the inspector scroll sideways instead of
    clipping the right-hand values inside the card. */
 .data-view-json {
@@ -109,9 +113,6 @@
     padding: 9px 10px;
   }
 
-  .markdown-body.data-mode .data-view {
-    margin-bottom: 0;
-  }
 }
 
 /* Top horizontal scrollbar (kept in sync with the table's bottom bar by JS). */

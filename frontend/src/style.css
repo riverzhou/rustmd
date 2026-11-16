@@ -1595,6 +1595,14 @@ body.divider-resizing .html-preview-frame {
   padding: 26px 34px 60px;
 }
 
+/* Data previews are a full-pane table, not prose: use the vertical space
+   below the card instead of the reading-sized bottom padding. dataview.js
+   measures the resulting box for the table's scroll area. */
+.preview-holder.data-mode {
+  padding-top: 15px;
+  padding-bottom: 8px;
+}
+
 .workspace[data-mode='edit'] .preview-holder,
 .workspace[data-mode='edit'] .divider {
   display: none;

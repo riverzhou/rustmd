@@ -371,14 +371,17 @@ If a new Tauri *plugin* is used:
   `columnAlignments`/`columnWidthPlan`/`looksLikeHeaderRow` in `dataformat.js`,
   and the badges in `main.js`/`style.css` in sync. There is intentionally no
   row/column/node display cap: CSV/TXT/JSON render all content. `renderPreview`
-  gives data notes the `data-mode` class so they use the full preview width on
-  a 4K/200% viewport (about 1920×1080 CSS); narrow tables still shrink to content via
-  `.data-view { width: fit-content }`. Wide tables have synchronized top and
-  bottom horizontal scrollbars and a max-height scroll area with a sticky
-  header. In the app preview only, tables with at least 18 rows distribute spare
-  vertical viewport height across row heights; export/selftest containers must
-  stay content-sized. Exports must hide the top bar and must not inherit the
-  scroll box.
+  gives data notes the `data-mode` class on both the preview body and the
+  preview holder, so they use the full preview width on a 4K/200% viewport
+  (about 1920×1080 CSS) and a tighter vertical frame; narrow tables still
+  shrink to content via `.data-view { width: fit-content }`. Wide tables have
+  synchronized top and bottom horizontal scrollbars and a sticky header. In
+  the app preview only, `dataview.js` measures the real space below the card
+  head/top bar and sets the table scroll box to that height; tables with at
+  least 18 rows stretch to fill it. Never reintroduce a fixed `100vh - Npx`
+  guess: it overflows the preview holder and adds a phantom vertical
+  scrollbar. Export/selftest containers must stay content-sized. Exports must
+  hide the top bar and must not inherit the scroll box.
 - **Search**: `search_notes` searches body, heading, filename and tags, scoped
   by its `folder` argument (the selected/current folder; empty/null = vault
   root) and the `recursive` flag (the sidebar's “include subfolders” switch).

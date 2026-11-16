@@ -1261,6 +1261,9 @@ function disposeDataView(container) {
 export function renderPreview(source, container, kind = 'markdown') {
   disposeDataView(container);
   ensureMermaid();
+  // Data notes use the whole preview pane (tighter padding, no card margin).
+  // Mark the holder too so the CSS works in WebViews without :has().
+  container.closest('.preview-holder')?.classList.toggle('data-mode', isDataKind(kind));
   container.classList.remove('data-mode');
   if (kind === 'html') {
     return api.isTauri
