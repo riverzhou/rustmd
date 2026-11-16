@@ -1,10 +1,28 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-14（v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.5（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
-**审计方式**：对 GitHub 合并的 5 个 Dependabot PR 做组合树复审与修复；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）+ 真实 9 页导出 PDF 页码压印验证；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+**审计日期**：2026-11-16（v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.6（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：对数据预览的滚动几何做浏览器 CDP 实测与修复；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.5 依赖升级复审（当前版本）
+## v1.10.6 数据预览滚动条修复（当前版本）
+
+CSV/TXT 预览表格此前用固定的 `100vh - 170px` 估算滚动区高度，没有计入数据卡片
+标题、顶部横向滚动条、预览内边距和卡片底边距；行高分配又用 `Math.ceil`，每行最多
+多加 1px。结果是一页刚好放下的 18 行表格仍出现表格内纵向滚动条，并把预览容器撑出
+外层滚动条。
+
+修复后：
+
+- `dataview.js` 测量卡片标题/顶部横条/预览内边距/卡片边距之后的真实可用高度，
+  用小数像素分配行高，并监听预览容器尺寸和顶部横条可见性变化。
+- 数据模式收紧预览上下留白（15px / 8px）并去掉卡片底部 margin，表格可正好用满
+  一页；导出/离屏容器仍保持内容高度，不继承表格滚动框。
+- CDP 实测 18 行×8 列宽表在 1440×900 和内容高度 803px 下无纵向滚动条；17/19 行
+  正常，25 行才出现合理的表格内滚动；Markdown ↔ CSV 与编辑/分栏/预览模式切换均
+  正常。README 截图已同步重生成。
+- `npm run check` 全绿，真实 WebView2 E2E 10 篇示例通过。未涉及安全边界或文件格式。
+
+## v1.10.5 依赖升级复审（历史）
 
 GitHub 上合并了 5 个 Dependabot PR（libloading 0.9、lopdf 0.47、getrandom 0.4、
 tauri-plugin-opener 2.7.3，以及 marked/vite/opener 的前端组），但 libloading 与

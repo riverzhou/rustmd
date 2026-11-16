@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "rustmd"
-version = "1.10.5"
+version = "1.10.6"
 dependencies = [
  "encoding_rs",
  "getrandom 0.4.3",
