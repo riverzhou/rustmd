@@ -21,7 +21,7 @@
 > **2026-11-14 已自动执行**：3 个 awesome list PR 已提交（awesome-local-first #66、
 > awesome-markdown-editors #316、awesome-note-taking #190）；Scoop bucket 与 Homebrew tap
 > 已发布；Discussions 欢迎帖已创建；winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)
-> 已完成 CLA 并更新到 1.10.5，validation 全部通过，等待 moderator；Scoop / Homebrew 已更新到 1.10.6；AUR 需要 AUR 账号。
+> 已完成 CLA 并更新到 1.10.5，validation 全部通过，等待 moderator；Scoop / Homebrew 已更新到 1.10.7；AUR 需要 AUR 账号。
 
 ## 1. 定位：不要卖“又一个 Markdown 编辑器”
 
@@ -68,7 +68,7 @@
 | # | 渠道 | 类型 | 预期 | 需要 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | GitHub About / topics / 社交预览 / pinned repo | 基础转化 | 决定 10 秒留存 | GitHub 设置 | 部分完成，社交预览待上传 |
-| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)（1.10.5）validation 通过，等待 moderator；1.10.6 待补交 |
+| 2 | winget（Windows） | 长期搜索入口 | 高 | 提交 PR | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)（1.10.5）validation 通过，等待 moderator；1.10.7 待补交 |
 | 3 | AUR（Arch Linux） | 长期搜索入口 | 中高 | AUR 账号 | 清单已就绪；待提交 |
 | 4 | Scoop / Homebrew tap | 长期搜索入口 | 中 | 建 bucket/tap 仓库 | ✅ 已发布：`riverzhou/scoop-bucket`、`riverzhou/homebrew-tap` |
 | 5 | awesome-markdown-editors、awesome-local-first、awesome-note-taking | 精准推荐 | 高 | 3 个 PR | ✅ 已提交（awesome-rust 需 50 stars，暂缓） |
