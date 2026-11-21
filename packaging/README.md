@@ -6,15 +6,15 @@
 
 > 状态（2026-11-21）：本目录清单已按 **1.10.7** 的已发布资产更新版本号、URL 和 SHA256；
 > 线上 Scoop bucket 与 Homebrew tap 已推送 **1.10.7**；
-> winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 仍为 1.10.5，等待
-> moderator，1.10.7 将在 1.10.5 合并后补交（避免反复重置已验证的 PR）；AUR 清单已就绪，
-> 待有 AUR 账号后提交。
+> winget PR [#485545](https://github.com/microsoft/winget-pkgs/pull/485545)（1.10.7）已提交，等待 moderator
+> （旧的 1.10.5 PR #479911 已验证通过、但排队过久，已关闭并由新 PR 取代）；
+> AUR 清单已就绪，待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)（1.10.5）等待 moderator；1.10.7 合并后补交 |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#485545](https://github.com/microsoft/winget-pkgs/pull/485545)（1.10.7）等待 moderator |
 | `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.7 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
 | `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.7 |
