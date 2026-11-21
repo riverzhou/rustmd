@@ -1,10 +1,30 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-16（v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.6（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
-**审计方式**：对数据预览的滚动几何做浏览器 CDP 实测与修复；静态检查（fmt/clippy/ESLint/repo/version）+ 60 个前端单测 + 77 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+**审计日期**：2026-11-21（v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
+**审计对象**：`rustmd` v1.10.7（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：对 CSV/TXT 列宽做真实字体测量与 10150 行真实数据回归；静态检查（fmt/clippy/ESLint/repo/version）+ 62 个前端单测 + 76 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.6 数据预览滚动条修复（当前版本）
+## v1.10.7 CSV/TXT 列宽实测（当前版本）
+
+CSV/TXT 表格的列宽此前按"字符数 × `ch`"估算，而 `ch` 只是数字 `0` 的宽度：
+`TOP10` 分到 8ch，扣掉 20px 内边距后内容区约 35px，而它在 13px 字号下约 37px，
+于是被 `overflow-wrap: anywhere` 断成 `TOP1` / `0`；加粗的 `mode` 表头同样被挤成
+`mod` / `e`。
+
+修复后：
+
+- `dataview.js` 在只挂载表头时用 canvas `measureText` 按预览的真实字体量宽（表头
+  用加粗字重，计入单元格 `padding` 与分隔边框），每列只测量最宽的候选值，再以 `em`
+  写入列宽；表格仍然只排一次版。
+- `dataformat.js` 抽出 `columnWidthLimit()`，新增 `columnWidthSamples()`（按加权
+  显示宽度选候选，避免 `XD阿拉丁` 这类同宽但更宽的混排值漏测）；`columnWidthPlan`
+  继续提供回退、下限和 64ch 折行上限。
+- 用 10150 行 × 25 列的真实 CSV 回归：25 个表头与全部数据行单行（修复前 `mode`/
+  `prob`/`note` 表头与全部 `TOP10` 行两行），表格总宽 2453px → 2352px。
+- `npm run check` 全绿，Windows 真实 WebView2 E2E 10 篇示例通过。未涉及安全边界、
+  文件格式或 IPC。
+
+## v1.10.6 数据预览滚动条修复（历史）
 
 CSV/TXT 预览表格此前用固定的 `100vh - 170px` 估算滚动区高度，没有计入数据卡片
 标题、顶部横向滚动条、预览内边距和卡片底边距；行高分配又用 `Math.ceil`，每行最多

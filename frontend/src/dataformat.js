@@ -356,9 +356,31 @@ export function columnAlignments(rows, columns) {
 }
 
 /**
+ * Cap and floor (in `ch`) for one column. Compact numeric/date/boolean columns
+ * cap tighter than prose columns; both floor at roughly a header's width so a
+ * sparse column does not collapse. Shared by the `ch` plan and the renderer's
+ * measured widths so both apply the same limits.
+ */
+export function columnWidthLimit(
+  alignment,
+  { compactMax = 22, textMax = 64, min = 5 } = {}
+) {
+  const compact = alignment === 'right' || alignment === 'center';
+  return {
+    compact,
+    cap: compact ? compactMax : textMax,
+    floor: compact ? Math.min(min, compactMax) : Math.max(6, min),
+  };
+}
+
+/**
  * Per-column width target in `ch`, including a little breathing room. This is
  * shared by CSV and TXT so the same content gets the same table geometry.
  * Compact numeric/date/boolean columns cap tighter than prose columns.
+ *
+ * `ch` is only the width of "0", so this plan is an estimate: the renderer
+ * measures the same rows with the real font and only falls back to these
+ * values when text measurement is unavailable.
  */
 export function columnWidthPlan(
   header,
@@ -378,14 +400,64 @@ export function columnWidthPlan(
     };
     consider(header[i]);
     for (const row of rows) consider(row[i]);
-    const compact = alignments[i] === 'right' || alignments[i] === 'center';
-    const cap = compact ? compactMax : textMax;
-    const floor = compact ? Math.min(min, cap) : Math.max(6, min);
+    const limit = columnWidthLimit(alignments[i], { compactMax, textMax, min });
     // `ch` is content width; add room for the 10px horizontal cell padding so
     // codes and numbers like SZ300473 / 0.8607 never wrap into two lines.
-    widths.push(Math.max(floor, Math.min(max + paddingCh, cap)));
+    widths.push(Math.max(limit.floor, Math.min(max + paddingCh, limit.cap)));
   }
   return widths;
+}
+
+/**
+ * Rough advance weight per display unit, used only to rank measurement
+ * candidates: Latin glyphs are wider than the "0" that defines a `ch`, while a
+ * CJK glyph is not quite two digits. "XD阿拉丁" is wider on screen than the
+ * 4-CJK-char names it ties with at `displayWidth` 8, so ranking candidates by
+ * bare character count would miss it and the renderer would under-measure.
+ */
+const LATIN_WEIGHT = 1.15;
+
+function weightedWidth(value) {
+  let width = 0;
+  for (const ch of String(value ?? '')) {
+    width += WIDE_CHAR.test(ch) ? 2 : LATIN_WEIGHT;
+  }
+  return width;
+}
+
+/**
+ * The widest cell text per column, so a renderer that can measure real glyph
+ * widths can size a column to fit instead of trusting the `ch` estimate.
+ * Candidates are ranked by weighted display width (not string length: a
+ * 4-CJK-char name is wider than a 5-char mixed label), keeping up to `limit`
+ * distinct strings at the column's maximum so a different-script string of the
+ * same nominal width is still measured.
+ */
+export function columnWidthSamples(rows, columns, { limit = 3 } = {}) {
+  const samples = Array.from({ length: columns }, () => []);
+  const widest = new Array(columns).fill(-1);
+  for (const row of rows) {
+    for (let i = 0; i < columns; i += 1) {
+      const text = String(row[i] ?? '');
+      if (!text) continue;
+      let width = 0;
+      for (const line of text.split('\n')) {
+        const lineWidth = weightedWidth(line);
+        if (lineWidth > width) width = lineWidth;
+      }
+      if (width > widest[i]) {
+        widest[i] = width;
+        samples[i] = [text];
+      } else if (
+        width === widest[i] &&
+        samples[i].length < limit &&
+        !samples[i].includes(text)
+      ) {
+        samples[i].push(text);
+      }
+    }
+  }
+  return samples;
 }
 
 /**

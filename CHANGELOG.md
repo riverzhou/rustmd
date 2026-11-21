@@ -5,6 +5,26 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.7] - 2026-11-21
+
+### 修复（Fixed）
+
+- **CSV/TXT 表头与短内容折行**：列宽此前按"字符数 × `ch`"估算，而 `ch` 只是
+  数字 0 的宽度，`TOP10`、加粗的 `mode` 等较宽字形会差零点几像素放不下，被
+  `overflow-wrap: anywhere` 拆成 `TOP1`/`0` 两行。现在表头和每列最宽的内容会用
+  预览的真实字体（canvas `measureText`，表头按加粗字重、含单元格内边距）量出
+  列宽，并以 `em` 写入以便随字号缩放，只有超过原 64ch 上限的长文本才折行；
+  `ch` 计划仍作为回退、下限与上限。
+
+### 质量（Quality）
+
+- 用真实 CSV（10150 行 × 25 列）在浏览器里回归：修复前 `mode`/`prob`/`note` 表头
+  与全部 `TOP10` 行折成两行，修复后 25 个表头、10150 行数据全部单行；表格总宽
+  2453px → 2352px。
+- `npm run check` 全绿：62 个前端单测、76 个 Rust 测试（1 个默认忽略）、fmt/clippy/ESLint、
+  仓库/版本检查与 Vite 生产构建。
+- Windows 真实 WebView2 E2E 10 篇示例通过；README 截图已重新生成。
+
 ## [1.10.6] - 2026-11-16
 
 ### 修复（Fixed）

@@ -7,7 +7,9 @@ import {
   analyzeJson,
   buildTextRows,
   columnAlignments,
+  columnWidthLimit,
   columnWidthPlan,
+  columnWidthSamples,
   delimiterKey,
   detectDelimiter,
   jsonTypeOf,
@@ -74,6 +76,86 @@ function tableCell(tag, text, align = 'left') {
 }
 
 /**
+ * Fixed table layout sizes its columns from the `ch` plan, but `ch` is only the
+ * width of "0": wide glyphs and the bold header need more, so a short value
+ * like TOP10 lands a fraction of a pixel past its column edge and
+ * `overflow-wrap: anywhere` splits it into "TOP1" / "0". Measure the header and
+ * the widest sample cells with the real font and set exact column widths; the
+ * plan still supplies the floor and the cap that wraps genuinely long prose.
+ * Widths are written in `em` (measured px / the table's font size) so the table
+ * keeps its geometry when the clamp()-based font grows or shrinks — including
+ * in a standalone HTML export opened on a wider window.
+ * Runs while only the header row is mounted, so the table's single layout pass
+ * already uses the final widths.
+ */
+function applyMeasuredWidths(table, cols, header, samples, alignments, columns) {
+  const canvas =
+    applyMeasuredWidths.canvas ||
+    (applyMeasuredWidths.canvas = document.createElement('canvas'));
+  const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+  if (!ctx) return;
+  // Headerless TXT has no cell to read font/padding from yet; borrow a
+  // throwaway one (it is removed before the table is ever laid out).
+  let cell = table.querySelector('th');
+  let probe = null;
+  if (!cell) {
+    probe = make('tbody');
+    const row = make('tr');
+    cell = make('td');
+    cell.textContent = '\u00a0';
+    row.appendChild(cell);
+    probe.appendChild(row);
+    table.appendChild(probe);
+  }
+  try {
+    const tableStyle = getComputedStyle(table);
+    const cellStyle = getComputedStyle(cell);
+    const family = tableStyle.fontFamily;
+    const size = tableStyle.fontSize;
+    if (!family || !size) return;
+    const bodyFont = `${tableStyle.fontWeight || 400} ${size} ${family}`;
+    const headFont = `${cellStyle.fontWeight || 400} ${size} ${family}`;
+    const padX =
+      (parseFloat(cellStyle.paddingLeft) || 0) +
+      (parseFloat(cellStyle.paddingRight) || 0);
+    const borderX = parseFloat(cellStyle.borderLeftWidth) || 0;
+    const measure = (value, font) => {
+      const text = String(value ?? '');
+      if (!text) return 0;
+      ctx.font = font;
+      let width = 0;
+      for (const line of text.split('\n')) {
+        const lineWidth = ctx.measureText(line).width;
+        if (lineWidth > width) width = lineWidth;
+      }
+      return width;
+    };
+    ctx.font = bodyFont;
+    const chPx = ctx.measureText('0').width;
+    const fontPx = parseFloat(size);
+    if (!(chPx > 0) || !(fontPx > 0)) return;
+    for (let i = 0; i < columns; i += 1) {
+      const limit = columnWidthLimit(alignments[i]);
+      let need = header ? measure(header[i], headFont) : 0;
+      for (const text of samples[i]) {
+        const width = measure(text, bodyFont);
+        if (width > need) need = width;
+      }
+      if (!(need > 0)) continue;
+      const width = Math.min(
+        limit.cap * chPx,
+        Math.max(limit.floor * chPx, need + padX + (i ? borderX : 0) + 1)
+      );
+      // `em` keeps the geometry if the clamp()-driven font size changes (the
+      // table is shared with standalone HTML exports).
+      cols[i].style.width = `${Math.ceil((width / fontPx) * 1000) / 1000}em`;
+    }
+  } finally {
+    if (probe) table.removeChild(probe);
+  }
+}
+
+/**
  * Shared CSV/TXT table geometry. Both kinds use the same alignment inference,
  * the same per-column `ch` width plan, the same colgroup/fixed layout, the
  * same sticky header and the same scroll container. Headerless TXT rows are
@@ -94,6 +176,7 @@ function renderTable(
     columns
   );
   const widths = columnWidthPlan(header || [], measureRows, columns, align);
+  const samples = columnWidthSamples(measureRows, columns);
   const view = createView(container, kind, stats);
   for (const line of prose) {
     view.appendChild(make('div', 'data-txt-prose', line));
@@ -117,10 +200,12 @@ function renderTable(
     const table = make('table', 'data-table');
     table.style.setProperty('--data-cols', String(columns));
     const colgroup = make('colgroup');
+    const cols = [];
     for (const width of widths) {
       const col = document.createElement('col');
       col.style.width = `${width}ch`;
       colgroup.appendChild(col);
+      cols.push(col);
     }
     table.appendChild(colgroup);
     if (header) {
@@ -134,6 +219,9 @@ function renderTable(
       thead.appendChild(tr);
       table.appendChild(thead);
     }
+    scroll.appendChild(table);
+    view.appendChild(scroll);
+    applyMeasuredWidths(table, cols, header, samples, align, columns);
     const tbody = make('tbody');
     for (const row of body) {
       if (!row.length) continue;
@@ -161,8 +249,6 @@ function renderTable(
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
-    scroll.appendChild(table);
-    view.appendChild(scroll);
     const syncTopScroll = () => {
       const wasHidden = topScroll.hidden;
       const overflow = scroll.scrollWidth - scroll.clientWidth > 1;

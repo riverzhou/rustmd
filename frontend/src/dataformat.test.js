@@ -5,7 +5,9 @@ import {
   buildTextRows,
   columnAlignments,
   columnWidthHints,
+  columnWidthLimit,
   columnWidthPlan,
+  columnWidthSamples,
   detectDelimiter,
   displayWidth,
   formatBytes,
@@ -181,6 +183,38 @@ test('compact numeric/date columns fit long header labels and timestamps', () =>
   assert.ok(widths[0] >= displayWidth(header[0]) + 1);
   assert.ok(widths[1] >= displayWidth(rows[0][1]) + 1);
   assert.ok(widths.every((width) => width <= 22));
+});
+
+test('column width limits cap compact columns tighter than prose', () => {
+  assert.deepEqual(columnWidthLimit('right'), { compact: true, cap: 22, floor: 5 });
+  assert.deepEqual(columnWidthLimit('center'), { compact: true, cap: 22, floor: 5 });
+  assert.deepEqual(columnWidthLimit('left'), { compact: false, cap: 64, floor: 6 });
+  assert.deepEqual(columnWidthLimit('left', { textMax: 40, min: 8 }), {
+    compact: false,
+    cap: 40,
+    floor: 8,
+  });
+});
+
+test('column width samples pick the widest cells, not the longest strings', () => {
+  const rows = [
+    ['*ST航图', '香农芯创', '1'],
+    ['*ST禾信', '品茗科技', '22'],
+    ['香农芯创', '澜起科技', '333'],
+  ];
+  const samples = columnWidthSamples(rows, 3);
+  // Four CJK characters (8 display columns) beat the 5-char "*ST航图" label;
+  // choosing candidates by string length would keep the narrower label and
+  // under-measure the column.
+  assert.deepEqual(samples[0], ['香农芯创']);
+  assert.deepEqual(samples[1], ['香农芯创', '品茗科技', '澜起科技']);
+  // The widest numeric text wins even though every value is short.
+  assert.deepEqual(samples[2], ['333']);
+  assert.ok(
+    columnWidthSamples(rows, 3, { limit: 1 }).every((list) => list.length <= 1)
+  );
+  // Multi-line cells measure their widest line, not the flattened text.
+  assert.deepEqual(columnWidthSamples([['ab\nabcdef']], 1), [['ab\nabcdef']]);
 });
 
 test('TXT header detection ignores stock data but recognizes a text header', () => {

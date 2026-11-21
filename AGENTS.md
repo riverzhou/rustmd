@@ -23,8 +23,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.10.6` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.10.6 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.10.7` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.10.7 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -126,13 +126,16 @@ this file is the developer/agent contract.
   supported extensions (covered by `node --test`).
 - `frontend/src/dataformat.js` — pure CSV/TSV parser (quotes, embedded
   newlines, delimiter sniffing), tab-column builder, smart column alignment
-  (numbers/dates right, booleans centered, missing markers ignored) and JSON
-  stats/validation (covered by `node --test`).
+  (numbers/dates right, booleans centered, missing markers ignored), per-column
+  width limits/samples and JSON stats/validation (covered by `node --test`).
 - `frontend/src/dataview.js` / `dataview.css` — DOM-only CSV/TXT/JSON preview
   renderers (all note text via `textContent`), plus the styles shared with
   standalone HTML exports. Tables use alternating ROW backgrounds plus a
   tight four-color column-ink cycle, and apply the same alignment class to
-  `<th>` and `<td>`; the JSON view is an inspector with aligned keys,
+  `<th>` and `<td>`; column widths start from the `ch` plan and are then set
+  from canvas `measureText` with the real font (header bold, cell padding
+  included) so headers and short cells never wrap, while long prose keeps the
+  plan's `ch` cap; the JSON view is an inspector with aligned keys,
   a semantic per-type palette (group tints/rails, type/count pills, leaf
   type dots) and collapsible groups (no raw braces/commas). `main.js` imports the CSS; `preview.js`
   imports the raw string so exported files stay visually identical.
@@ -368,8 +371,13 @@ If a new Tauri *plugin* is used:
   mock in `api.js`, and the per-note preview/export `kind` argument together.
   Data kinds share the no-front-matter compose path and the generic export
   stage; keep `notelist.noteStemOf`, the shared CSV/TXT table renderer,
-  `columnAlignments`/`columnWidthPlan`/`looksLikeHeaderRow` in `dataformat.js`,
-  and the badges in `main.js`/`style.css` in sync. There is intentionally no
+  `columnAlignments`/`columnWidthPlan`/`columnWidthLimit`/`columnWidthSamples`/
+  `looksLikeHeaderRow` in `dataformat.js`,
+  and the badges in `main.js`/`style.css` in sync. Column widths are not a
+  fixed `ch` value: the plan sets the fallback/limits and `dataview.js` then
+  measures the header (bold) and the sampled widest cells with the live font
+  (`canvas measureText`) plus the real cell padding, so a header or a short
+  value never wraps; only text beyond the plan's cap wraps. There is intentionally no
   row/column/node display cap: CSV/TXT/JSON render all content. `renderPreview`
   gives data notes the `data-mode` class on both the preview body and the
   preview holder, so they use the full preview width on a 4K/200% viewport
