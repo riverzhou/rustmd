@@ -1,13 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
-  "version": "1.10.6",
+  "version": "1.10.7",
   "description": "Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows (portable).",
   "homepage": "https://github.com/riverzhou/rustmd",
   "license": "GPL-3.0-or-later",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/riverzhou/rustmd/releases/download/v1.10.6/rustmd-1.10.6-win-x64-portable.zip",
-      "hash": "7c7f11ef26985744ff10c1876d6f057a1c9e07bf0cfcd941a4c53440eab1b88e"
+      "url": "https://github.com/riverzhou/rustmd/releases/download/v1.10.7/rustmd-1.10.7-win-x64-portable.zip",
+      "hash": "15fe3bceeb85c14500d142062e529786753f8211f82cd3fbf3824c2bfca47c68"
     }
   },
   "bin": "rustmd.exe",

@@ -4,33 +4,34 @@
 `winget search markdown`、`scoop search rustmd`、`yay -Ss rustmd`、`brew search rustmd`
 这类**长期搜索入口**中——这是 GitHub 之外最稳定的新用户来源。
 
-> 状态（2026-11-17）：本目录清单已按 **1.10.6** 的已发布资产更新版本号、URL 和 SHA256；
-> 线上 Scoop bucket 与 Homebrew tap 已推送 **1.10.6**；winget PR
-> [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 仍为 1.10.5，等待 moderator，
-> 1.10.6 将在 1.10.5 合并后补交（避免反复重置已验证的 PR）；AUR 清单已就绪，待有 AUR 账号后提交。
+> 状态（2026-11-21）：本目录清单已按 **1.10.7** 的已发布资产更新版本号、URL 和 SHA256；
+> 线上 Scoop bucket 与 Homebrew tap 仍为 **1.10.6**，待把本目录的 1.10.7 清单推送到对应仓库；
+> winget PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 仍为 1.10.5，等待
+> moderator，1.10.7 将在 1.10.5 合并后补交（避免反复重置已验证的 PR）；AUR 清单已就绪，
+> 待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)（1.10.5）等待 moderator；1.10.6 合并后补交 |
-| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.6 |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)（1.10.5）等待 moderator；1.10.7 合并后补交 |
+| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.6；1.10.7 清单待推送 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
-| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.6 |
+| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.6；1.10.7 清单待推送 |
 
 ## 版本更新清单
 
-发布新版本（例如 `1.10.6`）后：
+发布新版本（例如 `1.10.7`）后：
 
 1. 从 Release 资产读取版本与 SHA256（GitHub 的 asset digest 就是 SHA256）：
 
    ```bash
-   gh release view v1.10.6 -R riverzhou/rustmd \
+   gh release view v1.10.7 -R riverzhou/rustmd \
      --json tagName,assets \
      --jq '.assets[] | "\(.name)\t\(.digest)"'
    ```
 
-2. 更新本目录中所有 `1.10.6` / `v1.10.6` / SHA256 出现的位置；
+2. 更新本目录中所有 `1.10.7` / `v1.10.7` / SHA256 出现的位置；
 3. 运行校验：
 
    ```bash
