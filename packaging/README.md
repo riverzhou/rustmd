@@ -4,34 +4,34 @@
 `winget search markdown`、`scoop search rustmd`、`yay -Ss rustmd`、`brew search rustmd`
 这类**长期搜索入口**中——这是 GitHub 之外最稳定的新用户来源。
 
-> 状态（2026-11-21）：本目录清单已按 **1.10.7** 的已发布资产更新版本号、URL 和 SHA256；
-> 线上 Scoop bucket 与 Homebrew tap 已推送 **1.10.7**；
-> winget PR [#485545](https://github.com/microsoft/winget-pkgs/pull/485545)（1.10.7）已提交，等待 moderator
-> （旧的 1.10.5 PR #479911 已验证通过、但排队过久，已关闭并由新 PR 取代）；
+> 状态（2026-11-22）：winget 清单已按 **1.10.8** 的已发布资产更新版本号、URL 和 SHA256；
+> winget PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)（1.10.8）已提交，等待 moderator
+> （1.10.7 的 PR #485545 已关闭并由新 PR 取代）；
+> 线上 Scoop bucket 与 Homebrew tap 仍为 **1.10.7**，下一轮更新；
 > AUR 清单已就绪，待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#485545](https://github.com/microsoft/winget-pkgs/pull/485545)（1.10.7）等待 moderator |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)（1.10.8）等待 moderator |
 | `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.7 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
 | `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.7 |
 
 ## 版本更新清单
 
-发布新版本（例如 `1.10.7`）后：
+发布新版本（例如 `1.10.8`）后：
 
 1. 从 Release 资产读取版本与 SHA256（GitHub 的 asset digest 就是 SHA256）：
 
    ```bash
-   gh release view v1.10.7 -R riverzhou/rustmd \
+   gh release view v1.10.8 -R riverzhou/rustmd \
      --json tagName,assets \
      --jq '.assets[] | "\(.name)\t\(.digest)"'
    ```
 
-2. 更新本目录中所有 `1.10.7` / `v1.10.7` / SHA256 出现的位置；
+2. 更新本目录中所有 `1.10.8` / `v1.10.8` / SHA256 出现的位置；
 3. 运行校验：
 
    ```bash

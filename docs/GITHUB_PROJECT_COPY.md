@@ -193,7 +193,7 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 - 发布页：`https://github.com/riverzhou/rustmd/releases`
 - Issues：`https://github.com/riverzhou/rustmd/issues`
 - Discussions：`https://github.com/riverzhou/rustmd/discussions`（2026-11-14 开启，欢迎帖 #2）
-- 包管理器：Scoop / Homebrew 已发布并更新到 1.10.7；winget PR [#485545](https://github.com/microsoft/winget-pkgs/pull/485545)（1.10.7）已提交，等待 moderator（旧的 1.10.5 PR #479911 已关闭并由新 PR 取代）；AUR 待账号
+- 包管理器：Scoop / Homebrew 已发布并更新到 1.10.7；winget PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)（1.10.8）已提交，等待 moderator（1.10.7 的 #485545 已关闭并由新 PR 取代）；AUR 待账号
 - 已提交的 awesome list PR：[awesome-local-first #66](https://github.com/schickling/awesome-local-first/pull/66)、[awesome-markdown-editors #316](https://github.com/mundimark/awesome-markdown-editors/pull/316)、[awesome-note-taking #190](https://github.com/tehtbl/awesome-note-taking/pull/190)
 - CI：`https://github.com/riverzhou/rustmd/actions/workflows/ci.yml`
 - 镜像：GitLab `http://gitlab.riverzhou.cn/river/rustmd`（镜像仓库，不跑 CI）
