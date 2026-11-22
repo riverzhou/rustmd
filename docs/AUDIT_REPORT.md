@@ -641,7 +641,7 @@ preflight，apt 下载加 IPv4/超时，避免 runner 网络等待导致发布�
 
 - **问题**：html2canvas 以 `crossOrigin="anonymous"` 请求本地图片，Origin 为 `rmdhtml`，被严格 Origin 白名单拒绝，HTML PNG/PDF 丢失笔记库图片。
 - **修复**：导出前由主窗口调用 `inlineLocalImagesInHtml`，通过 `read_local_image` 把相对图片替换为 data URL；隐藏窗口不再发跨域图片请求。自测新增 HTML 本地图片内联断言（导出 PNG 目视为完整图表）。
-- **回归**：`html-page-demo.html` 的 `assets/fig1-adaptation-score.png` 必须出现在 HTML 导出 PNG 中。
+- **回归**：`html-page-demo.html` 的本地相对图片（当前为 `assets/fig2-pricing.png`）必须出现在 HTML 导出 PNG 中。
 
 ### H-4 `html_preview_finish` 失败不唤醒等待方
 

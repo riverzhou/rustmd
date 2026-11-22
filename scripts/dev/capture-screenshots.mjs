@@ -119,8 +119,9 @@ async function setLang(lang) {
   })()`);
 }
 
-async function capture(name, clip) {
+async function capture(name, clip, prep) {
   await sleep(700);
+  if (prep) await prep();
   const params = {
     format: 'png',
     fromSurface: true,
@@ -237,10 +238,48 @@ async function openNote(path, kind) {
   await sleep(350);
 }
 
+async function prepareHtmlShot() {
+  // CodeMirror only renders visible lines, so an off-screen <h1> is not in the
+  // DOM. Scroll to the bottom of the note (the body source), then snap the
+  // first visible line to a boundary. The editor->preview proportional sync
+  // follows each scroll, so reset the rendered page to its top afterwards.
+  await js(`(() => {
+    const scroller = document.querySelector('.cm-scroller');
+    if (!scroller) return false;
+    scroller.scrollTop =
+      scroller.scrollHeight - scroller.clientHeight - 24;
+    return true;
+  })()`);
+  await sleep(120);
+  await js(`(() => {
+    const scroller = document.querySelector('.cm-scroller');
+    if (!scroller) return false;
+    const top = scroller.getBoundingClientRect().top;
+    const line = [...scroller.querySelectorAll('.cm-line')].find(
+      (el) => el.getBoundingClientRect().bottom > top + 1
+    );
+    if (line) {
+      const cut = top - line.getBoundingClientRect().top;
+      if (cut > 1) scroller.scrollTop -= cut;
+    }
+    return true;
+  })()`);
+  await sleep(80);
+  await js(`(() => {
+    const holder = document.querySelector('.preview-holder');
+    if (holder) holder.scrollTop = 0;
+    const frame = document.querySelector('iframe.html-preview-frame');
+    try { frame?.contentWindow?.scrollTo(0, 0); } catch {}
+    return true;
+  })()`);
+}
+
 async function captureFormats(suffix) {
   await setTheme('light');
   await openNote('guides/html-page.html', 'html');
-  await capture(`html-note${suffix}`, null);
+  // The editor->preview scroll sync follows the editor to the body; put the
+  // rendered page back to its top only after the editor has settled.
+  await capture(`html-note${suffix}`, null, prepareHtmlShot);
   await openNote('data/示例数据.csv', 'csv');
   await capture(`csv-note${suffix}`, null);
   await openNote('data/说明.txt', 'txt');

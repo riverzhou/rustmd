@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HTML 页面渲染示例</title>
   <link rel="stylesheet" href="assets/html-demo.css" />
   <!-- Deferred head script: asset inlining must keep it after <body> exists. -->
@@ -12,42 +13,158 @@
   </style>
 </head>
 <body class="html-demo">
-  <h1>HTML 页面渲染示例</h1>
-  <p class="notice">
-    这是一个 <strong>HTML 笔记</strong>：左侧编辑源码，右侧显示整页渲染结果。
-    页面的 <code>&lt;style&gt;</code>、<code>&lt;script&gt;</code>、本地相对 CSS/JS
-    和图表都在应用内置 WebView 的 sandbox iframe 中执行，不进入应用主文档，也
-    不需要 Edge / Chrome。
-  </p>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">rustmd · HTML 笔记</p>
+      <h1>HTML 页面渲染示例</h1>
+      <p class="lead">
+        左侧编辑源码，右侧由应用内置 WebView 整页渲染。这个页面没有使用任何外部框架：
+        排版、表格、代码块、图片和脚本都来自笔记自身，预览与 PNG / PDF 导出使用同一份文档。
+      </p>
+      <ul class="chips" aria-label="本页演示的能力">
+        <li>sandbox iframe</li>
+        <li>本地 CSS / JS</li>
+        <li>相对路径图片</li>
+        <li>无需 Edge / Chrome</li>
+      </ul>
+    </header>
 
-  <h2>表格</h2>
-  <table>
-    <thead>
-      <tr><th>格式</th><th>编辑器</th><th>预览</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>Markdown</td><td>Markdown 语法</td><td>marked 渲染</td></tr>
-      <tr><td>HTML</td><td>HTML 语法</td><td>内置 WebView 原生渲染</td></tr>
-    </tbody>
-  </table>
+    <section aria-labelledby="styles">
+      <h2 id="styles">页面样式</h2>
+      <p>
+        本页的主样式来自同目录的 <code>assets/html-demo.css</code>；下面这句红色提示来自
+        <code>&lt;head&gt;</code> 里的内联 <code>&lt;style&gt;</code>，两种样式都会在预览和导出中生效。
+      </p>
+      <p class="notice">这一段是内联样式：<code>.notice { color: crimson; }</code>。</p>
+      <blockquote>
+        HTML 笔记不会套用 Markdown 预览的排版，也不会自动注入代码高亮。
+        页面长什么样，完全由笔记自己的 CSS 决定。
+      </blockquote>
+    </section>
 
-  <h2>本地图片</h2>
-  <p>相对路径图片通过 <code>rmd</code> 协议读取，并可导出到 PNG / PDF / HTML：</p>
-  <img src="assets/fig1-adaptation-score.png" alt="示例图表" width="420" />
+    <section aria-labelledby="table">
+      <h2 id="table">表格</h2>
+      <p>
+        带表头、边框和隔行底色的表格；样式同样写在 <code>html-demo.css</code> 里，
+        窄窗口下可以横向滚动。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <caption>rustmd 的预览与导出能力对照（HTML 列是本页的主角）</caption>
+          <thead>
+            <tr>
+              <th scope="col">能力</th>
+              <th scope="col">Markdown</th>
+              <th scope="col">HTML</th>
+              <th scope="col">CSV / TXT / JSON</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">右侧实时预览</th>
+              <td><span class="yes">✓</span> Markdown 渲染</td>
+              <td><span class="yes">✓</span> 整页原生渲染</td>
+              <td><span class="yes">✓</span> 表格 / 检查器</td>
+            </tr>
+            <tr>
+              <th scope="row">页面自带 CSS / JS</th>
+              <td><span class="no">—</span></td>
+              <td><span class="yes">✓</span> 沙盒内执行</td>
+              <td><span class="no">—</span></td>
+            </tr>
+            <tr>
+              <th scope="row">本地相对图片</th>
+              <td><span class="yes">✓</span></td>
+              <td><span class="yes">✓</span></td>
+              <td><span class="no">—</span></td>
+            </tr>
+            <tr>
+              <th scope="row">PNG / PDF / HTML 导出</th>
+              <td><span class="yes">✓</span></td>
+              <td><span class="yes">✓</span> 整页</td>
+              <td><span class="yes">✓</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">
+        第一列使用 <code>&lt;th scope="row"&gt;</code>，表头使用
+        <code>&lt;th scope="col"&gt;</code>，阅读器和导出工具都能理解表格结构。
+      </p>
+    </section>
 
-  <h2>代码块</h2>
-  <pre><code class="language-html">&lt;section class="note"&gt;
+    <section aria-labelledby="code">
+      <h2 id="code">代码块</h2>
+      <p>
+        代码块是普通的 <code>&lt;pre&gt;&lt;code&gt;</code>：深色底、圆角和右上角的语言标签
+        都来自页面 CSS。应用不会给 HTML 笔记注入 highlight.js，需要语法色时可以由页面自行引入。
+      </p>
+      <pre data-lang="HTML"><code class="language-html">&lt;section class="note"&gt;
   &lt;h2&gt;Hello&lt;/h2&gt;
 &lt;/section&gt;</code></pre>
+      <pre data-lang="JavaScript"><code class="language-javascript">// 这段脚本在 sandbox iframe 中执行
+document.body.dataset.scriptRan = 'yes-inline';
+document.getElementById('inline-status').textContent = '内联脚本：已执行';</code></pre>
+    </section>
 
-  <h2>脚本执行</h2>
-  <pre><code class="language-javascript">// 这段脚本在 sandbox iframe 中执行
-document.body.dataset.scriptRan = 'yes';</code></pre>
+    <section aria-labelledby="image">
+      <h2 id="image">本地图片</h2>
+      <p>
+        相对路径图片由 <code>rmd</code> 协议读取，预览和导出前都会内联为 data URL；
+        隐藏的导出 WebView 不会因为跨域请求而丢图。
+      </p>
+      <figure>
+        <img src="assets/fig2-pricing.png"
+             alt="各产品最低持续付费方案的价格对比条形图" />
+        <figcaption>示例图片：各产品公开最低持续付费方案（竞品调研示例数据）。</figcaption>
+      </figure>
+    </section>
+
+    <section aria-labelledby="scripts">
+      <h2 id="scripts">脚本执行</h2>
+      <p>
+        页面脚本在 null origin 的 sandbox iframe 中运行，拿不到应用命令，但可以正常操作本页 DOM：
+      </p>
+      <p class="runtime" aria-live="polite">
+        <span class="runtime-item" id="local-status">本地脚本：等待</span>
+        <span class="runtime-item" id="inline-status">内联脚本：等待</span>
+        <span class="runtime-item" id="defer-status">延迟脚本：等待</span>
+      </p>
+      <pre data-lang="JavaScript"><code class="language-javascript">// assets/html-demo.js（经典脚本，内联后按原位置执行）
+document.body.dataset.localScript = 'yes';
+document.getElementById('local-status').textContent = '本地脚本：已执行';
+
+// &lt;head&gt; 中带 defer 的脚本（内联后移到 &lt;body&gt; 末尾）
+document.body.dataset.headDefer = 'body-ok';
+document.getElementById('defer-status').textContent = '延迟脚本：已执行';</code></pre>
+    </section>
+
+    <section aria-labelledby="exports">
+      <h2 id="exports">导出</h2>
+      <ul class="export-list">
+        <li><strong>PNG</strong>：整页长图，超长页面分段截图后拼接。</li>
+        <li><strong>PDF</strong>：系统 WebView 的打印管线，A4 矢量文字。</li>
+        <li><strong>HTML</strong>：按源码输出 UTF-8 文件；相对 CSS/JS/图片不随文件复制。</li>
+      </ul>
+    </section>
+
+    <footer class="foot">
+      <p>rustmd · 本地优先的 Markdown / HTML / CSV / TXT / JSON 笔记应用</p>
+      <p class="muted">
+        本页是 <code>examples/html-page-demo.html</code>，用于演示 HTML 预览、本地资源内联与导出。
+      </p>
+    </footer>
+  </main>
 
   <script src="assets/html-demo.js"></script>
   <script>
     // Inline scripts run inside the isolated preview iframe, never in the app.
     document.body.dataset.scriptRan = 'yes-inline';
+    const inlineStatus = document.getElementById('inline-status');
+    if (inlineStatus) {
+      inlineStatus.textContent = '内联脚本：已执行';
+      inlineStatus.classList.add('is-ok');
+    }
   </script>
 </body>
 </html>

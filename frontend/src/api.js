@@ -363,16 +363,67 @@ const mockNotes = new Map([
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>HTML 页面示例</title>
+  <title>HTML 页面渲染示例</title>
+  <style>
+    :root { --ink: #1f2937; --line: #e2e8f0; --accent: #2563eb; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 28px 16px 48px; background: #f3f5f9; color: var(--ink);
+      font: 16px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .page {
+      max-width: 860px; margin: 0 auto; padding: 40px 44px 32px; background: #fff;
+      border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 18px 50px rgba(15, 23, 42, .08);
+    }
+    .eyebrow {
+      margin: 0 0 9px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .14em;
+    }
+    h1 { margin: 0 0 12px; font-size: 38px; line-height: 1.22; letter-spacing: -.02em; }
+    .lead { margin: 0; color: #334155; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
+    .chips li {
+      padding: 4px 11px; border: 1px solid #dbe3ef; border-radius: 999px; background: #f8fafc;
+      color: #475569; font-size: 12.5px; font-weight: 600;
+    }
+    h2 { margin: 34px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 22px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #edf1f7; text-align: left; }
+    thead th { background: #f1f5fb; font-size: 12.5px; }
+    tbody tr:nth-child(even) { background: #fafcff; }
+    pre {
+      margin: 14px 0; padding: 30px 18px 16px; border-radius: 12px; background: #0f172a;
+      color: #e2e8f0; font: 13.5px/1.65 "Cascadia Code", Consolas, monospace; overflow-x: auto;
+    }
+  </style>
 </head>
-<body>
-  <h1>HTML 页面示例</h1>
-  <p>这是一个 <strong>HTML</strong> 笔记：编辑器里是源码，右侧是沙箱隔离的实时预览。</p>
-  <ul>
-    <li>支持标题、列表、表格、图片和链接</li>
-    <li>脚本、事件属性和 iframe 会被移除</li>
-  </ul>
-  <blockquote>HTML 笔记不支持 Markdown 的 front matter 标签。</blockquote>
+<body class="html-demo">
+  <main class="page">
+    <p class="eyebrow">rustmd · HTML 笔记</p>
+    <h1>HTML 页面渲染示例</h1>
+    <p class="lead">左侧编辑源码，右侧由内置 WebView 整页渲染；样式、表格和代码块都来自笔记自身。</p>
+    <ul class="chips">
+      <li>sandbox iframe</li>
+      <li>本地 CSS / JS</li>
+      <li>无需 Edge / Chrome</li>
+    </ul>
+
+    <h2>表格</h2>
+    <table>
+      <thead>
+        <tr><th>格式</th><th>右侧预览</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Markdown</td><td>Markdown 渲染</td></tr>
+        <tr><td>HTML</td><td>整页原生渲染</td></tr>
+        <tr><td>CSV / TXT</td><td>智能表格</td></tr>
+      </tbody>
+    </table>
+
+    <h2>代码块</h2>
+    <pre><code>&lt;section class="note"&gt;
+  &lt;h2&gt;Hello&lt;/h2&gt;
+&lt;/section&gt;</code></pre>
+  </main>
 </body>
 </html>
 `,
