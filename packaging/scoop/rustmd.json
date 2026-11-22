@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
-  "version": "1.10.7",
+  "version": "1.11.0",
   "description": "Local-first Markdown, HTML, CSV, TXT and JSON notes for Windows (portable).",
   "homepage": "https://github.com/riverzhou/rustmd",
   "license": "GPL-3.0-or-later",

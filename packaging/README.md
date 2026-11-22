@@ -4,34 +4,35 @@
 `winget search markdown`、`scoop search rustmd`、`yay -Ss rustmd`、`brew search rustmd`
 这类**长期搜索入口**中——这是 GitHub 之外最稳定的新用户来源。
 
-> 状态（2026-11-22）：winget 清单已按 **1.10.8** 的已发布资产更新版本号、URL 和 SHA256；
-> winget PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)（1.10.8）已提交，等待 moderator
-> （1.10.7 的 PR #485545 已关闭并由新 PR 取代）；
-> 线上 Scoop bucket 与 Homebrew tap 仍为 **1.10.7**，下一轮更新；
+> 状态（2026-11-22，v1.11.0 发布后）：本目录全部清单已按 **1.11.0** 的已发布资产
+> 更新版本号、URL 和 SHA256。
+> winget：1.10.8 的 PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)
+> 已关闭，改提 1.11.0（避免审核队列里挂两个版本；1.10.7 的 #485545 更早也是同样处理）。
+> Scoop bucket 与 Homebrew tap 仍为线上 **1.10.7**，待推送 1.11.0；
 > AUR 清单已就绪，待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)（1.10.8）等待 moderator |
-| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.7 |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | 清单已按 1.11.0 更新；#486201（1.10.8）已关闭，待提 1.11.0 |
+| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.7；清单已备好 1.11.0 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
-| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.7 |
+| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.7；清单已备好 1.11.0 |
 
 ## 版本更新清单
 
-发布新版本（例如 `1.10.8`）后：
+发布新版本（例如 `1.11.0`）后：
 
 1. 从 Release 资产读取版本与 SHA256（GitHub 的 asset digest 就是 SHA256）：
 
    ```bash
-   gh release view v1.10.8 -R riverzhou/rustmd \
+   gh release view v1.11.0 -R riverzhou/rustmd \
      --json tagName,assets \
      --jq '.assets[] | "\(.name)\t\(.digest)"'
    ```
 
-2. 更新本目录中所有 `1.10.8` / `v1.10.8` / SHA256 出现的位置；
+2. 更新本目录中所有 `1.11.0` / `v1.11.0` / SHA256 出现的位置；
 3. 运行校验：
 
    ```bash
