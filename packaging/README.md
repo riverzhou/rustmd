@@ -6,19 +6,19 @@
 
 > 状态（2026-11-22，v1.11.0 发布后）：本目录全部清单已按 **1.11.0** 的已发布资产
 > 更新版本号、URL 和 SHA256。
-> winget：1.10.8 的 PR [#486201](https://github.com/microsoft/winget-pkgs/pull/486201)
-> 已关闭，改提 1.11.0（避免审核队列里挂两个版本；1.10.7 的 #485545 更早也是同样处理）。
-> Scoop bucket 与 Homebrew tap 仍为线上 **1.10.7**，待推送 1.11.0；
+> winget：PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332)（1.11.0）已提交，
+> 等待 moderator；1.10.8 的 #486201 已关闭（审核队列里只留一个版本）。
+> Scoop bucket 与 Homebrew tap：**已更新到线上的 1.11.0**。
 > AUR 清单已就绪，待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
-| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | 清单已按 1.11.0 更新；#486201（1.10.8）已关闭，待提 1.11.0 |
-| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.10.7；清单已备好 1.11.0 |
+| `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332)（1.11.0）等待 moderator |
+| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | ✅ 线上 1.11.0 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 待提交（需 AUR 账号） |
-| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.10.7；清单已备好 1.11.0 |
+| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | ✅ 线上 1.11.0 |
 
 ## 版本更新清单
 
