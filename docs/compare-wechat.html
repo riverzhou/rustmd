@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-CN">
+<!--
+  rustmd WeChat comparison poster — 1440x1800 CSS, rendered at 2x (2880x3600).
+
+  Render (Windows, headless Edge):
+    "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
+      --headless=new --disable-gpu --hide-scrollbars \
+      --force-device-scale-factor=2 --window-size=1440,1800 \
+      --screenshot=docs/compare-wechat.png \
+      "file:///<repo>/docs/compare-wechat.html"
+
+  Then send docs/compare-wechat.png on WeChat.
+-->
+<head>
+  <meta charset="utf-8" />
+  <title>rustmd — 和其他工具比</title>
+  <style>
+    :root {
+      --ink: #f3f5ff;
+      --dim: #aab2ca;
+      --faint: #737d99;
+      --accent: #8b9cff;
+      --accent-2: #5ee0b5;
+      --green: #3fb950;
+      --amber: #e3b341;
+      --red: #f85149;
+      --line: rgba(255, 255, 255, 0.09);
+      --line-strong: rgba(255, 255, 255, 0.16);
+      --panel: rgba(255, 255, 255, 0.045);
+      --panel-2: rgba(255, 255, 255, 0.065);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 1440px;
+      height: 1800px;
+      margin: 0;
+      overflow: hidden;
+    }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+      color: var(--ink);
+      background: #080b14;
+      -webkit-font-smoothing: antialiased;
+    }
+    .bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(900px 620px at 92% 4%, rgba(79, 109, 245, 0.42), transparent 68%),
+        radial-gradient(760px 560px at 4% 100%, rgba(124, 92, 255, 0.24), transparent 70%),
+        linear-gradient(135deg, #080b14 0%, #0d1220 48%, #111830 100%);
+    }
+    .grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.55) 55%, transparent 100%);
+    }
+    .glowline {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(139, 156, 255, 0.9), rgba(94, 224, 181, 0.55), transparent);
+    }
+    .poster {
+      position: relative;
+      width: 1440px;
+      height: 1800px;
+      padding: 54px 72px 42px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- brand ---------- */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      height: 66px;
+    }
+    .brand img {
+      width: 62px;
+      height: 62px;
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.14);
+    }
+    .brand-name {
+      font-size: 42px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .eyebrow {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+    .pill {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 15px;
+      border: 1px solid rgba(139, 156, 255, 0.4);
+      border-radius: 999px;
+      background: rgba(139, 156, 255, 0.12);
+      color: #d5dcff;
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 12px rgba(94, 224, 181, 0.8);
+    }
+
+    /* ---------- hero ---------- */
+    .hero { margin-top: 26px; }
+    .hero h1 {
+      margin: 0;
+      font-size: 60px;
+      line-height: 1.14;
+      letter-spacing: -0.035em;
+      font-weight: 700;
+    }
+    .hero h1 span {
+      background: linear-gradient(92deg, #c7d0ff 0%, #8b9cff 45%, #5ee0b5 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero .sub {
+      margin: 16px 0 0;
+      font-size: 21px;
+      color: var(--dim);
+      letter-spacing: 0.01em;
+    }
+    .hero .sub b {
+      color: #e7ebff;
+      font-weight: 600;
+    }
+    .hero .lede {
+      margin: 12px 0 0;
+      font-size: 19px;
+      line-height: 1.55;
+      color: var(--faint);
+    }
+    .hero .lede b { color: #c9d2f5; font-weight: 600; }
+
+    /* ---------- stats ---------- */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 17px 20px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025));
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+    }
+    .stat .value {
+      font-size: 40px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      color: #dfe5ff;
+    }
+    .stat .value.green { color: var(--accent-2); }
+    .stat .value.blue { color: #aebcff; }
+    .stat .value.violet { color: #c4b5ff; }
+    .stat .label {
+      font-size: 14px;
+      line-height: 1.35;
+      color: var(--faint);
+    }
+
+    /* ---------- section headings ---------- */
+    .block { margin-top: 22px; }
+    .block-head {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+    .block-head h2 {
+      margin: 0;
+      font-size: 27px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+    .block-head .hint {
+      font-size: 15px;
+      color: var(--faint);
+    }
+
+    /* ---------- shared table ---------- */
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: rgba(8, 12, 22, 0.34);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+    }
+    th, td {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: 0; }
+    th:last-child, td:last-child { border-right: 0; }
+    th {
+      height: 46px;
+      background: rgba(255, 255, 255, 0.055);
+      color: #dce2f5;
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+    }
+    td {
+      height: 56px;
+      padding: 6px 10px;
+      font-size: 17.5px;
+      color: #c8d0e7;
+      background: rgba(255, 255, 255, 0.016);
+    }
+    tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.032); }
+    td:first-child, th:first-child {
+      text-align: left;
+      padding-left: 18px;
+      font-weight: 600;
+      color: #e6eaff;
+      font-size: 18px;
+    }
+
+    /* ---------- export matrix ---------- */
+    .matrix th:first-child, .matrix td:first-child { width: 218px; }
+    .matrix td { height: 54px; font-size: 17px; }
+    .matrix .checkline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .matrix-note {
+      margin: 9px 2px 0;
+      font-size: 14px;
+      color: var(--faint);
+    }
+
+    /* ---------- comparison table ---------- */
+    .compare th:first-child, .compare td:first-child { width: 226px; }
+    .compare th { font-size: 16.5px; }
+    .compare th.rustmd {
+      color: #eef1ff;
+      background: rgba(139, 156, 255, 0.2);
+      border-top: 3px solid var(--accent);
+    }
+    .compare td.rustmd {
+      background: rgba(139, 156, 255, 0.105);
+      color: #f1f3ff;
+      font-weight: 650;
+    }
+    .compare tbody tr:nth-child(even) td.rustmd { background: rgba(139, 156, 255, 0.145); }
+    .compare tr.key td {
+      background: rgba(94, 224, 181, 0.075);
+      border-top: 1px solid rgba(94, 224, 181, 0.32);
+      border-bottom: 1px solid rgba(94, 224, 181, 0.32);
+    }
+    .compare tr.key td:first-child { position: relative; }
+    .compare tr.key td.rustmd { background: rgba(94, 224, 181, 0.14); }
+    .compare tr.key .star {
+      color: var(--accent-2);
+      margin-right: 6px;
+      font-size: 16px;
+    }
+    .compare .badge {
+      width: 21px;
+      height: 21px;
+      border-radius: 6px;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .compare .celltext { font-size: 15.5px; color: #d7ddef; }
+    .compare td.rustmd .celltext { color: #f0f3ff; }
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin: 10px 2px 0;
+      font-size: 14px;
+      color: var(--faint);
+    }
+    .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .spacer { margin-left: auto; }
+
+    /* ---------- badges ---------- */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 23px;
+      height: 23px;
+      border-radius: 7px;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-weight: 800;
+      font-size: 15px;
+      flex: none;
+    }
+    .yes { background: rgba(63, 185, 80, 0.2); color: #56d364; border: 1px solid rgba(63, 185, 80, 0.4); }
+    .warn { background: rgba(227, 179, 65, 0.18); color: #e3b341; border: 1px solid rgba(227, 179, 65, 0.38); }
+    .no { background: rgba(248, 81, 73, 0.15); color: #ff7b72; border: 1px solid rgba(248, 81, 73, 0.32); }
+    .cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      justify-content: center;
+      line-height: 1.15;
+    }
+    .cell.stack { gap: 4px; }
+    .muted { color: var(--faint); }
+
+    /* ---------- small / chart ---------- */
+    .small {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: 178px 1fr;
+      gap: 24px;
+      align-items: start;
+      padding: 19px 22px 17px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(94, 224, 181, 0.06), rgba(255, 255, 255, 0.018));
+    }
+    .small .big {
+      font-size: 48px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: -0.05em;
+      color: var(--accent-2);
+    }
+    .small .big small {
+      display: block;
+      margin-top: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0;
+      color: var(--faint);
+    }
+    .small h3 {
+      margin: 0 0 3px;
+      font-size: 18px;
+      font-weight: 650;
+      color: #e9edff;
+    }
+    .small p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--faint);
+    }
+    .chart { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+    .row {
+      display: grid;
+      grid-template-columns: 88px 1fr 66px;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      color: var(--dim);
+    }
+    .row .name { white-space: nowrap; }
+    .row .track {
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+      overflow: hidden;
+    }
+    .row .bar {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(139, 156, 255, 0.55), rgba(139, 156, 255, 0.9));
+    }
+    .row.rustmd { color: #eafff6; font-weight: 700; }
+    .row.rustmd .bar { background: linear-gradient(90deg, #5ee0b5, #8b9cff); box-shadow: 0 0 18px rgba(94, 224, 181, 0.28); }
+    .row .value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    /* ---------- footer ---------- */
+    footer {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .footer-left .url {
+      font-size: 19px;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+      color: #dfe5ff;
+    }
+    .footer-left .meta {
+      margin-top: 5px;
+      font-size: 13px;
+      color: var(--faint);
+    }
+    .footer-right {
+      text-align: right;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--faint);
+    }
+    .footer-right b { color: #b9c3e6; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="grid"></div>
+  <div class="glowline"></div>
+
+  <main class="poster">
+    <header class="brand">
+      <img src="../icons/icon.png" alt="rustmd" />
+      <div>
+        <div class="brand-name">rustmd</div>
+        <div class="eyebrow">Local-first notes · Rust + Tauri 2</div>
+      </div>
+      <div class="pill"><span class="dot"></span>GPL-3.0 · 13 MB 绿色版</div>
+    </header>
+
+    <section class="hero">
+      <h1>一份笔记，<span>三种成品。</span></h1>
+      <p class="sub"><b>Markdown · HTML · CSV · TXT · JSON</b>　纯文件 · 离线 · 无账号</p>
+      <p class="lede">同一份笔记，导出为 <b>PNG 长图</b>、<b>矢量 PDF</b> 或 <b>独立 HTML</b>——不需要 Edge/Chrome，也不需要 Pandoc。</p>
+    </section>
+
+    <section class="stats">
+      <div class="stat">
+        <div class="value green">13 MB</div>
+        <div class="label">Windows 绿色包<br />解压即用</div>
+      </div>
+      <div class="stat">
+        <div class="value blue">5 种</div>
+        <div class="label">笔记格式<br />同一个列表</div>
+      </div>
+      <div class="stat">
+        <div class="value violet">3 种</div>
+        <div class="label">导出成品<br />全部格式支持</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>五种格式，都能导出</h2>
+        <span class="hint">不是只有 Markdown 能导出</span>
+      </div>
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>源格式</th>
+            <th>PNG 长图</th>
+            <th>矢量 PDF</th>
+            <th>独立 HTML</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Markdown</td>
+            <td><span class="checkline"><span class="badge yes">✓</span>3× 整页长图</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>A4 矢量文字</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>独立单文件</span></td>
+          </tr>
+          <tr>
+            <td>HTML</td>
+            <td><span class="checkline"><span class="badge yes">✓</span>整页截图</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>保留页面排版</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>UTF-8 源码</span></td>
+          </tr>
+          <tr>
+            <td>CSV / TXT / JSON</td>
+            <td><span class="checkline"><span class="badge yes">✓</span>宽表不裁列</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>窄表矢量 / 宽表横向</span></td>
+            <td><span class="checkline"><span class="badge yes">✓</span>完整数据视图</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="matrix-note">远程图片自动内联 · 打印始终浅色 · 导出走系统保存对话框</p>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>和其他工具比</h2>
+        <span class="hint">本地优先 · 纯文件 · 同场对比</span>
+      </div>
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>能力</th>
+            <th class="rustmd">rustmd</th>
+            <th>Obsidian</th>
+            <th>Typora</th>
+            <th>VS Code</th>
+            <th>Notepad++</th>
+            <th>Zettlr</th>
+            <th>Joplin</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>打开文件夹</td>
+            <td class="rustmd"><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="cell"><span class="badge no">×</span><span class="celltext">导入</span></span></td>
+          </tr>
+          <tr>
+            <td>HTML 笔记整页</td>
+            <td class="rustmd"><span class="cell"><span class="badge yes">✓</span><span class="celltext">内置</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">扩展</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+          </tr>
+          <tr>
+            <td>CSV/TXT/JSON 视图</td>
+            <td class="rustmd"><span class="badge yes">✓</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">部分</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+          </tr>
+          <tr class="key">
+            <td><span class="star">★</span>PNG/PDF/HTML 导出</td>
+            <td class="rustmd"><span class="cell"><span class="badge yes">✓</span><span class="celltext">5 种格式</span></span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">仅 PDF</span></span></td>
+            <td><span class="cell"><span class="badge yes">✓</span><span class="celltext">仅 MD</span></span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">扩展</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">PDF/HTML</span></span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">PDF/HTML</span></span></td>
+          </tr>
+          <tr>
+            <td>公式 / Mermaid</td>
+            <td class="rustmd"><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">扩展</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge yes">✓</span></td>
+          </tr>
+          <tr>
+            <td>多库</td>
+            <td class="rustmd"><span class="badge yes">✓</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">多窗口</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="cell"><span class="badge warn">!</span><span class="celltext">多实例</span></span></td>
+            <td><span class="badge yes">✓</span></td>
+            <td><span class="badge no">×</span></td>
+          </tr>
+          <tr>
+            <td>开源</td>
+            <td class="rustmd"><span class="cell"><span class="badge yes">✓</span><span class="celltext">GPL-3.0</span></span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="badge no">×</span></td>
+            <td><span class="cell"><span class="badge yes">✓</span><span class="celltext">MIT</span></span></td>
+            <td><span class="cell"><span class="badge yes">✓</span><span class="celltext">GPL</span></span></td>
+            <td><span class="cell"><span class="badge yes">✓</span><span class="celltext">GPL-3.0</span></span></td>
+            <td><span class="cell"><span class="badge yes">✓</span><span class="celltext">AGPL-3.0</span></span></td>
+          </tr>
+          <tr>
+            <td>价格</td>
+            <td class="rustmd"><span class="celltext">免费</span></td>
+            <td><span class="celltext">免费*</span></td>
+            <td><span class="celltext">$14.99</span></td>
+            <td><span class="celltext">免费</span></td>
+            <td><span class="celltext">免费</span></td>
+            <td><span class="celltext">免费</span></td>
+            <td><span class="celltext">免费*</span></td>
+          </tr>
+          <tr>
+            <td>Windows 包</td>
+            <td class="rustmd"><span class="celltext">13 MB</span></td>
+            <td><span class="celltext">324 MB</span></td>
+            <td><span class="celltext">114 MB</span></td>
+            <td><span class="celltext">289 MB</span></td>
+            <td><span class="celltext">7 MB</span></td>
+            <td><span class="celltext">159 MB</span></td>
+            <td><span class="celltext">352 MB</span></td>
+          </tr>
+          <tr>
+            <td>平台 / 移动</td>
+            <td class="rustmd"><span class="celltext">三端</span></td>
+            <td><span class="celltext">三端+移动</span></td>
+            <td><span class="celltext">三端</span></td>
+            <td><span class="celltext">三端+Web</span></td>
+            <td><span class="celltext">仅 Win</span></td>
+            <td><span class="celltext">三端</span></td>
+            <td><span class="celltext">三端+移动</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="legend">
+        <span class="item"><span class="badge yes">✓</span>原生支持</span>
+        <span class="item"><span class="badge warn">!</span>需扩展 / 部分支持</span>
+        <span class="item"><span class="badge no">×</span>不支持</span>
+        <span class="spacer"></span>
+        <span>* Obsidian Sync/Publish、Joplin Cloud 为付费附加服务</span>
+      </div>
+    </section>
+
+    <section class="small">
+      <div class="big">13 MB<small>Windows 绿色包</small></div>
+      <div>
+        <h3>为什么能这么小？不打包 Chromium，复用系统 WebView。</h3>
+        <p>Windows 绿色包解压即用；没有 Electron 运行时，安装包只有 Electron 同类的约 1/25。</p>
+        <div class="chart">
+          <div class="row">
+            <span class="name">Notepad++</span>
+            <span class="track"><span class="bar" style="width: 2%"></span></span>
+            <span class="value">7 MB</span>
+          </div>
+          <div class="row rustmd">
+            <span class="name">rustmd</span>
+            <span class="track"><span class="bar" style="width: 3.7%"></span></span>
+            <span class="value">13 MB</span>
+          </div>
+          <div class="row">
+            <span class="name">Typora</span>
+            <span class="track"><span class="bar" style="width: 32.4%"></span></span>
+            <span class="value">114 MB</span>
+          </div>
+          <div class="row">
+            <span class="name">Zettlr</span>
+            <span class="track"><span class="bar" style="width: 45.2%"></span></span>
+            <span class="value">159 MB</span>
+          </div>
+          <div class="row">
+            <span class="name">VS Code</span>
+            <span class="track"><span class="bar" style="width: 82.1%"></span></span>
+            <span class="value">289 MB</span>
+          </div>
+          <div class="row">
+            <span class="name">Obsidian</span>
+            <span class="track"><span class="bar" style="width: 92%"></span></span>
+            <span class="value">324 MB</span>
+          </div>
+          <div class="row">
+            <span class="name">Joplin</span>
+            <span class="track"><span class="bar" style="width: 100%"></span></span>
+            <span class="value">352 MB</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="footer-left">
+        <div class="url">github.com/riverzhou/rustmd</div>
+        <div class="meta">GPL-3.0 · Windows / macOS (Apple Silicon) / Linux · 完整对比见 README</div>
+      </div>
+      <div class="footer-right">
+        <div><b>纯文件 · 离线 · 无账号</b></div>
+        <div>体积为 2026-11 官方 Windows 包，量级参考</div>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
