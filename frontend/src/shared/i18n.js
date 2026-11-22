@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // UI language support: system default, persisted override, and static DOM
 // translation. Only two languages are bundled today (English / Simplified
 // Chinese); adding another language means extending MESSAGES and LANGUAGES.

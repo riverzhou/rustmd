@@ -1,15 +1,17 @@
 # AGENTS.md
 
 Rust + [Tauri 2](https://tauri.app) local Markdown / HTML / CSV / TXT / JSON notes app. The Rust
-backend is one file (`src/main.rs`); the frontend is frameworkless vanilla JS
-bundled by Vite. User-facing docs are Chinese + English (`README.md` / `README.en.md`);
+backend is a Cargo workspace: `crates/rustmd-core` (MIT OR Apache-2.0,
+platform independent) plus `src/main.rs` (GPL, the Tauri layer); the frontend is
+frameworkless vanilla JS bundled by Vite. User-facing docs are Chinese + English (`README.md` / `README.en.md`);
 this file is the developer/agent contract.
 
 ## Commands
 
 | Task | Command |
 | --- | --- |
-| All checks (lint, units, repo+IPC/docs, version, fmt/clippy/test, build) | `npm run check` |
+| All checks (lint, units, repo+IPC/docs, license boundary, version, fmt/clippy/test, build) | `npm run check` |
+| License boundary (core stays permissive + Tauri-free) | `npm run check:license` |
 | Dev window (real Tauri, hot frontend reload) | `node scripts/launch-dev.mjs` |
 | Dev window shortcut (Windows) | `scripts\run-dev.bat` |
 | Browser dev (in-memory mock) | `npm run dev` → http://127.0.0.1:5173 |
@@ -20,7 +22,7 @@ this file is the developer/agent contract.
 | Linux headless Wayland smoke | `scripts/linux-wayland-smoke.sh` (sway headless + grim; non-blocking in CI) |
 | Windows release shortcut | `scripts\run-build.bat` |
 | Frontend pure unit tests | `npm run test:unit` |
-| Rust unit tests | `npm run test:rust` (`cargo test`) |
+| Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
 | Version/tag preflight | `node scripts/check-version.mjs v1.10.8` |
@@ -57,21 +59,26 @@ this file is the developer/agent contract.
 
 ## Architecture
 
-- `src/main.rs` — everything Rust, in sections:
-  - types and path safety (`resolve_in_root`, `strip_extended_prefix`,
-    `canonical_root`, symlink/junction checks);
+- `crates/rustmd-core/` — **MIT OR Apache-2.0, no Tauri, no windows**: the
+  platform-independent engine (`docs/LICENSING.md`). Cargo workspace member;
+  the application crate depends on it via a path dependency. It holds:
+  - types (`NoteMeta`, `NoteContent`, `SaveNoteArgs`, …) and path containment
+    (`resolve_in_root`, `strip_extended_prefix`, `canonical_root`,
+    symlink/junction checks);
   - front matter split/compose (unknown fields and CRLF are preserved);
   - text encoding detection/round-tripping (`decode_note_text`,
     `encode_note_text`; UTF-8/BOM, GBK, GB18030) and data-note metadata;
   - HTML helpers (`html_to_text`, title/snippet extraction) and HTML-specific
     save/compose (no front matter, BOM/CRLF preserved; CSV/TXT/JSON share it);
+  - note scanning (`collect_notes`, `collect_folders`), metadata, hashing and
+    `atomic_write`.
+  `npm run check:license` fails if a `tauri` dependency or import appears here.
+- `src/main.rs` — the GPL Tauri layer: commands, protocol serving, printing,
+  windows and the dev self-test. Commands are thin wrappers over core:
   - `render_html_note` / `html_preview_finish` (hidden Tauri WebView; no
     external browser; segmented full-page capture + Rust PNG stitching);
   - `set_html_preview` (sandboxed native preview iframe, random-token
     `rmdhtml` document served by Rust);
-  - note scanning (`list_notes`, `list_folders`), search, metadata; reads are
-    capped at 64 MB per note (larger files stay listed by name but are never
-    loaded into memory);
   - commands (`read/save/create/rename/delete/move`) including atomic writes
     and hash-based external-change detection;
   - `fetch_image_bytes` (SSRF checks + redirect policy; async + blocking pool),
@@ -93,6 +100,13 @@ this file is the developer/agent contract.
     arbitrary vault files out of a note document a note script can read;
   - dev-only self-test commands (`selftest_config/write/finish`);
   - unit tests.
+- `frontend/src/shared/` — **MIT OR Apache-2.0, no Tauri**: the renderer as a
+  standalone, embeddable module. It holds preview, dataview,
+  dataformat, markdown, notelist, i18n, imgutil, editor and `host.js`. It must
+  never import `api.js` or touch Tauri: the shell installs its capabilities via
+  `configureHost({ isDesktop, openExternal, readLocalImage, readLocalAsset,
+  setHtmlPreview, htmlIsolationScript })`. Desktop does this at the bottom of
+  `api.js`. `npm run check:license` enforces the boundary and the SPDX headers.
 - `frontend/src/api.js` — the **only** Tauri bridge. Detects Tauri via
   `__TAURI_INTERNALS__` and falls back to an in-memory mock. Keep the mock’s
   validation/conflict/search behaviour aligned with Rust. Known mock-only
@@ -119,16 +133,16 @@ this file is the developer/agent contract.
   Exports are serialized through one promise queue; delete sets a `deleting`
   flag so a debounced autosave cannot recreate the file; search passes the UI
   locale so `Title:/File:/Tag:` fallbacks are localized.
-- `frontend/src/i18n.js` — English/Chinese dictionaries, system-language detection,
+- `frontend/src/shared/i18n.js` — English/Chinese dictionaries, system-language detection,
   `localStorage.rustmd-lang` persistence, `t()` and `data-i18n*` DOM translation.
-- `frontend/src/notelist.js` — pure sorting/filtering/folder-tree helpers,
+- `frontend/src/shared/notelist.js` — pure sorting/filtering/folder-tree helpers,
   folder-scope predicates, scoped tag counts and the note-kind mapping for all
   supported extensions (covered by `node --test`).
-- `frontend/src/dataformat.js` — pure CSV/TSV parser (quotes, embedded
+- `frontend/src/shared/dataformat.js` — pure CSV/TSV parser (quotes, embedded
   newlines, delimiter sniffing), tab-column builder, smart column alignment
   (numbers/dates right, booleans centered, missing markers ignored), per-column
   width limits/samples and JSON stats/validation (covered by `node --test`).
-- `frontend/src/dataview.js` / `dataview.css` — DOM-only CSV/TXT/JSON preview
+- `frontend/src/shared/dataview.js` / `dataview.css` — DOM-only CSV/TXT/JSON preview
   renderers (all note text via `textContent`), plus the styles shared with
   standalone HTML exports. Tables use alternating ROW backgrounds plus a
   tight four-color column-ink cycle, and apply the same alignment class to
@@ -149,9 +163,9 @@ this file is the developer/agent contract.
 - `frontend/src/vaultlist.js` — pure recent-vault helpers (normalize, dedupe,
   MRU cap 20, pinned entries that survive eviction, pinned-first display order,
   display name; covered by `node --test`).
-- `frontend/src/markdown.js` — pure math protection + code-segment helpers
+- `frontend/src/shared/markdown.js` — pure math protection + code-segment helpers
   (covered by `node --test`).
-- `frontend/src/preview.js` — Markdown via marked + DOMPurify + highlight.js
+- `frontend/src/shared/preview.js` — Markdown via marked + DOMPurify + highlight.js
   + Mermaid + MathJax; HTML notes via a sandboxed native iframe (preview) and
   a hidden Tauri WebView capture (export); CSV/TXT/JSON via `dataview.js`;
   note-relative CSS/JS/images are inlined and fonts use `rmd`; link interception
@@ -173,12 +187,12 @@ this file is the developer/agent contract.
   PDF picks page orientation per page (jsPDF swaps a short portrait page's
   box) and the `@media print` palette is forced to light so dark-theme exports
   stay legible on macOS/Linux (whose print paths do not paint backgrounds).
-- `frontend/src/editor.js` — CodeMirror 6 setup; Markdown/HTML/JSON language
+- `frontend/src/shared/editor.js` — CodeMirror 6 setup; Markdown/HTML/JSON language
   (plain text for CSV/TXT) is swapped per note through a `Compartment`;
   HTML/JS/CSS/JSON highlight rules and line-wrap compartment. Opening a note
   REPLACES the editor state (`loadDocument`) so CodeMirror's undo history is
   per-note (Ctrl+Z must never restore the previous note's text).
-- `frontend/src/imgutil.js` — bytes→data URL and magic-byte MIME sniffing.
+- `frontend/src/shared/imgutil.js` — bytes→data URL and magic-byte MIME sniffing.
 - `frontend/shims/katex.js` — tiny stub aliased as `katex` in
   `frontend/vite.config.js`; mermaid 12 has an optional KaTeX import, while
   note math uses MathJax. Keep the alias or Vite will bundle the unused package.
@@ -359,6 +373,31 @@ If a new Tauri *plugin* is used:
    reads, remote iframes and all other origins get 403. Do not restore
    `Access-Control-Allow-Origin: *`. Local CSS/JS/images are inlined first so
    this is only a fallback.
+
+## Licensing invariants
+
+The application is GPL-3.0-or-later; the two reusable layers
+(`crates/rustmd-core`, `frontend/src/shared`) are dual-licensed
+MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
+
+1. **Nothing GPL-only goes into the reusable layers** (copy-paste included).
+   Every file there starts with its SPDX header.
+2. **The reusable layers never depend on Tauri or on desktop assumptions.**
+   `npm run check:license` fails on a `tauri` dependency, a `tauri::` path, a
+   missing SPDX header, or `@tauri-apps` / `__TAURI_INTERNALS__` / `invoke(`
+   inside `frontend/src/shared/`.
+3. **The application stays GPL** (`Cargo.toml` + `package.json`), and the root
+   crate keeps its `rustmd-core` path dependency.
+4. **New dependencies in the reusable layers must be permissive**
+   (MIT / Apache-2.0 / BSD / ISC). Current: `serde`, `encoding_rs`.
+5. **Host capabilities go through the bridge**, never through a direct IPC
+   call: the shell installs `configureHost({...})` (`host.js`) and the
+   reusable layer only sees that interface.
+6. **External contributions**: the terms must land in `CONTRIBUTING.md`
+   **before** the first outside PR is merged — moving a contributed line from
+   the GPL layer to the permissive one needs that contributor's consent. The
+   repository has a single human author today, which is what makes the split
+   possible at all.
 
 ## Change recipes
 
@@ -599,6 +638,7 @@ If a new Tauri *plugin* is used:
 - `docs/screenshots/` — README screenshots (regenerate with `scripts/capture-screenshots.mjs`).
 - `docs/GITHUB_PROJECT_COPY.md` — About description, topics, social preview and discoverability copy.
 - `docs/PROMOTION.md` — external launch kit (channels, ready-to-post copy, 30-day plan, metrics).
+- `docs/LICENSING.md` — 分层许可：应用 GPL、可复用层 MIT OR Apache-2.0 的边界与规则。
 - `packaging/` — winget / Scoop / AUR / Homebrew manifests (see `packaging/README.md`).
 - `CONTRIBUTING.md` — contribution workflow and PR checklist.
 - `LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.

@@ -1,7 +1,7 @@
 import './style.css';
-import './dataview.css';
+import './shared/dataview.css';
 import { api } from './api.js';
-import { createEditor } from './editor.js';
+import { createEditor } from './shared/editor.js';
 import {
   renderPreview,
   buildExportHtml,
@@ -10,14 +10,14 @@ import {
   setImageContext,
   inlineLocalAssetsInHtml,
   ensureUtf8HtmlCharset,
-} from './preview.js';
+} from './shared/preview.js';
 import {
   exportPng,
   exportPdf,
   exportPdfVector,
   pdfFromPngDataUrl,
 } from './export.js';
-import { bytesToDataUrl, dataUrlToBytes } from './imgutil.js';
+import { bytesToDataUrl, dataUrlToBytes } from './shared/imgutil.js';
 import {
   applyStaticTranslations,
   getLanguage,
@@ -25,7 +25,7 @@ import {
   onLanguageChange,
   setLanguage,
   t,
-} from './i18n.js';
+} from './shared/i18n.js';
 import {
   SORT_ASC,
   SORT_DESC,
@@ -43,7 +43,7 @@ import {
   noteKindOf,
   noteStemOf,
   sortNotes,
-} from './notelist.js';
+} from './shared/notelist.js';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SPLIT_DEFAULT_RATIO,

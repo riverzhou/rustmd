@@ -10,9 +10,9 @@
 //     macOS and Linux; platforms without a print engine fall back to slicing
 //     an html2canvas raster into lossless PNG pages.
 
-import { renderPreview, isRmdUrl, rmdUrlPath } from './preview.js';
+import { renderPreview, isRmdUrl, rmdUrlPath } from './shared/preview.js';
 import { api } from './api.js';
-import { bytesToDataUrl, guessImageMime } from './imgutil.js';
+import { bytesToDataUrl, guessImageMime } from './shared/imgutil.js';
 import { pdfPageOrientation } from './pdfgeom.js';
 import {
   CONTENT_WIDTH,

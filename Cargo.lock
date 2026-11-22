@@ -3395,6 +3395,7 @@ dependencies = [
  "percent-encoding",
  "png",
  "reqwest 0.12.28",
+ "rustmd-core",
  "serde",
  "tauri",
  "tauri-build",
@@ -3403,6 +3404,14 @@ dependencies = [
  "webkit2gtk",
  "webview2-com",
  "windows",
+]
+
+[[package]]
+name = "rustmd-core"
+version = "1.10.8"
+dependencies = [
+ "encoding_rs",
+ "serde",
 ]
 
 [[package]]

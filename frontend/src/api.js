@@ -5,8 +5,9 @@
 // with the Rust behaviour (path validation, conflict detection, search scope)
 // or browser debugging gives false confidence.
 
-import { guessImageMime } from './imgutil.js';
-import { noteKindOf, noteStemOf } from './notelist.js';
+import { guessImageMime } from './shared/imgutil.js';
+import { configureHost } from './shared/host.js';
+import { noteKindOf, noteStemOf } from './shared/notelist.js';
 
 const isTauri =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -854,3 +855,53 @@ function mockInvoke(command, args) {
     }, 30);
   });
 }
+
+// Runs inside the sandboxed HTML preview document. It is shell-specific: this
+// desktop shell drops Tauri's IPC globals; another shell injects its own.
+const HTML_IPC_GUARD = `
+(function () {
+  var blocked = false;
+  function drop(name) {
+    try { delete window[name]; } catch (e) {}
+    try {
+      if (Object.prototype.hasOwnProperty.call(window, name)) blocked = true;
+    } catch (e) { blocked = true; }
+  }
+  drop('__TAURI_INTERNALS__');
+  drop('__TAURI__');
+  drop('ipc');
+  // If the global is non-configurable, at least neuter invoke.
+  try {
+    if (window.__TAURI_INTERNALS__) {
+      window.__TAURI_INTERNALS__.invoke = function () {
+        return Promise.reject(new Error('HTML preview IPC blocked'));
+      };
+    }
+  } catch (e) {}
+  window.__RMD_HTML_IPC_BLOCKED__ = blocked;
+  if (blocked) {
+    try { window.stop(); } catch (e) {}
+    var show = function () {
+      document.body.innerHTML =
+        '<div style="font:14px/1.6 sans-serif;padding:24px;color:#b42318">' +
+        'HTML preview disabled: app IPC could not be isolated.</div>';
+    };
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', show);
+    } else {
+      show();
+    }
+  }
+})();
+`;
+
+// The shared renderer (frontend/src/shared, MIT OR Apache-2.0) never talks to
+// Tauri directly; it calls the host bridge, which this desktop shell installs.
+configureHost({
+  isDesktop: isTauri,
+  htmlIsolationScript: HTML_IPC_GUARD,
+  openExternal,
+  readLocalImage: (...args) => api.readLocalImage(...args),
+  readLocalAsset: (...args) => api.readLocalAsset(...args),
+  setHtmlPreview: (...args) => api.setHtmlPreview(...args),
+});

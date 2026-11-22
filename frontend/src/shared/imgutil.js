@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Shared image helpers: raw bytes → data: URL and magic-byte MIME
 // detection. Lives here (not in export.js) so preview.js can inline vault
 // images in HTML export without importing export.js — which would create a

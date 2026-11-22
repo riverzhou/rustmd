@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Pure note-list helpers: file names, sorting, folder filtering and the
 // folder tree. Kept free of DOM/state so `node --test` can cover them
 // directly (the UI wiring lives in main.js).

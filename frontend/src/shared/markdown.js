@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Pure Markdown preprocessing helpers. Kept DOM-free so they can be tested
 // with `node --test`; preview.js owns the rendering and MathJax parts.
 

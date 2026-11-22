@@ -1,0 +1,12 @@
+[package]
+name = "rustmd-core"
+version = "1.10.8"
+edition = "2024"
+description = "Platform-independent note engine for rustmd: path containment, front matter, text encodings, scanning, hashing, atomic writes."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/riverzhou/rustmd"
+
+[dependencies]
+# Decode text notes on open (UTF-8/GBK/GB18030) and re-encode them on save.
+encoding_rs = "0.8"
+serde = { version = "1", features = ["derive"] }

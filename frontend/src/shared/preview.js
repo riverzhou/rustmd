@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import mermaid from 'mermaid';
-import { api } from './api.js';
+import { host } from './host.js';
 import { bytesToDataUrl, guessImageMime } from './imgutil.js';
 import { getLanguage, t } from './i18n.js';
 import { DATA_VIEW_CSS, renderDataView } from './dataview.js';
@@ -350,7 +351,7 @@ async function inlineLocalImagesForHtml(stage) {
     locals.map(async (img) => {
       const src = img.getAttribute('src');
       try {
-        const image = await api.readLocalImage(rmdUrlPath(src));
+        const image = await host.readLocalImage(rmdUrlPath(src));
         img.removeAttribute('srcset');
         img.src = bytesToDataUrl(
           image.bytes,
@@ -395,9 +396,9 @@ export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
     try {
       if (kind === 'asset') {
         if (!TEXT_ASSET.test(abs)) return null;
-        return await api.readLocalAsset(abs);
+        return await host.readLocalAsset(abs);
       }
-      return await api.readLocalImage(abs);
+      return await host.readLocalImage(abs);
     } catch {
       return null;
     }
@@ -523,7 +524,7 @@ function installLinkHandler(container) {
     if (href.startsWith('#')) return; // in-document anchor
     event.preventDefault();
     if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
-      api.openExternal(href).catch((err) => {
+      host.openExternal(href).catch((err) => {
         console.warn('打开外部链接失败：', href, err);
       });
     } else {
@@ -758,42 +759,6 @@ async function renderMarkdownInto(container, markdownSource) {
 // hidden Tauri WebView window and return only a PNG. Browser dev (no Rust
 // bridge) falls back to an iframe that captures itself with html2canvas.
 
-const HTML_IPC_GUARD = `
-(function () {
-  var blocked = false;
-  function drop(name) {
-    try { delete window[name]; } catch (e) {}
-    try {
-      if (Object.prototype.hasOwnProperty.call(window, name)) blocked = true;
-    } catch (e) { blocked = true; }
-  }
-  drop('__TAURI_INTERNALS__');
-  drop('__TAURI__');
-  drop('ipc');
-  // If the global is non-configurable, at least neuter invoke.
-  try {
-    if (window.__TAURI_INTERNALS__) {
-      window.__TAURI_INTERNALS__.invoke = function () {
-        return Promise.reject(new Error('HTML preview IPC blocked'));
-      };
-    }
-  } catch (e) {}
-  window.__RMD_HTML_IPC_BLOCKED__ = blocked;
-  if (blocked) {
-    try { window.stop(); } catch (e) {}
-    var show = function () {
-      document.body.innerHTML =
-        '<div style="font:14px/1.6 sans-serif;padding:24px;color:#b42318">' +
-        'HTML preview disabled: app IPC could not be isolated.</div>';
-    };
-    if (document.readyState === 'loading') {
-      window.addEventListener('DOMContentLoaded', show);
-    } else {
-      show();
-    }
-  }
-})();
-`;
 
 const HTML_CAPTURE_SCRIPT = `
 (function () {
@@ -883,7 +848,7 @@ function escapeAttr(value) {
 /// Absolute vault-folder base so relative images/assets in the HTML resolve
 /// through the existing `rmd` protocol.
 function htmlPreviewBaseHref(ctx = imageCtx) {
-  if (!api.isTauri || !ctx) return '';
+  if (!host.isDesktop || !ctx) return '';
   const root = ctx.root.replace(/\/+$/, '');
   const dir = ctx.notePath.includes('/')
     ? ctx.notePath.slice(0, ctx.notePath.lastIndexOf('/'))
@@ -930,7 +895,7 @@ async function buildHtmlPreviewDocument(source, ctx = imageCtx) {
   const base = htmlPreviewBaseHref(ctx);
   const injection = [
     base ? `<base href="${escapeAttr(base)}">` : '',
-    inlineScript(HTML_IPC_GUARD),
+    inlineScript(host.htmlIsolationScript || ''),
     html2canvasTag,
     inlineScript(HTML_CAPTURE_SCRIPT),
   ]
@@ -1141,7 +1106,7 @@ async function renderHtmlNativeInto(container, htmlSource) {
   if (holder) holder.classList.add('html-mode');
   let url;
   try {
-    url = await api.setHtmlPreview(
+    url = await host.setHtmlPreview(
       await buildNativeHtmlPreviewDocument(htmlSource, ctx)
     );
   } catch (err) {
@@ -1169,7 +1134,7 @@ async function renderHtmlNativeInto(container, htmlSource) {
     if (event.source !== iframe.contentWindow) return;
     const data = event.data;
     if (data && typeof data.__rmdPreviewLink === 'string') {
-      api.openExternal(data.__rmdPreviewLink).catch(() => {});
+      host.openExternal(data.__rmdPreviewLink).catch(() => {});
       return;
     }
     if (!data || data.__rmdPreview !== true) return;
@@ -1233,7 +1198,7 @@ async function renderHtmlIframeInto(container, htmlSource) {
   disposeHtmlControl(container);
   let url;
   try {
-    url = await api.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource, ctx));
+    url = await host.setHtmlPreview(await buildHtmlPreviewDocument(htmlSource, ctx));
   } catch (err) {
     console.error('HTML preview registration failed:', err);
     if (!isCurrentRender(container, renderSeq)) return;
@@ -1296,7 +1261,7 @@ function renderHtmlStaticFallback(container, source, message) {
 /// deterministic width so page breaks and chart layout are stable.
 export async function captureHtmlPreview(source) {
   const ctx = imageCtx;
-  const url = await api.setHtmlPreview(await buildHtmlPreviewDocument(source, ctx));
+  const url = await host.setHtmlPreview(await buildHtmlPreviewDocument(source, ctx));
   const iframe = createHtmlFrame(url);
   iframe.classList.add('html-capture-frame');
   iframe.style.cssText =
@@ -1341,7 +1306,7 @@ export function renderPreview(source, container, kind = 'markdown') {
   container.closest('.preview-holder')?.classList.toggle('data-mode', isDataKind(kind));
   container.classList.remove('data-mode');
   if (kind === 'html') {
-    return api.isTauri
+    return host.isDesktop
       ? renderHtmlNativeInto(container, source)
       : renderHtmlIframeInto(container, source);
   }

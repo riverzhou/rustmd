@@ -9,14 +9,15 @@ authors = ["River"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Platform-independent note engine (MIT OR Apache-2.0) so it stays reusable
+# on its own; see docs/LICENSING.md.
+rustmd-core = { path = "crates/rustmd-core" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 # Percent-decoding the `rmd` image-protocol URL paths.
 percent-encoding = "2"
-# Decode text notes on open (UTF-8/GBK/GB18030) and re-encode them on save.
-encoding_rs = "0.8"
 # Blocking client for fetching remote images during export (rustls: no
 # OpenSSL needed on Windows).
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
@@ -65,6 +66,13 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0"
 
+[dev-dependencies]
+# Unit tests decode fixtures directly; the app itself no longer needs it.
+encoding_rs = "0.8"
+
 [profile.release]
 lto = true
 strip = true
+
+[workspace]
+members = ["crates/rustmd-core"]

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // DOM renderers for the CSV / TXT / JSON previews. All note text reaches the
 // document through textContent (never innerHTML), so a data note cannot inject
 // markup even though it bypasses the Markdown sanitizer.

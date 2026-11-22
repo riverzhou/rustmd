@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Pure parsers for the CSV / TXT / JSON previews. Kept DOM-free so
 // `node --test` can cover quoting, delimiter sniffing, tab alignment and
 // JSON stats directly (the renderer lives in dataview.js).

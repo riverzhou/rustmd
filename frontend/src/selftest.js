@@ -19,14 +19,14 @@ import {
   inlineLocalAssetsInHtml,
   buildExportHtml,
   ensureUtf8HtmlCharset,
-} from './preview.js';
+} from './shared/preview.js';
 import {
   exportPng,
   exportPdf,
   exportPdfVector,
   pdfFromPngDataUrl,
 } from './export.js';
-import { bytesToDataUrl, guessImageMime } from './imgutil.js';
+import { bytesToDataUrl, guessImageMime } from './shared/imgutil.js';
 
 /// `getState` returns the live app state (primary dir, open note + its vault,
 /// all active vault dirs) so the finally-block can restore the user's notes
