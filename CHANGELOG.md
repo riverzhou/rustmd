@@ -5,6 +5,29 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.11.0] - 2026-11-22
+
+### 变更（Changed）
+
+- **引擎与渲染层拆分为可独立使用的模块**，应用本体仍为 GPL-3.0-or-later：
+  - 新增 `crates/rustmd-core`（**MIT OR Apache-2.0**）：路径封闭、front matter、
+    文本编码往返（UTF-8 / BOM / GBK / GB18030）、笔记扫描与元数据、内容 hash、
+    原子写。不含任何 Tauri 依赖，可脱离桌面应用单独使用，并配 6 个只走公开
+    API 的集成测试。
+  - 新增 `frontend/src/shared/`（**MIT OR Apache-2.0**）：Markdown / HTML /
+    CSV / TXT / JSON 渲染栈、CodeMirror 编辑器、i18n 与纯函数层。它通过
+    `host.js` 的宿主桥取得文件、图片、外链与预览文档能力，不再直接调用
+    `api.js`；桌面壳在 `api.js` 末尾 `configureHost({...})` 注入实现。
+  - Cargo 与前端构建都改为 workspace / 共享目录，`cargo test --workspace`。
+- **新增 `npm run check:license`**：校验两个可复用层不引入 Tauri 依赖或引用、
+  每个源文件带 SPDX 头；已接入 `npm run check` 与 CI。
+- 新增 `docs/LICENSING.md`，说明分层许可与边界规则。
+
+### 修复（Fixed）
+
+- 无用户可见的行为变化：此版本为结构性重构（文件位置、许可分层、宿主桥），
+  桌面端的功能与渲染结果与 1.10.8 一致。
+
 ## [1.10.8] - 2026-11-22
 
 ### 修复（Fixed）

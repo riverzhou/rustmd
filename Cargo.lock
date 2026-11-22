@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "rustmd"
-version = "1.10.8"
+version = "1.11.0"
 dependencies = [
  "encoding_rs",
  "getrandom 0.4.3",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "rustmd-core"
-version = "1.10.8"
+version = "1.11.0"
 dependencies = [
  "encoding_rs",
  "serde",

@@ -2,6 +2,8 @@
 
 rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox iframe，HTML 导出使用隐藏的独立 Tauri WebView 窗口。Tauri 2 负责 webview 与原生能力，Rust 后端提供文件系统与网络命令，前端是原生 JavaScript。
 
+代码分成三层：应用层（GPL-3.0-or-later：`src/main.rs` 的命令、协议与打印，`frontend/src/main.js` 的界面），以及两个可独立复用的模块（MIT OR Apache-2.0）：`crates/rustmd-core`（平台无关的笔记引擎）与 `frontend/src/shared/`（渲染栈 + 编辑器 + `host.js` 宿主桥）。可复用层不得依赖 Tauri，由 `npm run check:license` 校验；分层与边界见 `docs/LICENSING.md`。
+
 ```
 ┌──────────────────────────── WebView（frontend/）────────────────────────────┐
 │ main.js  UI 状态 / DOM / 保存队列 / 文件夹树 / 搜索 / 导出 / 笔记库切换     │

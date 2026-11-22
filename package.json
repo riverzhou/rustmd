@@ -1,7 +1,7 @@
 {
   "name": "rustmd",
   "private": true,
-  "version": "1.10.8",
+  "version": "1.11.0",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.js",

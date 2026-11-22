@@ -1,10 +1,23 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-22（v1.10.8 数学离线渲染与公式保护复审；v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；更早版本为历史记录）
-**审计对象**：`rustmd` v1.10.8（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计日期**：2026-11-22（v1.11.0 结构性重构；v1.10.8 数学离线渲染与公式保护复审；v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；更早版本为历史记录）
+**审计对象**：`rustmd` v1.11.0（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）；下方的详细记录以 v1.10.8 为基准
 **审计方式**：安装版真实 WebView2 + CSP 下逐篇渲染 22 篇多格式笔记并截图复检；静态检查（fmt/clippy/ESLint/repo/version）+ 69 个前端单测 + 75 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（22 篇、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.8 数学公式离线渲染与保护（当前版本）
+## v1.11.0 结构性重构（当前版本）
+
+本版没有改变 1.10.8 审计过的安全面：路径封闭、SSRF 校验、CSP、`rmd` 来源白名单、
+HTML 预览的 null-origin 隔离与子窗口标签守卫均按原样保留，只是部分代码换了所在
+crate/目录。变化集中在结构：引擎拆成 `crates/rustmd-core`、渲染层拆成
+`frontend/src/shared/`，两者为 MIT OR Apache-2.0，并由 `npm run check:license`
+强制"不引入 Tauri 依赖/引用、每个文件带 SPDX 头"。HTML 预览的 IPC 隔离脚本从渲染层
+移回 `api.js`（以 `host.htmlIsolationScript` 注入），语义不变：预览文档仍然拿不到
+任何应用命令。
+
+## v1.10.8 数学公式离线渲染与保护
+
+*（下表为 1.10.8 的审计记录，保留原样。）*
+
 
 安装版 CSP 为 `default-src 'self'`，而 MathJax v4 默认从 `cdn.jsdelivr.net`
 按需加载可选字体数据（calligraphic、double-struck、fraktur…）和未内置的 TeX
