@@ -18,8 +18,8 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 - **Markdown 笔记**：`preview.js` 在 `innerHTML` 前调用 `DOMPurify.sanitize`，使用静态配置。
 - **HTML 笔记预览**：`set_html_preview` 把文档存入内存，通过 `rmdhtml` 协议加载到 `sandbox="allow-scripts allow-forms"` 的 iframe（没有 `allow-same-origin`，origin 为 null）。脚本/样式/ECharts 以及本地相对的 CSS/JS/字体/图片在 iframe 内原生运行，但 Tauri IPC 对该 origin 返回 `Origin header is not a valid URL`，父页面 DOM 也不可访问。
-- **HTML 笔记导出**：`render_html_note` 只在隐藏的独立 Tauri WebView 窗口中运行（label `html-render-*`）；除 `html_preview_finish` 外，所有保险库命令都通过 `require_main` 拒绝该窗口。超长页面分段截图后由 Rust 拼接，不需要外部浏览器。
-- **本地资源与读隔离**：HTML 预览/导出会内联相对 CSS/JS 与图片，字体走 `rmd`。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（Tauri / 本地 dev server），以及预览源的 `font`/`script`/`style` 子资源（按 `Sec-Fetch-Dest` 判定，脚本/样式不能读取响应文本）。`fetch`/XHR（空 dest）、文档读取、远程 iframe 一律 403。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
+- **HTML 笔记导出**：`render_html_note` 只在隐藏的独立 Tauri WebView 窗口中运行（label `html-render-*`）；除 `html_preview_finish` 外，所有保险库命令都通过 `require_main` 拒绝该窗口。超长页面分段截图后由 Rust 拼接，不需要外部浏览器。`html_preview_finish` 的 base64 解码与 PNG 拼接在阻塞线程池执行；解码后的 PNG 字节上限 96 MB、单段解码缓冲上限 128 MB、分段编码总量上限 256 MB，输出尺寸以 PNG 头为准而不是笔记脚本上报值，等待方已超时/取消时负载直接丢弃。
+- **本地资源与读隔离**：HTML 预览/导出会内联相对 CSS/JS 与图片，字体走 `rmd`。无 Origin 的普通 `<img>/<link>/<script>` 请求允许；带 Origin 的 CORS 请求只接受应用自身 webview（发布版只认 Tauri 源，回环 dev server 源只在 debug 构建放行），以及预览源的 `font`/`script`/`style` 子资源（按 `Sec-Fetch-Dest` 判定，脚本/样式不能读取响应文本）。`fetch`/XHR（空 dest）、文档读取、远程 iframe 一律 403。响应不再返回 `Access-Control-Allow-Origin: *`，`rmd` 的 HTML/SVG 文档还附带 sandbox CSP + `nosniff`，恶意笔记无法用 `fetch` 读取笔记库文本。
 - **多库模式边界**：多库同开时 `set_notes_roots` 会注册所有已打开库根，`rmd`/`read_local_image` 只服务规范化后位于至少一个根下的文件。副作用是：A 库中的笔记（或它引用的相对 `../` 路径）可以读取/显示 B 库中已打开的本地图片，或加载 B 库中的 classic `<script>` 子资源；这不能读取文本、调用 IPC 或越过两个库的并集，且 B 必须是用户显式打开的库。不要把来源不可信的库与包含敏感文件的库同时置顶打开；关闭多库/退出应用会撤销不再活跃的根。
 - 静态配置，不使用 hooks、`IN_PLACE`、函数式 `ADD_TAGS/ADD_ATTR`、自定义元素；禁止 `style/link/meta/base/iframe/object/embed/form/textarea/select/option/button` 和 `srcdoc`。
 - DOMPurify 默认剥离 `<script>`、`on*` 事件、`javascript:` URL 等。
@@ -34,14 +34,14 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - 主应用：`default-src 'self'`、`script-src 'self'`、`object-src 'none'`、`base-uri 'self'`、`form-action 'none'`、`frame-ancestors 'none'`；`frame-src http://rmdhtml.localhost rmdhtml:` 只为 HTML 预览 iframe 放行；
 - 主应用 `style-src 'self' 'unsafe-inline'`（MathJax/Mermaid 注入样式所需）；
 - 主应用 `img-src` 允许 `data: blob: http: https: rmd:`（远程图 + 笔记库本地图）；
-- 主应用 `connect-src` 只放 IPC 和本地 dev server；`worker-src 'self' blob:`；
+- 主应用 `connect-src` 只允许 `'self'` 与 IPC（`ipc:` / `http://ipc.localhost`）；Vite HMR 的 `127.0.0.1`/`ws://` 来源只出现在 `app.security.devCsp`；`worker-src 'self' blob:`；
 - `rmdhtml` 预览文档另有两套更窄的 CSP：sandbox iframe 允许内联/HTTPS/本地 `rmd` 脚本、样式、字体、图片、嵌套 frame，但 `connect-src` 不含 IPC；隐藏导出窗口同样允许这些资源，并额外允许 `ipc:` 供 `html_preview_finish` 回传截图。两套 CSP 都设置 `object-src 'none'`、`form-action 'none'`。
 - 发布版 `app.security.csp` 不含 dev server 的 `127.0.0.1`/`ws://` 来源，这些只在 `app.security.devCsp` 中启用；`npm run check:repo` 会阻止把开发源写回发布 CSP。
 
 ### 3. 路径封闭
 
 - 所有笔记路径经 `resolve_in_root`：拒绝绝对路径/`..`，已存在路径 canonicalize 后前缀检查；新路径检查最深已存在祖先，阻止 junction/symlink 写逃逸。
-- `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json` 当作笔记，其他扩展名不会出现在列表中，也无法通过笔记命令打开。
+- `walk` 跳过符号链接/junction，避免环和越界；只把 `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json` 当作笔记，其他扩展名不会出现在列表中，也无法通过笔记命令打开；`read/save/rename/delete/move` 也会用 `require_note_path` 拒绝非笔记扩展名（`note_kind` 不再把任意扩展名兜底成 Markdown），因此被攻陷的主 webview 不能把笔记命令当通用文本读写器。
 - 范围搜索的 `folder` 参数来自 webview，后端仍先 `canonical_root` 再 `resolve_in_root`：非法/缺失目录直接报错，不会越出笔记库扫描。
 - `rmd` 图片协议与 `read_local_image` 使用 `resolve_vault_file_in_roots`：逐个检查所有已注册的库根（多库同开时可能多个），只有规范化后位于至少一个根下的文件才会被服务；不会因为多库而放弃前缀检查。`read_local_image` 还要求图片扩展名：它把字节交给“受信任的”资源内联器并写进笔记文档，若不限制类型，恶意 HTML 笔记可以把库内任意文本/密钥文件变成 `<img>` 的 data URL，再从自己的脚本里读出来。CSS/JS 内联使用独立的 `read_local_asset`，只接受 `.css`/`.js`/`.mjs`；其他扩展名一律拒绝。
 - 预览源的 Origin 采用精确 host 匹配（`null`、`rmdhtml.localhost`），`http://rmdhtml.localhost.evil.example` 之类前缀域名不会通过。
@@ -65,7 +65,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - 文本笔记按 BOM → UTF-8 → GBK → GB18030 自动解码；合法的 UTF-8 始终优先。保存沿用原编码与 BOM；GBK 文件写入 GB18030 可表示的四字节字符时兼容升级为 GB18030，保存后状态栏同步。无法识别编码的文件仍会出现在列表中，打开时返回明确错误，不会被静默隐藏或覆盖。极少数字节序列同时是合法 UTF-8 和 GBK，此时按 UTF-8 读取（见残余风险）；其余原编码无法表示的字符会让保存失败，而不是写入实体。CSV/TXT/JSON 预览全部用 DOM `textContent` 构建，不执行笔记中的 HTML。
 - 笔记保存用同目录临时文件 + rename，避免半截文件。
 - `baseHash` 冲突检测；外部修改不会被静默覆盖，必须用户确认。
-- 保存失败保持“未保存”状态；关闭窗口有 `beforeunload` 提示。
+- 保存失败保持“未保存”状态；关闭窗口由 Tauri `onCloseRequested` 异步执行（先 flush 500ms 防抖保存，失败时询问是否放弃），`beforeunload` 只是浏览器模式的回退提示。
 - 导出对话框在 Rust 侧打开，写入用户选择的路径。
 
 ### 6. 外链
@@ -78,8 +78,8 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 1. **DOMPurify 库本身**：任何 sanitizer 都可能有新的绕过研究。本项目只使用字符串模式 + 静态配置（避开多数配置型 CVE），并叠加 CSP 与外部链接拦截；仍建议只打开可信来源的笔记库。
 2. **Windows 自签名**：只保证完整性，不建立公共信任；SmartScreen 仍会警告。真实证书需要用户自行配置。
 3. **macOS ad-hoc**：未公证，首次打开需要用户放行；不能防止用户主动运行被篡改的包。请用 SHA256 校验。
-4. **远程图片**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。
-5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联（CSS/JS 仅限这两类扩展名，其他文件不会内联）；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。导出截图/临时状态在渲染后清理。
+4. **远程图片与 HTML 笔记自发的网络请求**：导出或预览时会把笔记中的 URL 发给对应服务器，可能泄露“打开了这篇笔记/这个 URL”这一事实；不会把笔记正文发出去。DNS rebinding（校验时解析到公网、连接时解析到内网）没有做地址钉扎，只做了“解析结果不得包含内网地址”的检查；需要更高保证时请在网络层做出口过滤。`fetch_image_bytes` 的 SSRF 防护**只覆盖导出器主动拉取的图片**；HTML 笔记里的脚本仍可像普通网页一样自行发 `<img>`/`fetch`(no-cors) 请求到任意 http(s) 主机（预览/导出文档的 CSP 允许 http(s) 资源），应用不代理也不过滤这些请求。
+5. **HTML 笔记的渲染隔离**：预览 iframe 是 null origin，无法调用应用命令；导出隐藏窗口的 label 被所有保险库命令拒绝。页面仍可像普通网页一样加载远程资源（CDN 图表脚本、远程图片），相对 CSS/JS 与图片会内联（`read_local_asset` 只接受 `.css`/`.js`/`.mjs` 三类扩展名，其他文件不会内联）；字体等剩余资源走 `rmd`。`rmd` 只放行预览源的 classic script/style/font 子资源，`fetch` 和文档读取仍返回 403。注意内联后的 `.css`/`.js`/`.mjs` 文本进入了笔记文档，笔记自己的脚本可以通过 DOM 读回这些内容；不要把密钥写进库里可能被笔记引用的样式/脚本文件。导出截图/临时状态在渲染后清理。
 6. **编码歧义**：约 1920 个常用汉字的 GBK 两字节序列也构成合法 UTF-8。检测器没有用户编码选择，选择“合法 UTF-8 优先”，因此这类短 GBK 文件可能显示为乱码并在编辑后被按 UTF-8 保存。这是有意的取舍：若反向猜测 GBK，会破坏合法的非中文 UTF-8 笔记。遇到类似文件请先在外部转换为 UTF-8；应用不会声称能消除这种字节级歧义。
 7. **大数据视图**：CSV/TXT/JSON 不再有行/列/节点显示上限，完整内容进入 DOM；超大文件会占用更多内存和渲染时间，用户应避免同时在 4K 窗口打开多个超大数据笔记。宽表采用卡片内滚动和上下同步横向滚动条，不会把列压成一字一行。
 8. **Unix 反斜杠文件名**：笔记协议以 `/` 为分隔符；Unix 上含字面 `\` 的文件名无法无歧义表示，扫描时跳过，不会错误打开同名的嵌套路径。
@@ -94,7 +94,7 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 - 只打开自己信任的笔记库；打开下载/他人分享的笔记库前先备份。
 - 从官方 Release 下载，核对 `SHA256SUMS.txt`；Windows 首次运行确认发布者提示；macOS 在“隐私与安全性”中放行。
 - 不要把包含密钥/密码的笔记导出后公开分享。
-- 如果发现可疑 HTML、路径逃逸、SSRF 或签名问题，请通过仓库 Issue 私下说明复现步骤（不要公开敏感笔记内容）。
+- 如果发现可疑 HTML、路径逃逸、SSRF 或签名问题，请按 [`.github/SECURITY.md`](../.github/SECURITY.md) 的 GitHub 私密漏洞报告流程（Security → Report a vulnerability）或其中的邮箱私下说明复现步骤，**不要公开 Issue**，也不要贴出敏感笔记内容。
 
 ## 审计与验证
 

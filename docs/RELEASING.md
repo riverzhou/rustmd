@@ -8,18 +8,20 @@
 
 ## 1. 版本与发布说明
 
-一次发布需要以下版本一致：
+一次发布需要以下版本一致（`npm run check:version` 校验 8 个值）：
 
 - `package.json` 的 `version`
 - `Cargo.toml` 的 `[package] version`
+- `crates/rustmd-core/Cargo.toml` 的 `[package] version`
 - `tauri.conf.json` 的 `version`
-- `Cargo.lock` 与 `package-lock.json` 的根包版本
+- `Cargo.lock` 的 `rustmd` 与 `rustmd-core` 两个包条目
+- `package-lock.json` 的根包（`packages[""]`）与顶层 `version`
 - git tag：`v<version>`
 
-`npm run check:version` 会校验以上五个版本文件（含两个 lockfile 的根包版本）。建议用
+`npm run check:version` 会校验以上 8 个版本值（6 个文件，两个 lockfile 各查两处）与 tag。建议用
 `npm version <version> --no-git-tag-version` 同步 `package.json` /
-`package-lock.json`，手动改 `Cargo.toml` / `tauri.conf.json`，再在
-`cargo check` / `cargo build` 时确认 `Cargo.lock` 的根包版本；提交前用
+`package-lock.json`，手动改根 `Cargo.toml`、`crates/rustmd-core/Cargo.toml` 和
+`tauri.conf.json`，再在 `cargo check` / `cargo build` 时确认 `Cargo.lock` 的两个包版本；提交前用
 `git diff` 复核。release workflow 会再校验 tag。
 
 **Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，并在
@@ -29,26 +31,26 @@
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.11.0
-node scripts/release-notes.mjs v1.11.0 >/dev/null
+node scripts/check-version.mjs v1.11.1
+node scripts/release-notes.mjs v1.11.1 >/dev/null
 ```
 
 ```bash
 npm run check
 npm run selftest        # 有真实 WebView 的机器上跑完整 E2E
 git add -A
-git commit -m "release: v1.11.0"
-git tag v1.11.0
+git commit -m "release: v1.11.1"
+git tag v1.11.1
 
 # GitHub（remote 名 github）与 GitLab（remote 名 origin）都要推送
 git push github master
-git push github v1.11.0
+git push github v1.11.1
 git push origin master
-git push origin v1.11.0
+git push origin v1.11.1
 ```
 
 推 GitHub tag 会自动触发 `release` workflow；也可以在 Actions 里手动触发并填入
-`v1.11.0`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
+`v1.11.1`。GitLab 是镜像仓库，不负责构建，但必须同步 commit + tag。
 
 `ci.yml` 会在每个 PR/push 上提前执行 Windows 签名 + 绿色 zip 和 macOS app bundle +
 ad-hoc 签名的打包 dry run，并把 selftest 报告校验放在发布前；打包脚本的回归不应等到
@@ -71,45 +73,53 @@ Ubuntu 22.04 的编译与 Xvfb E2E，覆盖旧发行版。`publish` 不构建，
 `wayland-smoke` job（sway headless + grim，`continue-on-error`），只做
 Wayland 前向兼容提示，不进入发布门禁。
 
-只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会运行
-`npm run selftest` 并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物真实存在且字节数一致，`npm run selftest` 也会先删除旧报告，避免复用上一次的绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
+只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会用
+`node scripts/run-selftest.mjs` 跑自测（先删除旧 `report.json`/`progress.log`）并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、字节数一致，并要求报告里的 `examplesDir` 存在，避免复用/伪造绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
 
-Windows 的 `Stage flat release assets` 步骤会在缺少 zip/sha256/证书时直接失败；`publish` 在发布前逐一断言三端资产（zip、DMG、deb、AppImage、各校验文件、LICENSE）都存在，避免只带证书的残缺 Release。
+Windows 的 `Stage flat release assets` 步骤在缺少 zip 或 `.sha256` 时直接失败；`.cer` 是可选项，缺少时打印 `No self-signed certificate (real PFX build); skipping` 并继续（真实证书构建不应附带自签名 `.cer`）。`publish` 在发布前逐一断言三端资产（zip、DMG、deb、AppImage、各校验文件、LICENSE）都存在，避免只带证书的残缺 Release。
 
 ## 3. 产物
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`SECURITY.md`、`LICENSE`；自签名构建还含 `rustmd-selfsigned.cer` |
+| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用（zip 根目录直接是文件，没有外层目录）；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`CONTRIBUTING.md`、`SECURITY.md`、`LICENSE`、`packaging/README.md`；自签名构建还含 `rustmd-selfsigned.cer` |
 | Linux | `rustmd_<version>_amd64.deb` | Debian/Ubuntu 安装包 |
 | Linux | `rustmd_<version>_amd64.AppImage` | 便携包（需要 FUSE，或 `--appimage-extract-and-run`） |
 | macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 | 全部 | `SHA256SUMS.txt`；Windows/macOS 另有同名 `.sha256`，Linux 另有 `SHA256SUMS-linux.txt` | 完整性校验 |
 
-DMG 在卷根目录附加 `LICENSE`、README/CHANGELOG、AGENTS/AUDIT/LINUX_BUILD、
-`docs/`（含截图）和 `.github/workflows/`（并带 `/Applications` 快捷方式）；
+DMG 在卷根目录附加 `LICENSE`、README/CHANGELOG、AGENTS/AUDIT/LINUX_BUILD/
+`CONTRIBUTING.md`、`packaging/README.md`、`docs/`（含截图）和 `.github/workflows/`
+（并带 `/Applications` 快捷方式）；
 Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、
-README/CHANGELOG、`docs/`（含截图）和 `.github/workflows/`，保证离线 README
+README/CHANGELOG、`CONTRIBUTING.md`、`packaging/README.md`、`docs/`（含截图）
+和 `.github/workflows/`，保证离线 README
 的仓库链接不失效。deb/AppImage 的包内许可证由 Tauri bundler 处理；为确保每个
 Release 都能拿到许可证，publish job 还会把仓库根目录的 `LICENSE` 作为独立资产
 上传。
 
-Windows zip 的目录结构：
+Windows zip 的目录结构（zip 根就是绿色目录，没有 `rustmd-<version>-win-x64/` 这一层）：
 
 ```
-rustmd-1.11.0-win-x64/
-├── rustmd.exe
-├── README.md / README.en.md
-├── CHANGELOG.md
-├── AUDIT_REPORT.md / AGENTS.md / LINUX_BUILD.md
-├── SECURITY.md
-├── LICENSE
-├── rustmd-selfsigned.cer      # 仅自签名构建；真实 PFX 构建不含
-├── .github/workflows/*.yml
-└── docs/
-    ├── ARCHITECTURE.md / TESTING.md / RELEASING.md / SECURITY.md / ...
-    └── screenshots/*.png
+rustmd.exe
+README.md / README.en.md
+CHANGELOG.md
+AUDIT_REPORT.md / AGENTS.md / LINUX_BUILD.md
+CONTRIBUTING.md
+SECURITY.md
+LICENSE
+rustmd-selfsigned.cer      # 仅自签名构建；真实 PFX 构建不含
+packaging/README.md
+.github/workflows/*.yml
+docs/
+├── ARCHITECTURE.md / TESTING.md / RELEASING.md / SECURITY.md / ...
+└── screenshots/*.png
 ```
+
+GitHub Release 资产就绪后，再从资产 URL + SHA256 更新
+`packaging/` 的 winget / Scoop / Homebrew / AUR 清单（不要用本地重新构建的产物），
+然后运行 `npm run check:packaging`。这是**发布后**步骤：清单与 `package.json`
+的版本可以短暂相差一个版本，检查器只把它当作警告；资产名、URL 与 SHA256 必须彼此一致。
 
 ## 4. Windows 签名
 
@@ -121,7 +131,7 @@ rustmd-1.11.0-win-x64/
 4. `Set-AuthenticodeSignature`，拒绝 `HashMismatch` / `NotSigned`；
 5. 再次 `Get-AuthenticodeSignature` 校验。
 
-`scripts/build-win-zip.ps1` 复制签名后的 exe、README、CHANGELOG/文档与截图、SECURITY.md、LICENSE、证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
+`scripts/build-win-zip.ps1` 复制签名后的 exe、README/CHANGELOG、`CONTRIBUTING.md`、`packaging/README.md`、SECURITY.md、LICENSE、`docs/`（含截图）、workflow 文件和证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
 
 ### 边界
 
@@ -180,17 +190,17 @@ AppImage 运行依赖 FUSE；无 FUSE 时用 `--appimage-extract-and-run`。
 sha256sum -c SHA256SUMS-linux.txt
 
 # macOS
-shasum -a 256 -c rustmd-1.11.0-macos-arm64.dmg.sha256
+shasum -a 256 -c rustmd-1.11.1-macos-arm64.dmg.sha256
 
 # Windows PowerShell
-(Get-FileHash .\rustmd-1.11.0-win-x64-portable.zip -Algorithm SHA256).Hash
-Get-Content .\rustmd-1.11.0-win-x64-portable.zip.sha256
+(Get-FileHash .\rustmd-1.11.1-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-1.11.1-win-x64-portable.zip.sha256
 ```
 
-Windows 签名检查：
+Windows 签名检查（解压 zip 后 `rustmd.exe` 就在当前目录，zip 无外层文件夹）：
 
 ```powershell
-Get-AuthenticodeSignature .\rustmd-1.11.0-win-x64\rustmd.exe | Format-List
+Get-AuthenticodeSignature .\rustmd.exe | Format-List
 ```
 
 macOS 签名检查：

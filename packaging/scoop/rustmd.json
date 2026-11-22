@@ -6,8 +6,8 @@
   "license": "GPL-3.0-or-later",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/riverzhou/rustmd/releases/download/v1.10.7/rustmd-1.10.7-win-x64-portable.zip",
-      "hash": "15fe3bceeb85c14500d142062e529786753f8211f82cd3fbf3824c2bfca47c68"
+      "url": "https://github.com/riverzhou/rustmd/releases/download/v1.11.0/rustmd-1.11.0-win-x64-portable.zip",
+      "hash": "f504f9207e1ee816678f4e910265449fd8f115e45b1669b164b864111c1db8ad"
     }
   },
   "bin": "rustmd.exe",

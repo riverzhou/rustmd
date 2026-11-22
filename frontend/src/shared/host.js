@@ -10,11 +10,13 @@
 // Contract (all optional except `isDesktop`):
 //   isDesktop: boolean
 //   openExternal(url)                        -> Promise<void>
-//   readLocalImage(root, path)               -> Promise<{ bytes, mime }>
-//   readLocalAsset(root, path)               -> Promise<{ bytes, mime }>
-//   setHtmlPreview({ html, token })          -> Promise<string>  (iframe URL)
-//   htmlIsolationScript: string              -> injected into the preview iframe
-//                                               to drop the shell's bridge globals
+//   readLocalImage(absPath)                  -> Promise<{ bytes, mime }>
+//   readLocalAsset(absPath)                  -> Promise<{ bytes, mime }>
+//   setHtmlPreview(html)                     -> Promise<string>  (iframe URL)
+//   htmlIsolationScript: string              -> optional; the browser-dev preview
+//                                               injects it to drop the shell's
+//                                               bridge globals (the desktop
+//                                               preview relies on the sandbox)
 //
 // `npm run check:license` fails if a file in this directory imports
 // `@tauri-apps/*`, reads `__TAURI_INTERNALS__`, or calls `invoke(` directly.

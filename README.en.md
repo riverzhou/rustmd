@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.11.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.11.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -31,7 +31,7 @@ If you want a tool that keeps notes as **plain files** instead of locking them i
 - **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
 - **Plain files** — notes are ordinary files in a folder you own; use Git, Syncthing, iCloud, OneDrive or any sync tool. No database, account or proprietary format.
 - **Local-first + multi-vault** — editing, preview, search and export work offline; recent vaults, pinned vaults, a multi-vault view, current-folder scope and front-matter tags.
-- **Small and light** — the Windows portable zip is about **13 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
+- **Small and light** — the Windows portable zip is about **17 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
 - **Security-minded** — sanitized Markdown, HTML rendered in an isolated sandboxed iframe / hidden WebView, CSP, path containment, SSRF protection, and exports through the native save dialog.
 - **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save; UTF-8/GBK/GB18030 decoding is automatic.
 
@@ -45,10 +45,10 @@ Export is a first-class feature, not an afterthought: **every note format can be
 | --- | --- | --- | --- |
 | Markdown | ✅ 3× full-page image (~288 DPI) | ✅ vector text, A4, header/footer | ✅ standalone file with embedded CSS and local images |
 | HTML | ✅ full-page capture; tall pages stitched | ✅ hidden WebView prints on A4, page layout preserved | ✅ source written as UTF-8, legacy charset normalized |
-| CSV / TXT / JSON | ✅ stage widens to the table's natural width, auto-downscaled | ✅ vector for narrow tables; landscape raster for wide tables | ✅ complete data view at full browser width |
+| CSV / TXT / JSON | ✅ stage widens to the table's natural width, auto-downscaled | ✅ vector on A4 or a custom wide sheet; raster only beyond the bound | ✅ complete data view at full browser width |
 
 - **PNG** — Markdown usually renders at 3× (~288 DPI); HTML notes adapt between 1× and 3× by page height, and very tall reports are captured in segments and stitched into one image; CSV/TXT/JSON widen the off-screen stage to the table's natural width and reduce the scale against width, height AND total canvas area, so right-hand columns are never clipped. Remote images are fetched by the Rust backend and inlined, so exports do not show blank images.
-- **PDF** — Markdown, HTML and narrow data tables go through the system WebView's print pipeline (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): **vector text** (selectable, searchable, sharp at any zoom) laid out on A4 and paginated by the engine's CSS rules; files are usually an order of magnitude smaller than the image version. Printing always uses the light palette, so a dark-theme PDF is dark text on white. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app. HTML notes keep their own layout, and fixed-width pages scale to fit the paper. Data tables wider than the ~640 CSS px printable area fall back to a landscape raster PDF so every column survives; platforms without native printing fall back to block-aware lossless PNG slices.
+- **PDF** — Markdown, HTML and data tables go through the system WebView's print pipeline (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): **vector text** (selectable, searchable, sharp at any zoom) laid out on A4 and paginated by the engine's CSS rules; files are usually an order of magnitude smaller than the image version. Printing always uses the light palette, so a dark-theme PDF is dark text on white. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app. HTML notes keep their own layout, and fixed-width pages scale to fit the paper. A data table that does not fit A4 requests a custom wide sheet (width sized to the table, height kept at A4; up to 55 in, clamped at 60 in in Rust); the print orientation stays portrait, so the sheet is not rotated and columns are not clipped, and the table is still laid out as real text. Print type is pinned at 13 px so `vw` cannot widen the columns past the measured sheet, and headers, footers and page numbers work on the wider page too. Only tables wider than that bound fall back to a raster PDF, where tall tables are chunked by rows at 3× with a repeated header. Platforms without native printing fall back to block-aware lossless PNG slices.
 - **HTML** — Markdown exports as a standalone page with embedded CSS, the current theme and inlined local images; CSV/TXT/JSON keep smart widths, row bands/column ink and the JSON-inspector styling at full browser width; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized (relative CSS/JS/images are not copied with them). Data HTML exports keep the complete content.
 - **No external dependencies** — no Edge/Chrome, no Pandoc/LaTeX; preview, capture and print all run in the built-in WebView. The destination comes from the native save dialog; the frontend cannot write arbitrary files.
 - **Same security boundary** — HTML-note preview runs in a sandboxed iframe; export runs in a hidden, label-guarded Tauri WebView that can only return a screenshot or a print-ready signal.
@@ -60,7 +60,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 | Capability | **rustmd** | Obsidian | Typora | VS Code | Notepad++ | Zettlr | Joplin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Storage | Files | Files | Files | Files | Files | Files | Database |
-| Windows package | **≈13 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
+| Windows package | **≈17 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
 | Open folder | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ import |
 | HTML note preview | ✅ built-in | ❌ | ❌ | ⚠️ extension | ❌ | ❌ | ❌ |
 | Data views | ✅ | ❌ | ❌ | ⚠️ partial | ❌ | ❌ | ❌ |
@@ -74,7 +74,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 
 > Based on public information and official documentation as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official docs. `✅` native; `⚠️` extension/plugin, partial capability or an extra dependency; `❌` not supported.
 >
-> ¹ Official Windows x64 installer / portable package, in MB, order of magnitude only; rustmd is a 13 MB portable zip (the exe is ~19 MB). ² VS Code's source is MIT; Microsoft's distribution carries its own license. ³ 3 OS = Windows, macOS and Linux; rustmd's macOS build is Apple Silicon (arm64) only. * Obsidian Sync/Publish and Joplin Cloud are paid add-ons; Typora is a one-time $14.99 license. On the Multi-vault row, `⚠️` means multiple windows/instances rather than one aggregated list.
+> ¹ Official Windows x64 installer / portable package, in MB, order of magnitude only; rustmd is a 17 MB portable zip (the exe is ~19 MB). ² VS Code's source is MIT; Microsoft's distribution carries its own license. ³ 3 OS = Windows, macOS and Linux; rustmd's macOS build is Apple Silicon (arm64) only. * Obsidian Sync/Publish and Joplin Cloud are paid add-ons; Typora is a one-time $14.99 license. On the Multi-vault row, `⚠️` means multiple windows/instances rather than one aggregated list.
 >
 > Data views = native CSV/TXT/JSON tables or inspector; HTML notes = edit `.html` source and render the full page.
 
@@ -82,7 +82,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 
 ### Why so small
 
-rustmd does not bundle Chromium. It reuses the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and ships only the app. The trade-off is a platform runtime: WebView2 is usually already present on Windows 10/11, while Linux needs GTK 3 + WebKitGTK 4.1. In exchange, the Windows portable zip is about 13 MB; the Linux deb is about 11 MB, the macOS DMG about 14 MB, and the AppImage about 90 MB because it bundles WebKitGTK.
+rustmd does not bundle Chromium. It reuses the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and ships only the app. The trade-off is a platform runtime: WebView2 is usually already present on Windows 10/11, while Linux needs GTK 3 + WebKitGTK 4.1. In exchange, the Windows portable zip is about 17 MB (the v1.11.0 asset is 17,143,034 B); the Linux deb is about 11.6 MB (11,653,310 B), the macOS DMG about 18 MB (17,906,152 B), and the AppImage about 94.9 MB (94,943,736 B) because it bundles WebKitGTK.
 
 ### What rustmd deliberately does not do
 
@@ -239,6 +239,8 @@ Get the latest from [GitHub Releases](https://github.com/riverzhou/rustmd/releas
 
 Windows and macOS assets have a `.sha256`; Linux ships `SHA256SUMS-linux.txt`; releases also include a combined `SHA256SUMS.txt` (it requires all release assets in one folder). For a single-platform download, use that platform’s checksum file.
 
+Sizes of the latest published v1.11.0 assets: Windows zip 17,143,034 B (about 16.3 MiB / 17 MB); macOS DMG 17,906,152 B (about 17.1 MiB / 18 MB); Linux deb 11,653,310 B (about 11.6 MB); AppImage 94,943,736 B (about 94.9 MB). The unzipped `rustmd.exe` is about 19 MB.
+
 ### Windows
 
 1. Unzip and run `rustmd.exe`.
@@ -292,8 +294,24 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-winget and AUR manifests are ready in [packaging/](packaging/README.md); their one-line
-install commands will be added once accepted.
+The winget manifest (1.11.0) has been submitted as a PR and is awaiting moderator review (the manifest in the repo is the corrected one); a `winget install` line will be added once it is accepted. Scoop (self-hosted bucket) and Homebrew (`riverzhou/tap`) already publish the 1.11.0 manifests, so the commands above work today. The AUR manifest is ready but needs an AUR account before it can be submitted. See [packaging/](packaging/README.md).
+
+### Verifying downloads
+
+```bash
+# Windows PowerShell: hash the zip and compare with the .sha256 file
+(Get-FileHash .\rustmd-<version>-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-<version>-win-x64-portable.zip.sha256
+
+# macOS
+shasum -a 256 -c rustmd-<version>-macos-arm64.dmg.sha256
+
+# Linux
+sha256sum -c SHA256SUMS-linux.txt
+
+# Combined checksum file: download every release asset into one directory first
+sha256sum -c SHA256SUMS.txt
+```
 
 ## Quick start
 
@@ -301,6 +319,16 @@ install commands will be added once accepted.
 2. Click `＋` to create a note; click folders to filter; click the arrow to expand subfolders. The list shows only that folder's own notes unless **Include subfolders** is on.
 3. Rename from the title field; tags, move, delete and export are in the top bar.
 4. `Ctrl+B` toggles the sidebar.
+
+Common keyboard shortcuts:
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Edit / split / preview |
+| `Ctrl+B` | Show / hide the sidebar |
+| `F11` | Full screen / exit full screen |
+| `Enter` (title field) | Commit the rename |
+| `Enter` or `,` (tag field) | Add a tag |
 
 Browser-only frontend development (no Rust):
 
@@ -311,7 +339,7 @@ npm run dev          # http://127.0.0.1:5173, in-memory mock data
 
 ## Development
 
-Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)). Linux source builds, packaging and the no-root sysroot fallback are documented in [LINUX_BUILD.md](LINUX_BUILD.md); after building, `scripts/linux-headless-smoke.sh` smoke-tests the release binary on an isolated Xvfb display.
+Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)). Linux source builds, packaging and the no-root sysroot fallback are documented in [LINUX_BUILD.md](LINUX_BUILD.md); after building, `scripts/linux-headless-smoke.sh` smoke-tests the release binary on an isolated Xvfb display.
 
 | Task | Command |
 | --- | --- |
@@ -319,8 +347,8 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 | Tauri dev window | `node scripts/launch-dev.mjs` (`scripts\run-dev.bat` on Windows) |
 | Frontend only (mock) | `npm run dev` |
 | Release exe, no bundle | `npx tauri build --no-bundle` |
-| Frontend unit tests | `npm run test:unit` |
-| Rust tests | `npm run test:rust` |
+| Frontend unit tests | `npm run test:unit` (69 tests) |
+| Rust tests | `npm run test:rust` (`cargo test --workspace`; 99 tests on Windows / 100 on Linux and macOS, 1 network test ignored by default) |
 | End-to-end self-test | `npm run selftest` / `npm run selftest:check` |
 | Regenerate icons | `npm run icons` |
 
@@ -331,11 +359,13 @@ Requirements: Node.js ≥ 20.19, Rust stable with `rustfmt` and `clippy`, and th
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests for sorting, folder tree, folder scope and scoped tags, recent vaults, CSV/TXT/JSON parsing, delimiter sniffing, type alignment and column-width hints, math protection, code segments and i18n
-3. Repository checks (doc links, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
-4. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json` plus both lockfile root versions)
-5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-6. Vite production build
+2. Node tests (69: sorting, folder tree, folder scope and scoped tags, recent vaults, CSV/TXT/JSON parsing, delimiter sniffing, type alignment and column-width hints, math protection, code segments and i18n)
+3. Repository checks (`npm run check:repo`: doc links, version banner, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
+4. License boundary (`npm run check:license`: the reusable layers are Tauri-free and every source file carries its SPDX header)
+5. Packaging manifests (`npm run check:packaging`: winget / Scoop / Homebrew / AUR versions, asset names, URLs and SHA256 agree)
+6. Version checks (`package.json` / `Cargo.toml` / `tauri.conf.json` / `crates/rustmd-core` plus both lockfile root versions)
+7. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
+8. Vite production build
 
 CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate on Ubuntu, compiles on Windows/Linux/macOS, and runs the real-WebView E2E self-test under Xvfb.
 
@@ -345,7 +375,33 @@ CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate
 npm run selftest
 ```
 
-The dev window renders every example note (Markdown, HTML, CSV, TXT, JSON and a GBK CSV), exports PNG/PDF and HTML, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); HTML verifies that the built-in WebView iframe becomes ready, local relative CSS/JS/images and inline scripts; data notes verify table/JSON structure, smart header alignment, HTML-text safety, data HTML export and charset; the GBK fixture asserts encoding detection. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); `npm run selftest:check` requires HTML, CSV, TXT and JSON coverage (the npm script passes `--require-html --require-data`). The app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
+The dev window renders all 10 example notes (Markdown, HTML, CSV, TXT, JSON and a GBK CSV), exports PNG/PDF and HTML, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); HTML verifies that the built-in WebView iframe becomes ready, local relative CSS/JS/images and inline scripts; data notes verify table/JSON structure, smart header alignment, HTML-text safety, data HTML export and charset; the GBK fixture asserts encoding detection. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); `npm run selftest:check` requires HTML, CSV, TXT and JSON coverage (the npm script passes `--require-html --require-data`). The app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
+
+## Project structure
+
+```
+├── src/main.rs               # Tauri layer (GPL-3.0-or-later): 23 IPC commands, printing, windows, self-test
+├── crates/rustmd-core/
+│   └── src/lib.rs            # platform-independent engine (MIT OR Apache-2.0): paths, front matter, encoding, scanning
+├── frontend/
+│   ├── index.html
+│   ├── public/               # icons, highlight.js themes
+│   └── src/
+│       ├── main.js / api.js / export.js / selftest.js   # desktop UI, Tauri bridge, export, E2E
+│       ├── shared/           # reusable renderer (MIT OR Apache-2.0): preview/dataview/editor/i18n/host
+│       ├── style.css
+│       └── notelist.js / layout.js / vaultlist.js / pdfgeom.js / exportgeom.js
+├── scripts/                  # dev server, checks, self-test, signing and the Windows portable zip
+├── packaging/                # winget / Scoop / AUR / Homebrew manifests
+├── examples/                 # 10 example notes (CSV/TXT/JSON/GBK included); also the self-test fixture
+├── capabilities/             # Tauri permissions
+├── icons/                    # app icons (npm run icons, incl. .icns)
+├── docs/                     # architecture, testing, release, security and licensing docs
+├── .github/workflows/        # CI and the three-platform release
+├── tauri.conf.json
+├── Cargo.toml
+└── package.json
+```
 
 ## Release pipeline
 
@@ -361,7 +417,7 @@ See [docs/RELEASING.md](docs/RELEASING.md) for signing and secrets.
 ## FAQ
 
 **Is rustmd open source?**
-Yes — **GPL-3.0-or-later**. You can use, modify and redistribute it; derivative works must be GPL-compatible. See [LICENSE](LICENSE).
+Yes — the application is **GPL-3.0-or-later**. You can use, modify and redistribute it; derivative works must be GPL-compatible. The two reusable layers, `crates/rustmd-core` (platform-independent engine) and `frontend/src/shared` (renderer), are dual-licensed **MIT OR Apache-2.0** and can be embedded on their own; see [LICENSE](LICENSE) and [docs/LICENSING.md](docs/LICENSING.md).
 
 **Does it sync?**
 The app does not sync. Notes are a plain folder — use Syncthing, Git, iCloud, OneDrive or Dropbox.
@@ -390,6 +446,7 @@ Open an [issue](https://github.com/riverzhou/rustmd/issues) or PR. Run `npm run 
 - [Testing & CI](docs/TESTING.md)
 - [Release & signing](docs/RELEASING.md)
 - [Security](docs/SECURITY.md)
+- [Licensing](docs/LICENSING.md)
 - [Changelog](CHANGELOG.md)
 - [Audit report](AUDIT_REPORT.md)
 - [Developer & agent guide](AGENTS.md)
@@ -400,7 +457,7 @@ Open an [issue](https://github.com/riverzhou/rustmd/issues) or PR. Run `npm run 
 
 ## License
 
-rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
+The rustmd application is licensed under **GPL-3.0-or-later**; see [LICENSE](LICENSE). The reusable layers `crates/rustmd-core` (platform-independent engine) and `frontend/src/shared` (renderer and editor) are dual-licensed **MIT OR Apache-2.0**; the boundary and contribution rules are in [docs/LICENSING.md](docs/LICENSING.md).
 
 ## Support
 

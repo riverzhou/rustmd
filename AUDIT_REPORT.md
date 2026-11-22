@@ -1,8 +1,84 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-22（v1.11.0 结构性重构；v1.10.8 数学离线渲染与公式保护复审；v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；更早版本为历史记录）
-**审计对象**：`rustmd` v1.11.0（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）；下方的详细记录以 v1.10.8 为基准
-**审计方式**：安装版真实 WebView2 + CSP 下逐篇渲染 22 篇多格式笔记并截图复检；静态检查（fmt/clippy/ESLint/repo/version）+ 69 个前端单测 + 75 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（22 篇、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+**审计日期**：2026-11-22（v1.11.1 全量审计；v1.11.0 结构性重构；v1.10.8 数学离线渲染与公式保护复审；更早版本为历史记录）
+**审计对象**：`rustmd` v1.11.1（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）；下方 v1.11.1 之前的小节为历史记录
+**审计方式**：六路并行全量代码审计（`crates/rustmd-core`、`src/main.rs`、前端外壳、共享渲染层、脚本/CI/打包、全部文档）+ 静态检查（ESLint、fmt、clippy `-D warnings`、repo/license/packaging/version）+ 69 个前端单测 + 99 个 Rust 测试（Windows；Linux/macOS 100 个，1 个需网络的测试默认忽略）+ Vite 构建 + 真实 WebView2 E2E 自测（`examples/` 10 篇、HTML/PNG/PDF）+ 安装版 CSP 下渲染复核；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+
+## v1.11.1 全量审计（当前版本）
+
+本轮从六个方向并行审计并逐条复核，修复后再次审计到没有新发现。没有文件格式
+变化；应用仍是 GPL-3.0-or-later，两个可复用层仍是 MIT OR Apache-2.0。
+
+### 导出与渲染修复
+
+- **宽数据表 PDF 改为真正的矢量文字**：`exportPdfVector` 按表格宽度申请自定义
+  横向纸张（表格宽 + 页边距 + 8% 余量，前端上限 55 in，Rust 夹紧 3–60 in），
+  Windows/macOS/Linux 打印引擎按整表文字排版；仅超宽表回退栅格。打印字号固定
+  13 px，避免 `vw` 在纸张宽度下撑宽列而裁掉最后一列。此前 640 px 以上一律回退
+  横向图片 PDF，文字不可选、放大模糊。
+- **栅格回退按行分页**：超长表格不再把整表塞进一张画布（万行表会降到几 DPI），
+  改为每页 3× 渲染并立即编码为 JPEG 释放画布，再交给 jsPDF 组装；页面高度按
+  实际切片测量，每页保留表头。
+- **数据笔记独立 HTML 导出**：视口高度的单列 flex 布局（卡片滚动、表头/横向
+  滚动条常驻、页脚贴底）；JSON 与非法 JSON 的原始视图补上卡片内纵向滚动
+  （此前内容被裁掉且页面无法滚动）；`@media print` 恢复流式排版。
+- **HTML 笔记 CSS `url()` 图片内联**：`background`/`border-image` 等本地图片与
+  `<img>` 一样转 data URL，PNG/PDF 导出不再丢背景图；样式表保留 `media` 属性，
+  `alternate` 样式表不被激活。
+- **公式 token 属性还原**：链接 URL、`title`、`alt` 中的 `$…$` 在恢复阶段还原，
+  且 URL 重新按消毒器协议白名单校验；`<base>`/`<meta charset>` 清理跳过
+  `<script>`/`<style>` 原文，不再误改脚本文本。
+
+### 安全与可用性
+
+- **Linux 宽表纸张失效**：GTK 符号名中混入真实 NUL 字节（源码曾被 grep 当二进制），
+  自定义纸张查找永远失败并静默回退 A4；已改为 `\0` 转义。
+- **笔记命令限定扩展名**：`read/save/rename/delete/move` 拒绝非笔记类型，兑现
+  `docs/SECURITY.md` 的声明（`note_kind` 此前把任意扩展名当 Markdown）。
+- **`html_preview_finish` 移出主线程**：base64 解码 + PNG 拼接在阻塞线程池执行；
+  没有等待者时不解码；单张 PNG 尺寸取自图片头；单分片解码缓冲区加 128 MB 上限
+  （16 位 RGBA 的 1.28 亿像素此前可膨胀到约 1 GB）。
+- **`rmd` CORS 收紧**：发布版仅接受 Tauri 自身来源，任意 loopback 来源只在 dev
+  构建放行，避免本机任意网页 CORS 读取已打开笔记库。
+- **引擎抗 DoS**：front matter 拆分改单遍扫描（32 MB 行密集文件峰值分配从约
+  1.6 GB 降到可忽略）；未闭合 `<script>/<style>`、连续 `&`、重复标签不再二次方
+  扫描；标签数量/长度、Markdown 标题/摘录有上限；非 UTF-8 文件名不再列出。
+- **并发与边界**：`create_note` 用 `create_new` 原子占位；重命名不再把源文件当
+  唯一候选（Windows 上静默无操作）；缓存同时校验长度；保存体积上限；PDF 页码
+  压印在 `Q` 前补换行；IPv6 `fec0::/10` 加入 SSRF 拒绝。
+- **front matter 往返**：保留 `...` 结束符；重复 `tags:` 键全部重写/删除；
+  `tags: it's` 的撇号不再被当引号。
+
+### 发布工具链与文档
+
+- 新增 `npm run check:packaging`（winget/Scoop/Homebrew/AUR 的版本、资产名、
+  URL、SHA256 一致性）。它直接抓到了 Scoop 清单"版本 1.11.0、URL 仍指 1.10.7"
+  的真实缺陷并已修复；线上 bucket 随后同步。
+- `check:version` 覆盖 `crates/rustmd-core` 与 `Cargo.lock` 对应条目；
+  `check:license` 覆盖共享层 CSS；`check-repo` 增加 `devCsp`/发布 CSP 断言与
+  真实 `invoke('…')` 包装检查。
+- 自测报告校验：`examplesDir` 缺失不再跳过覆盖检查；产物必须在输出目录内且不早于
+  本次运行；新增 highlight.js / 内联 SVG / CSS `url()` 三项断言；数据 HTML 导出
+  阈值与产物检查统一。
+- CI/release 的自测改用 `scripts/run-selftest.mjs`（先清理旧报告）；Windows Rust
+  测试补上 `--workspace`；Windows 绿色包补 `CONTRIBUTING.md`，macOS DMG 补
+  `packaging/README.md`，离线文档不再死链。
+- 文档全面校订：README（中英）、AGENTS、ARCHITECTURE、TESTING、SECURITY、
+  RELEASING、LICENSING、CONTRIBUTING、LINUX_BUILD、打包说明；修正宽表 PDF、
+  `print_note_pdf` 页面参数、体积数字、模块路径、测试计数/命令、许可分层与贡献
+  条款、`mathlab.html` 导入路径、CSP 描述等。
+
+### 回归结论
+
+- `npm run check` 全绿（ESLint、69 个前端单测、repo/license/packaging/version、
+  fmt/clippy `-D warnings`、99 个 Rust 测试、Vite 构建）。
+- 真实 WebView2 E2E：`examples/` 10 篇（Markdown/HTML/CSV/TXT/JSON/GBK/BOM）
+  全部 PNG/PDF 通过，0 错误 0 警告；新增断言（CSS `url()` 内联、highlight.js、
+  内联 SVG）全部通过；报告经 `check-selftest-report.mjs --require-html
+  --require-data` 校验。
+- 三端由 GitHub Actions 在 tag 上重新构建；Linux Xvfb / Wayland smoke 继续在
+  CI 覆盖。未在本机发现新的阻断或高危缺陷。
+
 
 ## v1.11.0 结构性重构（当前版本）
 
@@ -641,8 +717,8 @@ CI：Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`；Linux Xvfb 
 | Linux 打印主线程渲染 | WebKitGTK 没有异步打印 API，`webkit_print_operation_print` 会在 GTK 主线程渲染页面 | 已把文件等待移到后台线程；超长文档仍可能在渲染期间短暂停顿，必要时评估独立打印进程 |
 | 无 UI 自动化 | 排序/重命名/wrap/fullscreen 仍无浏览器级断言（最近库、多库、折叠、分隔条与当前目录范围已做浏览器 mock 检查） | 纯函数单测 + 手动/E2E 渲染；后续可加 WebDriver |
 | 依赖开发期告警 | ESLint/minimatch moderate，不进入运行时 | `npm audit --omit=dev` 为 0；Dependabot 跟踪 |
-| 大库/慢图床卡顿 | `list_notes`/搜索/`fetch_image_bytes` 仍在同步命令内完成，超大库或慢图床可能短暂占用 UI 线程 | 现有行为；后续迁移 `spawn_blocking` |
-| 超长 HTML 渲染 | `html_preview_finish` 的解码/拼接有像素/载荷上限，但仍在同步命令内完成，极端长页面可能短暂停顿 | 上限已防 OOM；后续可迁移 `spawn_blocking` |
+| 大库/慢图床卡顿 | `list_notes`/`list_folders`/搜索/`read_note`/`save_note`/本地资源读取已改为 `spawn_blocking`；超大库的首次扫描仍可能让单次请求耗时较长 | 已移出 UI 线程；后续可增量扫描 |
+| 超长 HTML 渲染 | 解码/拼接已移到阻塞线程池，并有像素/载荷/解码字节上限 | 已防 OOM 与主线程卡顿；仍以 60 s 超时作为失败边界 |
 | macOS 打印超时临时文件 | >180s 打印超时后，已 detach 的 AppKit 线程可能重新写出临时 PDF | 仅超时路径；正常路径有 Drop guard 清理 |
 | IPC PNG 编码 | 渲染 PNG 以 JSON 数字数组回传，极端长图有额外序列化开销 | 已有像素上限；后续可改二进制 IPC |
 | 原子写元数据 | 保留 Unix mode；Windows ACL、macOS xattr/标签不复制 | 文档记录；内容与冲突检测不受影响 |
@@ -654,4 +730,4 @@ CI：Windows / Ubuntu 构建；macOS 构建 `aarch64-apple-darwin`；Linux Xvfb 
 
 ## 7. 结论
 
-v1.9.0 可以发布。最近库置顶、多库同开、库根折叠与侧栏分隔条均完成代码、文档、截图和回归验证；README/AGENTS/RELEASING/TESTING 与 release workflow 保持一致；当前目录范围、范围搜索、矢量打印链路和最近笔记库切换继续有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。
+v1.11.1 可以发布。最近库置顶、多库同开、库根折叠与侧栏分隔条均完成代码、文档、截图和回归验证；README/AGENTS/RELEASING/TESTING 与 release workflow 保持一致；当前目录范围、范围搜索、矢量打印链路和最近笔记库切换继续有效。剩余项属于签名、平台运行时、编码和极端长文档的产品边界，已在 README / SECURITY / TESTING / RELEASING 中记录。

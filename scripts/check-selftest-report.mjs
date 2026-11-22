@@ -38,7 +38,9 @@ const requireData = process.argv.includes('--require-data');
 const errors = [];
 let htmlEntries = 0;
 const dataEntries = { csv: 0, txt: 0, json: 0 };
-const NOTE_EXT = /\.(?:md|markdown|html?|csv|txt|json)$/i;
+// Keep in sync with NOTE_EXTENSIONS in crates/rustmd-core: the app never lists
+// any other extension, so the coverage check must not demand one.
+const NOTE_EXT = /\.(?:md|html?|csv|txt|json)$/i;
 const MAX_ARTIFACT_BYTES = 512 * 1024 * 1024;
 
 const rawMaxAge = process.env.RUSTMD_SELFTEST_MAX_AGE_HOURS;
@@ -104,7 +106,19 @@ function checkArtifact(entry, extension, expectedBytes, required = true) {
     if (required) errors.push(`${entry.path}: ${extension} byte count is missing`);
     return;
   }
+  // `entry.path` comes from the report, so a hand-written report could point
+  // outside the output directory; only accept the exact file the self-test
+  // would have written there.
   const file = path.join(outDir, `${entry.path}.${extension}`);
+  const resolvedFile = path.resolve(file);
+  const resolvedOut = path.resolve(outDir);
+  if (
+    !resolvedFile.startsWith(resolvedOut + path.sep) ||
+    path.isAbsolute(`${entry.path}.${extension}`)
+  ) {
+    errors.push(`${entry.path}: artifact path escapes the output directory`);
+    return;
+  }
   if (!existsSync(file)) {
     errors.push(`${entry.path}: ${extension} artifact was not written (${file})`);
     return;
@@ -112,6 +126,15 @@ function checkArtifact(entry, extension, expectedBytes, required = true) {
   const stat = statSync(file);
   if (!stat.isFile()) {
     errors.push(`${entry.path}: ${extension} artifact is not a file (${file})`);
+    return;
+  }
+  // The report can be forged, but a file older than the run cannot be this
+  // run's output. Allow a small clock/mtime slack.
+  if (Number.isFinite(started) && stat.mtimeMs < started - 300_000) {
+    errors.push(
+      `${entry.path}: ${extension} artifact is older than the report ` +
+        `(${new Date(stat.mtimeMs).toISOString()} < ${report.startedAt})`
+    );
     return;
   }
   if (stat.size !== expectedBytes) {
@@ -162,7 +185,7 @@ for (const entry of Array.isArray(report.entries) ? report.entries : []) {
         errors.push(`${entry.path}: note markup reached the data preview DOM`);
       }
     }
-    if (!entry.htmlExport || !(entry.htmlExport.bytes > 100)) {
+    if (!entry.htmlExport || !(entry.htmlExport.bytes > 1000)) {
       errors.push(`${entry.path}: data HTML export missing or too small`);
     } else {
       if (entry.htmlExport.dataView !== true) {
@@ -225,7 +248,19 @@ for (const entry of Array.isArray(report.entries) ? report.entries : []) {
 
 // --- example coverage: every note in the fixture vault must have an entry ---
 const examplesDir = report.config?.examplesDir;
-if (typeof examplesDir === 'string' && examplesDir.trim() && existsSync(examplesDir)) {
+if (typeof examplesDir !== 'string' || !examplesDir.trim()) {
+  errors.push('report.config.examplesDir is missing; example coverage cannot be verified');
+} else if (!existsSync(examplesDir) || !statSync(examplesDir).isDirectory()) {
+  errors.push(`self-test examples directory does not exist: ${examplesDir}`);
+} else if (
+  process.env.RUSTMD_SELFTEST_EXAMPLES &&
+  path.resolve(process.env.RUSTMD_SELFTEST_EXAMPLES) !== path.resolve(examplesDir)
+) {
+  errors.push(
+    `report was produced from ${examplesDir}, not ` +
+      `${process.env.RUSTMD_SELFTEST_EXAMPLES}`
+  );
+} else {
   const expected = [];
   const walk = (dir, rel) => {
     for (const dirent of readdirSync(dir, { withFileTypes: true })) {
@@ -243,12 +278,15 @@ if (typeof examplesDir === 'string' && examplesDir.trim() && existsSync(examples
   } catch (err) {
     errors.push(`cannot list the examples directory: ${err.message}`);
   }
+  if (!expected.length) {
+    errors.push(`examples directory has no notes to verify: ${examplesDir}`);
+  }
   for (const note of expected) {
     if (!seenPaths.has(note)) {
       errors.push(`${note}: example note is missing from the self-test report`);
     }
   }
-  if (expected.length && report.entries.length < expected.length) {
+  if (report.entries.length < expected.length) {
     errors.push(
       `self-test covered ${report.entries.length} of ${expected.length} example notes`
     );
@@ -257,6 +295,15 @@ if (typeof examplesDir === 'string' && examplesDir.trim() && existsSync(examples
 
 if (report.htmlCharset?.ok !== true) {
   errors.push('HTML export charset normalization did not pass');
+}
+if (report.hljsExport?.ok !== true) {
+  errors.push('standalone HTML export is missing highlight.js colours');
+}
+if (report.inlineSvg?.ok !== true) {
+  errors.push('inline-SVG PNG export did not pass');
+}
+if (report.cssAssets?.inlined !== true || report.cssAssets?.leaked === true) {
+  errors.push('CSS url() images were not inlined for the HTML export');
 }
 if (report.dataAlignment?.csv !== true || report.dataAlignment?.txt !== true) {
   errors.push('CSV/TXT header alignment or column scope did not pass');

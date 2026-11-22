@@ -82,7 +82,7 @@ jobs:
         # The report check below is authoritative; a wedged process after a
         # green report must not turn a valid release red (same policy as CI).
         continue-on-error: true
-        run: timeout 1200 xvfb-run -a node scripts/launch-dev.mjs
+        run: timeout 1200 xvfb-run -a node scripts/run-selftest.mjs
 
       - name: Verify self-test report
         env:
@@ -241,7 +241,9 @@ jobs:
           cp -R "$APP" "$STAGE/"
           cp LICENSE "$STAGE/LICENSE"
           cp README.md README.en.md CHANGELOG.md "$STAGE/"
-          cp AGENTS.md AUDIT_REPORT.md LINUX_BUILD.md "$STAGE/"
+          cp AGENTS.md AUDIT_REPORT.md LINUX_BUILD.md CONTRIBUTING.md "$STAGE/"
+          mkdir -p "$STAGE/packaging"
+          cp packaging/README.md "$STAGE/packaging/README.md"
           cp -R docs "$STAGE/docs"
           mkdir -p "$STAGE/.github/workflows"
           cp .github/workflows/*.yml "$STAGE/.github/workflows/"

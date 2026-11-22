@@ -45,7 +45,7 @@ if (Test-Path (Join-Path $root 'docs/SECURITY.md')) {
 }
 # README.md links to CHANGELOG.md, docs/*.md and docs/screenshots/*.png.
 # Ship those files so the offline README does not contain dead links.
-foreach ($doc in @('README.en.md', 'CHANGELOG.md', 'AUDIT_REPORT.md', 'AGENTS.md', 'LINUX_BUILD.md')) {
+foreach ($doc in @('README.en.md', 'CHANGELOG.md', 'AUDIT_REPORT.md', 'AGENTS.md', 'LINUX_BUILD.md', 'CONTRIBUTING.md')) {
   $path = Join-Path $root $doc
   if (Test-Path $path) { Copy-Item $path (Join-Path $green $doc) }
 }
@@ -109,6 +109,7 @@ try {
     'rustmd.exe',
     'README.md',
     'README.en.md',
+    'CONTRIBUTING.md',
     'LICENSE',
     'SECURITY.md',
     'CHANGELOG.md',

@@ -7,7 +7,7 @@ Security fixes land on the latest release line. Please test against the newest
 
 | Version | Supported |
 | --- | --- |
-| 1.10.x | ✅ |
+| 1.11.x | ✅ |
 | older | ❌ |
 
 ## Reporting a vulnerability

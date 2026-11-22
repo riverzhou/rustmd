@@ -72,6 +72,9 @@ const REQUIRED = [
   'frontend/src/selftest.js',
   'capabilities/default.json',
   'LICENSE',
+  'CONTRIBUTING.md',
+  'packaging/README.md',
+  'crates/rustmd-core/Cargo.toml',
   'LINUX_BUILD.md',
   'frontend/shims/katex.js',
   'scripts/linux-headless-smoke.sh',
@@ -89,7 +92,12 @@ const REQUIRED = [
   'examples/数据文本示例.txt',
   'examples/数据配置示例.json',
   'scripts/launch-dev.mjs',
+  'scripts/run-selftest.mjs',
   'scripts/check-selftest-report.mjs',
+  'scripts/check-packaging.mjs',
+  'scripts/release-notes.mjs',
+  'scripts/sign-win.ps1',
+  'scripts/build-win-zip.ps1',
   'scripts/dev-server.mjs',
   'scripts/cargo.mjs',
   '.gitignore',
@@ -185,10 +193,14 @@ if (!handlerMatch) {
     );
   }
   const api = read('frontend/src/api.js');
+  // Require a real `invoke('command'` call: a plain substring test let
+  // `set_notes_root` pass on the `set_notes_roots` wrapper alone.
   // html_preview_finish is invoked by the hidden renderer window's injected
   // script, not through api.js.
+  const hasWrapper = (command) =>
+    new RegExp(`invoke\\(\\s*["']${command}["']`).test(api);
   const missing = unique.filter(
-    (command) => command !== 'html_preview_finish' && !api.includes(command)
+    (command) => command !== 'html_preview_finish' && !hasWrapper(command)
   );
   if (missing.length) {
     errors.push(`frontend/src/api.js: no wrapper for IPC command(s): ${missing.join(', ')}`);
@@ -220,6 +232,16 @@ if (!csp || typeof csp !== 'string') {
   }
   if (typeof config.app.security.devCsp !== 'string' || !config.app.security.devCsp) {
     errors.push('tauri.conf.json: app.security.devCsp must be set for the Vite dev server');
+  } else {
+    const devCsp = config.app.security.devCsp;
+    for (const directive of ['ws://127.0.0.1:', 'http://127.0.0.1:']) {
+      if (!devCsp.includes(directive)) {
+        errors.push(`tauri.conf.json: devCsp is missing the Vite HMR source ${directive}*`);
+      }
+    }
+    if (/script-src[^;]*'unsafe-(?:inline|eval)'/.test(csp)) {
+      errors.push("tauri.conf.json: release script-src must not allow 'unsafe-inline'/'unsafe-eval'");
+    }
   }
 }
 

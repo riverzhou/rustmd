@@ -1297,8 +1297,11 @@ async function enterDir(dir, { toastErrors = false } = {}) {
       return false;
     }
     onboardingError.classList.add('hidden');
-    // Let an in-flight save finish before the old vault's state is discarded.
-    await saveQueue.catch(() => false);
+    // Flush pending edits (including the 500 ms autosave window) before the
+    // old vault's state is discarded; typing during the destination scan must
+    // not be lost silently.
+    const saved = await flushSave();
+    if (!saved && !confirm(t('dialog.switchVault'))) return false;
     state.dir = dir;
     noteSelectSeq += 1;
     searchSeq += 1;
@@ -1425,8 +1428,11 @@ async function searchActiveVaults(query) {
   }
   if (dirs.length && failed.length === settled.length) {
     // Every vault failed: surface the search error instead of pretending
-    // that a missing/unmounted vault has no matches.
-    throw new Error('search failed for every open vault');
+    // that a missing/unmounted vault has no matches. The marker lets the
+    // caller show a translated message instead of this internal string.
+    const err = new Error('search failed for every open vault');
+    err.code = 'searchAllVaultsFailed';
+    throw err;
   }
   return settled
     .filter((result) => result.status === 'fulfilled')
@@ -1446,7 +1452,11 @@ async function refreshSearch() {
     state.searchHits = hits;
   } catch (err) {
     if (seq !== searchSeq || query !== state.filter.query) return;
-    toast(t('toast.searchFailed', { msg: err.message || err }), true);
+    if (err && err.code === 'searchAllVaultsFailed') {
+      toast(t('toast.searchAllFailed'), true);
+    } else {
+      toast(t('toast.searchFailed', { msg: err.message || err }), true);
+    }
     state.searchHits = [];
   }
 }
@@ -1606,7 +1616,14 @@ async function refreshVault() {
   setRefreshBusy(true);
   try {
     const saved = await flushSave();
-    const keptUnsaved = !saved || state.pendingSave || state.saveFailed;
+    // Sample the revision AFTER the flush: text typed during the scan must
+    // mark the note dirty even though `pendingSave` may not be set yet.
+    const revisionAtFlush = state.docRevision;
+    const keptUnsaved = () =>
+      !saved ||
+      state.pendingSave ||
+      state.saveFailed ||
+      state.docRevision !== revisionAtFlush;
     // The user may have switched vaults/folders while the save was in flight.
     if (state.loadSeq !== loadSeq) return false;
     const path = state.current;
@@ -1637,11 +1654,25 @@ async function refreshVault() {
     // Stale folder/tag filters are cleared while loadNotes rebuilds the
     // scope, so nothing else to clean up here.
 
+    const otherFailures = (result.failed || []).filter(
+      (failure) => !dir || !sameDir(failure.dir, dir, WINDOWS_PATHS)
+    );
+    if (otherFailures.length) {
+      toast(
+        t('toast.vaultsUnavailable', {
+          names: otherFailures
+            .map((failure) => dirDisplayName(failure.dir))
+            .join('、'),
+        }),
+        true
+      );
+    }
+
     let notice = null;
     if (path && dir && state.current === path && state.currentDir === dir) {
       const meta = state.notes.find((n) => n.path === path && n.vault === dir);
       if (!meta) {
-        if (keptUnsaved) {
+        if (keptUnsaved()) {
           notice = {
             key: 'toast.vaultRefreshDeletedDirty',
             vars: { name: fileNameOf(path) },
@@ -1656,13 +1687,23 @@ async function refreshVault() {
             error: true,
           };
         }
-      } else if (!keptUnsaved && meta.hash && oldHash && meta.hash !== oldHash) {
+      } else if (
+        !keptUnsaved() &&
+        meta.hash &&
+        oldHash &&
+        meta.hash !== oldHash
+      ) {
         // Changed on disk while the editor was clean: show the new content.
         // With unsaved edits we leave the editor alone and let save_note's
         // baseHash conflict prompt protect them.
         try {
           const content = await api.readNote(dir, path);
-          if (state.currentDir === dir && state.current === path) {
+          // Typing during the read must win over the disk copy.
+          if (
+            state.currentDir === dir &&
+            state.current === path &&
+            !keptUnsaved()
+          ) {
             applyNoteContent(dir, path, content, { preserveView: true });
             renderNoteList();
             notice = {
@@ -1677,7 +1718,7 @@ async function refreshVault() {
             error: true,
           };
         }
-      } else if (keptUnsaved && meta.hash && oldHash && meta.hash !== oldHash) {
+      } else if (keptUnsaved() && meta.hash && oldHash && meta.hash !== oldHash) {
         notice = {
           key: 'toast.vaultRefreshConflict',
           vars: { name: fileNameOf(path) },
@@ -1687,7 +1728,7 @@ async function refreshVault() {
     }
 
     if (notice) toast(t(notice.key, notice.vars), notice.error);
-    else if (keptUnsaved) toast(t('toast.vaultRefreshedUnsaved'), true);
+    else if (keptUnsaved()) toast(t('toast.vaultRefreshedUnsaved'), true);
     else toast(t('toast.vaultRefreshed', { n: state.notes.length }));
     return true;
   } catch (err) {
@@ -2482,28 +2523,34 @@ async function selectNote(vault, path) {
   if (!vault) return;
   // A delete is a destructive mutation of the current note; do not swap the
   // editor under it (the delete handler clears only if it is still current).
-  if (state.deleting) return;
+  if (state.deleting || vaultSwitchBusy) return;
   if (vault === state.currentDir && path === state.current) return;
   const seq = ++noteSelectSeq;
   const loadSeq = state.loadSeq;
   const ok = await flushSave();
   if (seq !== noteSelectSeq || loadSeq !== state.loadSeq) return;
-  if (!ok && !confirm(t('dialog.switchNote'))) {
+  const discardConfirmed = !ok;
+  if (discardConfirmed && !confirm(t('dialog.switchNote'))) {
     return;
-  }
-  if (!ok) {
-    state.pendingSave = false;
-    state.saveFailed = false;
   }
   try {
     const content = await api.readNote(vault, path);
-    // A second click (or a vault change) may have won while read_note was in
-    // flight; never apply a stale note over the user's latest choice.
-    if (seq !== noteSelectSeq) return;
+    // A second click (or a vault change / delete) may have won while
+    // read_note was in flight; never apply a stale note over the user's
+    // latest choice.
+    if (seq !== noteSelectSeq || loadSeq !== state.loadSeq || state.deleting) {
+      return;
+    }
     applyNoteContent(vault, path, content, { focus: true });
+    // Clear the discarded dirty flags only now: a failed read keeps the old
+    // note (and its unsaved state) visible, so the guard must still see it.
+    if (discardConfirmed) {
+      state.pendingSave = false;
+      state.saveFailed = false;
+    }
     renderNoteList();
   } catch (err) {
-    if (seq !== noteSelectSeq) return;
+    if (seq !== noteSelectSeq || loadSeq !== state.loadSeq) return;
     toast(t('toast.openFailed', { msg: err.message || err }), true);
   }
 }
@@ -2521,6 +2568,9 @@ function updateCounts() {
 // Suppress rename-commit when the user mousedowns elsewhere (e.g. the note
 // list) so clicking another note doesn't race the blur commit.
 let suppressRename = false;
+// A typed-but-not-committed title (no Enter/blur yet) is user data too: the
+// close guard must commit it before the window disappears.
+let titleDirty = false;
 noteList.addEventListener('mousedown', () => {
   suppressRename = true;
 });
@@ -2531,32 +2581,44 @@ window.addEventListener('mouseup', () => {
 });
 
 async function commitRename() {
-  if (!state.current) return;
+  const sourcePath = state.current;
+  const sourceDir = state.currentDir;
+  if (!sourcePath || !sourceDir) return;
   const value = noteTitle.value.trim();
-  const stem = stemOf(state.current);
+  const stem = stemOf(sourcePath);
+  titleDirty = false;
   if (!value || value === stem || suppressRename) {
     noteTitle.value = stem;
     return;
   }
   const ok = await flushSave();
-  if (!ok) {
-    noteTitle.value = stem;
+  // Another note may have been opened while the save was flushing: renaming
+  // `state.current` at that point would rename the wrong file.
+  const stillSame = () =>
+    state.current === sourcePath && state.currentDir === sourceDir;
+  if (!ok || !stillSame()) {
+    noteTitle.value = stemOf(state.current || sourcePath);
     return;
   }
-  const vault = state.currentDir;
   try {
-    const newPath = await api.renameNote(vault, state.current, value);
+    const newPath = await api.renameNote(sourceDir, sourcePath, value);
+    if (!stillSame()) {
+      // A selection won while rename_note ran: refresh the list (the renamed
+      // file must appear) but do not touch the newly opened note.
+      await loadNotes();
+      return;
+    }
     state.current = newPath;
     state.currentKind = noteKindOf(newPath);
     editor.setLanguage(state.currentKind);
     updateKindBadge(state.currentKind);
-    setImageContext(vault, newPath); // image resolution follows the note
+    setImageContext(sourceDir, newPath); // image resolution follows the note
     renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
     updateStatusPath();
     noteTitle.value = stemOf(newPath);
     await loadNotes();
     const meta = state.notes.find(
-      (n) => n.path === newPath && n.vault === vault
+      (n) => n.path === newPath && n.vault === sourceDir
     );
     if (meta) {
       state.currentHash = meta.hash || '';
@@ -2565,11 +2627,16 @@ async function commitRename() {
     renderNoteList();
     toast(t('toast.renamed', { name: stemOf(newPath) }));
   } catch (err) {
-    noteTitle.value = stem;
+    noteTitle.value = stemOf(state.current || sourcePath);
     toast(t('toast.renameFailed', { msg: err.message || err }), true);
   }
 }
 
+noteTitle.addEventListener('input', () => {
+  titleDirty = Boolean(
+    state.current && noteTitle.value.trim() !== stemOf(state.current)
+  );
+});
 noteTitle.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.target.blur();
@@ -2720,7 +2787,13 @@ $('btn-new-note').addEventListener('click', openNewNoteMenu);
 $('btn-delete').addEventListener('click', async () => {
   if (!state.current) return;
   if (!confirm(t('dialog.delete', { title: noteTitle.value }))) return;
+  // Capture the target NOW: after the awaits below `state.current` may point
+  // at a note the user selected while the delete was queued.
   const targetDir = state.currentDir;
+  const deleted = state.current;
+  // Invalidate any in-flight note selection so its read cannot re-apply the
+  // deleted note (or a different note) under the delete.
+  noteSelectSeq += 1;
   const revisionAtStart = state.docRevision;
   const wasDirty = state.pendingSave || state.saveFailed;
   let failed = false;
@@ -2734,7 +2807,6 @@ $('btn-delete').addEventListener('click', async () => {
     // again after the queue drained, before the file disappears.
     clearTimeout(state.saveTimer);
     state.pendingSave = false;
-    const deleted = state.current;
     await api.deleteNote(targetDir, deleted);
     // The user may have selected another note while the delete was in flight;
     // only clear the editor when the deleted note is still the open one.
@@ -3117,7 +3189,7 @@ $('btn-export').addEventListener('click', openExportMenu);
 // ---------------- Unsaved changes guard ----------------
 
 window.addEventListener('beforeunload', (e) => {
-  if (state.pendingSave || state.saveFailed) {
+  if (state.pendingSave || state.saveFailed || titleDirty) {
     e.preventDefault();
     e.returnValue = '';
   }
@@ -3128,6 +3200,8 @@ window.addEventListener('beforeunload', (e) => {
 // keeps the window open unless the user confirms losing the edits.
 void api
   .onCloseRequested(async (event) => {
+    // Commit a typed rename (and flush its save) before deciding to close.
+    if (titleDirty) await commitRename();
     if (!state.pendingSave && !state.saveFailed) return;
     const ok = await flushSave();
     if (ok && !state.pendingSave && !state.saveFailed) return;
@@ -3186,6 +3260,9 @@ onLanguageChange(() => {
   if (state.current && editor && isDataKind(state.currentKind)) {
     renderPreview(editor.state.doc.toString(), previewEl, state.currentKind);
   }
+  // Search fallback snippets (`Title:/File:/Tag:`) are localized by Rust, so
+  // an active query must be re-run instead of showing the old language.
+  if (state.filter.query) void runSearch();
   applySidebar(isSidebarCollapsed());
   closeExportMenu();
   closeNewNoteMenu();
@@ -3244,12 +3321,17 @@ await boot();
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest')) {
   const { runSelfTest } = await import('./selftest.js');
-  void runSelfTest({
+  runSelfTest({
     getState: () => ({
       dir: state.dir,
       current: state.current,
       currentDir: state.currentDir,
       dirs: activeVaultDirs(),
     }),
+  }).catch((err) => {
+    // Last-resort exit: a rejected run must not leave the dev app (and the CI
+    // job) hanging without a report or a status code.
+    console.error('[selftest] run failed:', err);
+    api.selftestFinish(false).catch(() => {});
   });
 }

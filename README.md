@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.11.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.11.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -31,7 +31,7 @@
 - **五种格式，一个列表**：Markdown（MathJax + Mermaid + 代码高亮）、HTML、CSV、TXT、JSON。CSV/TXT 有智能列宽、数字右对齐和隔行底色；JSON 是键值分列、可折叠的检查器；搜索同时覆盖标题、文件名、标签和正文。
 - **纯文件存储**：笔记就是文件夹里的普通文件，可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理；没有数据库、账号或专有格式。
 - **本地优先 + 多库**：核心编辑、预览、搜索、导出全部离线可用；最近笔记库、置顶、多库同开、当前文件夹范围、front matter 标签。
-- **小巧轻便**：Windows 绿色包约 **13 MB**，解压即用；Rust + Tauri 2，没有 Electron 运行时。Windows / Linux / macOS（Apple Silicon）都有原生构建。
+- **小巧轻便**：Windows 绿色包约 **17 MB**，解压即用；Rust + Tauri 2，没有 Electron 运行时。Windows / Linux / macOS（Apple Silicon）都有原生构建。
 - **安全边界**：Markdown 消毒、HTML 在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
 - **迁移成本低**：直接打开 Obsidian / Typora / VS Code 使用的文件夹；Markdown front matter 的其他字段原样保留；UTF-8 / GBK / GB18030 自动解码。
 
@@ -45,10 +45,10 @@
 | --- | --- | --- | --- |
 | Markdown | ✅ 3× 整页长图（约 288 DPI） | ✅ 矢量文字、A4、页眉页码 | ✅ 独立单文件、内嵌样式与本地图片 |
 | HTML | ✅ 整页截图，超长页面分段拼接 | ✅ 隐藏 WebView 按 A4 打印，保留页面排版 | ✅ 源码原样输出 UTF-8，规范化遗留 charset |
-| CSV / TXT / JSON | ✅ 按表格自然宽度扩宽，自动降采样 | ✅ 窄表矢量；宽表横向栅格，列不裁切 | ✅ 完整数据视图，按浏览器全宽排版 |
+| CSV / TXT / JSON | ✅ 按表格自然宽度扩宽，自动降采样 | ✅ 窄表 A4 矢量；宽表自定义宽纸矢量，超宽才栅格 | ✅ 完整数据视图，按浏览器全宽排版 |
 
 - **PNG**：Markdown 通常 3× 渲染（约 288 DPI）；HTML 笔记按页面高度在 1–3× 间自适应，超长报告分段截取并拼接为单图；CSV/TXT/JSON 的离屏舞台按表格自然宽度扩宽，并在宽度、高度和画布总面积三方面自动降采样，右侧列不会被裁掉。远程图片经 Rust 后端拉取并内联，不会出现空白图。
-- **PDF**：Markdown、HTML 和窄数据表走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出**矢量文字**，可选中、可搜索、任意放大都清晰；A4 排版，由引擎按 CSS 规则分页，文件通常比图片版小一个数量级。打印始终使用浅色配色，深色主题下也是白底深字。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张；宽度超过约 640 CSS px 可打印区的数据表会自动回退为横向栅格 PDF，保证所有列完整。某个平台或环境不支持原生打印时，回退为按块边界分页的无损 PNG 切片。
+- **PDF**：Markdown、HTML 和数据表都走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出**矢量文字**，可选中、可搜索、任意放大都清晰；A4 排版，由引擎按 CSS 规则分页，文件通常比图片版小一个数量级。打印始终使用浅色配色，深色主题下也是白底深字。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。放不进 A4 的数据表会按「表格宽度 + 页边距」申请一张自定义宽纸（宽度随表格，高度保持 A4；上限 55 in，Rust 端钳制到 60 in），打印方向始终保持纵向（portrait），不会把宽纸旋转后重新裁列；表格因此仍按真实文字排版。打印字号固定为屏幕上的 13 px，`vw` 不会把按测量值设定的列宽撑出纸面；页眉、页脚和页码在宽纸上照常工作。只有超过该上限的超宽表才回退为栅格 PDF，超长表格的回退按行分页（每页 3× 正常比例、自带表头）。某个平台或环境不支持原生打印时，回退为按块边界分页的无损 PNG 切片。
 - **HTML**：Markdown 导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；CSV/TXT/JSON 导出保留智能列宽、隔行底色/列文字色和 JSON 检查器样式，并使用整个浏览器宽度；HTML 笔记按源码输出 UTF-8 独立文件，规范化遗留的 `<meta charset="gbk">`（相对 CSS/JS/图片不会随文件复制）。数据 HTML 导出保留完整内容。
 - **零外部依赖**：不需要安装 Edge/Chrome，也不需要 Pandoc/LaTeX；预览、截图、打印都在应用内置的 WebView 中完成。导出目标由系统保存对话框选择，前端不能任意写文件。
 - **一致的边界**：HTML 笔记的预览在 sandbox iframe 中运行，导出在隐藏的独立 Tauri WebView 中执行；笔记脚本拿不到应用命令，导出窗口只能回传截图或打印就绪信号。
@@ -60,7 +60,7 @@
 | 能力 | **rustmd** | Obsidian | Typora | VS Code | Notepad++ | Zettlr | Joplin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 存储 | 文件 | 文件 | 文件 | 文件 | 文件 | 文件 | 数据库 |
-| Windows 包 | **≈13 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
+| Windows 包 | **≈17 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
 | 打开文件夹 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ 导入 |
 | HTML 笔记预览 | ✅ 内置 | ❌ | ❌ | ⚠️ 扩展 | ❌ | ❌ | ❌ |
 | 数据视图 | ✅ | ❌ | ❌ | ⚠️ 部分 | ❌ | ❌ | ❌ |
@@ -74,7 +74,7 @@
 
 > 对比基于 2026 年 11 月的公开信息与各工具官方文档，只列与本项目定位相关的维度；各工具都在持续更新，以官方说明为准。`✅` 原生支持；`⚠️` 需要扩展/插件、仅部分能力或需额外依赖；`❌` 不支持。
 >
-> ¹ Windows x64 官方安装包 / 便携包，单位为 MB，只表示量级；rustmd 为 13 MB 绿色 zip（解压后 exe 约 19 MB）。² VS Code 源码为 MIT，微软发行版另附许可。³ 三端 = Windows / macOS / Linux；rustmd 的 macOS 版仅支持 Apple Silicon（arm64）。* Obsidian 的 Sync/Publish 与 Joplin Cloud 为付费附加服务；Typora 为 $14.99 一次性许可。`⚠️` 在多库行表示多窗口 / 多实例，而不是单窗口汇总。
+> ¹ Windows x64 官方安装包 / 便携包，单位为 MB，只表示量级；rustmd 为 17 MB 绿色 zip（解压后 exe 约 19 MB）。² VS Code 源码为 MIT，微软发行版另附许可。³ 三端 = Windows / macOS / Linux；rustmd 的 macOS 版仅支持 Apple Silicon（arm64）。* Obsidian 的 Sync/Publish 与 Joplin Cloud 为付费附加服务；Typora 为 $14.99 一次性许可。`⚠️` 在多库行表示多窗口 / 多实例，而不是单窗口汇总。
 >
 > 数据视图 = CSV/TXT/JSON 的原生表格 / 检查器；HTML 笔记 = 直接编辑 `.html` 源码并整页渲染。
 
@@ -82,7 +82,7 @@
 
 ### 为什么能这么小
 
-rustmd 不打包 Chromium：它复用系统 WebView（Windows WebView2、macOS WKWebView、Linux WebKitGTK），只带应用本身。代价是需要系统运行时——Windows 的 WebView2 通常已自带，Linux 需要 GTK 3 + WebKitGTK 4.1；换来的是约 13 MB 的 Windows 绿色包。Linux 的 deb 约 11 MB，macOS DMG 约 14 MB；AppImage 因为自带 WebKitGTK 约 90 MB。
+rustmd 不打包 Chromium：它复用系统 WebView（Windows WebView2、macOS WKWebView、Linux WebKitGTK），只带应用本身。代价是需要系统运行时——Windows 的 WebView2 通常已自带，Linux 需要 GTK 3 + WebKitGTK 4.1；换来的是约 17 MB 的 Windows 绿色包（v1.11.0 资产 17,143,034 B）。Linux 的 deb 约 11.6 MB（11,653,310 B），macOS DMG 约 18 MB（17,906,152 B）；AppImage 因为自带 WebKitGTK 约 94.9 MB（94,943,736 B）。
 
 ### rustmd 不做什么
 
@@ -233,6 +233,8 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 
 Windows / macOS 资产旁提供 `.sha256`；Linux 提供 `SHA256SUMS-linux.txt`；Release 里还有合并的 `SHA256SUMS.txt`（需要全部资产在同一目录才能校验）。只下载单平台时请用对应平台的校验文件。
 
+最近已发布的 v1.11.0 资产体积：Windows zip 17,143,034 B（约 16.3 MiB / 17 MB）；macOS DMG 17,906,152 B（约 17.1 MiB / 18 MB）；Linux deb 11,653,310 B（约 11.6 MB）；AppImage 94,943,736 B（约 94.9 MB）。解压后的 `rustmd.exe` 约 19 MB。
+
 ### Windows
 
 1. 解压 zip，运行 `rustmd.exe`。
@@ -285,14 +287,23 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-winget 与 AUR 清单已经在 [packaging/](packaging/README.md) 准备好；提交采纳后会补上对应的一行命令。
+winget 清单（1.11.0）已作为 PR 提交，仍在等待 moderator 审核（仓库内清单已修正），通过后会补上 `winget install` 一行；AUR 清单已就绪，待有 AUR 账号后提交。Scoop（自建 bucket）与 Homebrew（`riverzhou/tap`）已发布 1.11.0 清单，可直接安装。细节见 [packaging/](packaging/README.md)。
 
 ### 校验下载
 
 ```bash
+# Windows PowerShell：计算并对照同目录的 .sha256
+(Get-FileHash .\rustmd-<version>-win-x64-portable.zip -Algorithm SHA256).Hash
+Get-Content .\rustmd-<version>-win-x64-portable.zip.sha256
+
+# macOS
+shasum -a 256 -c rustmd-<version>-macos-arm64.dmg.sha256
+
+# Linux
+sha256sum -c SHA256SUMS-linux.txt
+
 # 合并文件需要先把全部 Release 资产下载到同一目录：
 sha256sum -c SHA256SUMS.txt
-# 只下载单平台时用同名 .sha256（Windows/macOS）或 SHA256SUMS-linux.txt（Linux）
 ```
 
 ## 快速开始
@@ -321,7 +332,7 @@ npm run dev          # http://127.0.0.1:5173，使用内存 mock 数据
 
 ## 开发
 
-前置：Node.js ≥ 20.19、Rust stable（含 `rustfmt`、`clippy`）以及对应平台的 Tauri 系统依赖（Linux 见 [docs/TESTING.md](docs/TESTING.md)）。
+前置：Node.js `^20.19.0 || >=22.12.0`（Vite 8 要求）、Rust stable（含 `rustfmt`、`clippy`）以及对应平台的 Tauri 系统依赖（Linux 见 [docs/TESTING.md](docs/TESTING.md)）。
 
 Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底见 [LINUX_BUILD.md](LINUX_BUILD.md)；构建后可运行 `scripts/linux-headless-smoke.sh` 在隔离 Xvfb 中冒烟测试 release 二进制。
 
@@ -331,8 +342,8 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 | Tauri 开发窗口 | `node scripts/launch-dev.mjs`（Windows 可用 `scripts\run-dev.bat`） |
 | 仅前端（mock） | `npm run dev` |
 | 发布 exe（不打包安装器） | `npx tauri build --no-bundle`（Windows 可用 `scripts\run-build.bat`） |
-| 前端纯函数单测 | `npm run test:unit` |
-| Rust 单测 | `npm run test:rust` |
+| 前端纯函数单测 | `npm run test:unit`（69 个） |
+| Rust 单测 | `npm run test:rust`（`cargo test --workspace`；99 个 Windows / 100 个 Linux、macOS，1 个网络测试默认忽略） |
 | 端到端自测 | `npm run selftest` / `npm run selftest:check` |
 | 重新生成图标 | `npm run icons` |
 
@@ -343,11 +354,13 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 `npm run check` 依次执行：
 
 1. ESLint 10
-2. Node 前端单测（排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、CSV/TXT/JSON 解析与对齐、数学保护、代码段、多语言）
-3. 仓库检查（文档链接、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
-4. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` 及两个 lockfile 的根包版本一致）
-5. `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
-6. Vite 生产构建
+2. Node 前端单测（69 个：排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、CSV/TXT/JSON 解析与对齐、数学保护、代码段、多语言）
+3. 仓库检查（`npm run check:repo`：文档链接、版本横幅、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
+4. 许可边界（`npm run check:license`：可复用层不含 Tauri 依赖/引用，且每个源文件都有 SPDX 头）
+5. 打包清单检查（`npm run check:packaging`：winget / Scoop / Homebrew / AUR 的版本、资产名、URL 与 SHA256 互相一致）
+6. 版本检查（`package.json` / `Cargo.toml` / `tauri.conf.json` / `crates/rustmd-core` 与两个 lockfile 的版本一致）
+7. `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`
+8. Vite 生产构建
 
 CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整质量门禁，在 Windows / Linux / macOS 三端编译，并用 Xvfb + 真实 WebKitGTK 跑端到端自测。
 
@@ -357,22 +370,28 @@ CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整
 npm run selftest
 ```
 
-dev 窗口会渲染 `examples/` 下全部示例笔记（含 Markdown、HTML、CSV、TXT、JSON 与 GBK CSV），逐一导出 PNG/PDF 和 HTML。Markdown 校验残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）；HTML 校验内置 WebView 的 iframe 是否 ready、本地相对 CSS/JS/图片与内联脚本；数据笔记校验表格/JSON 检查器结构、智能表头对齐、HTML 文本不注入 DOM、数据 HTML 导出及 charset；GBK 示例断言编码识别。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；`npm run selftest:check` 默认要求 HTML、CSV、TXT、JSON 全覆盖（脚本已带 `--require-html --require-data`）。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
+dev 窗口会渲染 `examples/` 下全部 10 篇示例笔记（含 Markdown、HTML、CSV、TXT、JSON 与 GBK CSV），逐一导出 PNG/PDF 和 HTML。Markdown 校验残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）；HTML 校验内置 WebView 的 iframe 是否 ready、本地相对 CSS/JS/图片与内联脚本；数据笔记校验表格/JSON 检查器结构、智能表头对齐、HTML 文本不注入 DOM、数据 HTML 导出及 charset；GBK 示例断言编码识别。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；`npm run selftest:check` 默认要求 HTML、CSV、TXT、JSON 全覆盖（脚本已带 `--require-html --require-data`）。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
 
 ## 目录结构
 
 ```
-├── src/main.rs               # 全部 Rust：命令、路径安全、front matter、rmd 协议、单测
+├── src/main.rs               # Tauri 层（GPL-3.0-or-later）：23 个 IPC 命令、打印、窗口、自测
+├── crates/rustmd-core/
+│   └── src/lib.rs            # 平台无关引擎（MIT OR Apache-2.0）：路径、front matter、编码、扫描
 ├── frontend/
 │   ├── index.html
 │   ├── public/               # 图标、highlight.js 主题
-│   └── src/                  # main.js / api.js / editor.js / preview.js / export.js
-│                             #   notelist.js / vaultlist.js / markdown.js / imgutil.js / selftest.js / style.css
-├── scripts/                  # 开发服务器、图标、检查、自测、签名与 Windows 绿色包
-├── examples/                 # 示例笔记库（含 CSV/TXT/JSON/GBK），同时是自测夹具
+│   └── src/
+│       ├── main.js / api.js / export.js / selftest.js   # 桌面 UI、Tauri 桥、导出、E2E
+│       ├── shared/           # 可复用渲染器（MIT OR Apache-2.0）：preview/dataview/editor/i18n/host
+│       ├── style.css
+│       └── notelist.js / layout.js / vaultlist.js / pdfgeom.js / exportgeom.js
+├── scripts/                  # 开发服务器、检查、自测、签名与 Windows 绿色包
+├── packaging/                # winget / Scoop / AUR / Homebrew 清单
+├── examples/                 # 10 篇示例笔记（含 CSV/TXT/JSON/GBK），同时是自测夹具
 ├── capabilities/             # Tauri 权限
 ├── icons/                    # 应用图标（npm run icons 生成，含 .icns）
-├── docs/                     # 架构、测试、发布、安全文档
+├── docs/                     # 架构、测试、发布、安全、许可文档
 ├── .github/workflows/        # CI 与三端发布
 ├── tauri.conf.json
 ├── Cargo.toml
@@ -394,7 +413,7 @@ dev 窗口会渲染 `examples/` 下全部示例笔记（含 Markdown、HTML、CS
 ## 常见问题
 
 **Q：rustmd 开源吗？**
-是，采用 **GPL-3.0-or-later**。你可以自由使用、修改和分发；衍生作品需按 GPL 兼容方式开源。详见 [LICENSE](LICENSE)。
+是，应用本体采用 **GPL-3.0-or-later**。你可以自由使用、修改和分发；衍生作品需按 GPL 兼容方式开源。另有两个可复用层——`crates/rustmd-core`（平台无关引擎）与 `frontend/src/shared`（渲染栈）——采用 **MIT OR Apache-2.0** 双许可，可以单独拿去用；边界与规则见 [LICENSE](LICENSE) 与 [docs/LICENSING.md](docs/LICENSING.md)。
 
 **Q：支持同步吗？**
 应用本身不做云同步。笔记是普通文件夹，交给 Syncthing、Git、iCloud、OneDrive、Dropbox 等即可。
@@ -423,6 +442,7 @@ Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性�
 - [Testing & CI / 测试](docs/TESTING.md)
 - [Release & Signing / 发布签名](docs/RELEASING.md)
 - [Security / 安全](docs/SECURITY.md)
+- [Licensing / 分层许可](docs/LICENSING.md)
 - [Changelog / 更新日志](CHANGELOG.md)
 - [Audit Report / 审计报告](AUDIT_REPORT.md)
 - [Developer & Agent Guide / 开发指南](AGENTS.md)
@@ -433,7 +453,7 @@ Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性�
 
 ## License
 
-rustmd 以 **GPL-3.0-or-later** 发布。完整条款见 [LICENSE](LICENSE)。
+rustmd 应用本体以 **GPL-3.0-or-later** 发布，完整条款见 [LICENSE](LICENSE)。`crates/rustmd-core`（平台无关引擎）与 `frontend/src/shared`（渲染栈 + 编辑器）是两个可独立复用的层，采用 **MIT OR Apache-2.0** 双许可；分层边界与贡献规则见 [docs/LICENSING.md](docs/LICENSING.md)。
 
 ## 支持项目
 

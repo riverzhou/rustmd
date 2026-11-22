@@ -151,6 +151,8 @@ export const MESSAGES = {
       'The current note could not be saved. Switch folders anyway? Unsaved changes will be lost.',
     'dialog.switchNote':
       'The current note could not be saved. Switch notes anyway? Unsaved changes will be lost.',
+    'dialog.switchVault':
+      'The current note could not be saved. Switch vaults anyway? Unsaved changes will be lost.',
     'dialog.newNote':
       'The current note could not be saved. Create a new note anyway? Unsaved changes will be lost.',
     'dialog.delete': 'Delete “{title}”? This cannot be undone.',
@@ -163,7 +165,10 @@ export const MESSAGES = {
 
     'toast.selectDirFailed': 'Could not choose folder: {msg}',
     'toast.searchFailed': 'Search failed: {msg}',
+    'toast.searchAllFailed':
+      'Search failed: none of the open vaults could be read.',
     'toast.readFailed': 'Could not read notes: {msg}',
+    'toast.vaultsUnavailable': 'Some vaults are unavailable: {names}',
     'toast.saveFailed': 'Save failed: {msg}',
     'toast.openFailed': 'Could not open note: {msg}',
     'toast.renameFailed': 'Rename failed: {msg}',
@@ -387,6 +392,8 @@ export const MESSAGES = {
       '当前笔记保存失败，仍要切换目录吗？未保存的修改会丢失。',
     'dialog.switchNote':
       '当前笔记保存失败，仍要切换吗？未保存的修改会丢失。',
+    'dialog.switchVault':
+      '当前笔记保存失败，仍要切换笔记库吗？未保存的修改会丢失。',
     'dialog.newNote':
       '当前笔记保存失败，仍要新建吗？未保存的修改会丢失。',
     'dialog.delete': '确定删除「{title}」吗？此操作不可恢复。',
@@ -399,7 +406,9 @@ export const MESSAGES = {
 
     'toast.selectDirFailed': '选择目录失败：{msg}',
     'toast.searchFailed': '搜索失败：{msg}',
+    'toast.searchAllFailed': '搜索失败：所有已打开的笔记库都无法读取。',
     'toast.readFailed': '读取笔记失败：{msg}',
+    'toast.vaultsUnavailable': '部分笔记库暂不可用：{names}',
     'toast.saveFailed': '保存失败：{msg}',
     'toast.openFailed': '打开笔记失败：{msg}',
     'toast.renameFailed': '重命名失败：{msg}',

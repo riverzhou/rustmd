@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <title>rustmd math lab (dev only)</title>
-    <!-- Deliberately the production policy: MathJax v4 must not need the
-         network for its optional font data. A CDN fetch blocked here is
-         exactly what breaks math in the installed app. -->
+    <!-- The production policy's important half: no CDN origins, so MathJax v4
+         may not fetch its optional font data. A CDN fetch blocked here is
+         exactly what breaks math in the installed app. The dev HMR websocket
+         stays allowed so Vite can serve the module graph. -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https: rmd:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'"
@@ -18,7 +19,7 @@
   <body>
     <div id="lab" class="markdown-body"></div>
     <script type="module">
-      import { renderPreview } from '/src/preview.js';
+      import { renderPreview } from '/src/shared/preview.js';
       window.__mathLab = { renderPreview, host: document.getElementById('lab') };
       window.__mathLabReady = true;
     </script>

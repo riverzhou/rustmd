@@ -9,6 +9,7 @@ import { getLanguage, t } from './i18n.js';
 import { DATA_VIEW_CSS, renderDataView } from './dataview.js';
 import { isDataKind } from './notelist.js';
 import {
+  MATH_TOKEN_PREFIX,
   splitCodeSegments,
   splitInlineCode,
   sourceHasMath,
@@ -332,6 +333,9 @@ function localImageAbsPath(src, ctx = imageCtx) {
     }
   }
   if (/[?#]/.test(src)) return null; // fragment/query — leave untouched
+  // `//cdn.example/x.png` is a protocol-relative network URL, not a
+  // vault-root-relative path (that would become `<root>//cdn.example/...`).
+  if (src.startsWith('//')) return null;
   if (/^[a-zA-Z]:[\\/]/.test(src)) return src.replace(/\\/g, '/'); // drive path
   if (src.startsWith('/')) return ctx.root + src; // vault-root-relative
   const dir = ctx.notePath.includes('/')
@@ -364,6 +368,9 @@ async function inlineLocalImagesForHtml(stage) {
   );
 }
 
+/// `url(...)` references inside CSS: `url(hero.png)`, `url("a b.png")`.
+const CSS_URL_RE = /url\(\s*(["']?)([^"')]*)\1\s*\)/gi;
+
 /// Inline local images, stylesheets and classic scripts before sending an
 /// HTML note to the hidden WebView renderer or the native preview iframe.
 ///
@@ -386,7 +393,7 @@ export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
   // Snapshot the context for the whole operation: a per-asset read of the
   // global context could mix two notes if the user switches mid-inline.
   const context = ctx;
-  const TEXT_ASSET = /.(?:css|js|mjs)$/i;
+  const TEXT_ASSET = /\.(?:css|js|mjs)$/i;
   // The element kind decides the command: <img> may only read images, while
   // <link>/<script> may only read CSS/JS. Choosing by extension alone would
   // let <img src="secret.js"> inline text that the note's scripts can read.
@@ -404,13 +411,77 @@ export async function inlineLocalAssetsInHtml(source, ctx = imageCtx) {
     }
   };
 
-  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"][href]')]) {
-    const file = await resolveAndRead(link.getAttribute('href') || '', 'asset').catch(
-      () => null
+  /// `background: url(hero.png)` (and mask/border-image/list bullets) are
+  /// invisible to the <img> pass. Without this the hidden export WebView
+  /// requests them with an Origin header the `rmd` allowlist rejects, and the
+  /// HTML PNG/PDF silently loses the artwork. Non-image references (fonts,
+  /// @import, remote URLs) are left untouched for the protocol to serve.
+/// Resolve a linked stylesheet's own relative `url()` references against the
+/// stylesheet directory, not against the note directory.
+  const cssContextFor = (abs, ctx) => {
+    if (!abs) return ctx;
+    const root = String(ctx.root || '')
+      .replace(/\\/g, '/')
+      .replace(/\/+$/, '');
+    const normalized = String(abs).replace(/\\/g, '/');
+    if (root && normalized.startsWith(`${root}/`)) {
+      return { root: ctx.root, notePath: normalized.slice(root.length + 1) };
+    }
+    return ctx;
+  };
+
+  const inlineCssUrls = async (cssText, cssCtx = context) => {
+    const refs = new Map();
+    for (const match of cssText.matchAll(CSS_URL_RE)) {
+      const ref = match[2].trim();
+      if (!ref || refs.has(ref)) continue;
+      // data:/blob:/http(s)/rmd:/# and protocol-relative URLs work as-is.
+      if (/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(ref)) continue;
+      refs.set(ref, null);
+    }
+    await Promise.all(
+      [...refs.keys()].map(async (ref) => {
+        const abs = localImageAbsPath(ref, cssCtx);
+        if (!abs) return;
+        try {
+          const file = await host.readLocalImage(abs);
+          refs.set(
+            ref,
+            bytesToDataUrl(file.bytes, file.mime || guessImageMime(file.bytes))
+          );
+        } catch {
+          // A font / nested stylesheet / unreadable file: keep the URL.
+        }
+      })
     );
+    return cssText.replace(CSS_URL_RE, (whole, _quote, ref) => {
+      const dataUrl = refs.get(ref.trim());
+      return dataUrl ? `url("${dataUrl}")` : whole;
+    });
+  };
+
+  // The note's own <style> blocks (HTML notes are not sanitized) come first.
+  for (const style of [...doc.querySelectorAll('style')]) {
+    const css = style.textContent || '';
+    if (!/url\(/i.test(css)) continue;
+    style.textContent = await inlineCssUrls(css);
+  }
+
+  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"][href]')]) {
+    // An alternate stylesheet is disabled until the reader picks it; turning
+    // it into an always-on <style> would change how the page renders.
+    if (/\balternate\b/i.test(link.getAttribute('rel') || '')) continue;
+    const href = link.getAttribute('href') || '';
+    const file = await resolveAndRead(href, 'asset').catch(() => null);
     if (!file) continue;
     const style = doc.createElement('style');
-    style.textContent = decode(file.bytes).replace(/<\/style/gi, '<\\/style');
+    // Keep print-only / screen-only stylesheets scoped as authored.
+    const media = link.getAttribute('media');
+    if (media) style.setAttribute('media', media);
+    const assetCtx = cssContextFor(localImageAbsPath(href, context), context);
+    style.textContent = (
+      await inlineCssUrls(decode(file.bytes), assetCtx)
+    ).replace(/<\/style/gi, '<\\/style');
     link.replaceWith(style);
   }
 
@@ -513,7 +584,7 @@ function rewriteLocalImageHtml(html, ctx = imageCtx) {
 function installLinkHandler(container) {
   if (container.dataset.linkHandler === '1') return;
   container.dataset.linkHandler = '1';
-  container.addEventListener('click', (event) => {
+  const activate = (event) => {
     const target = event.target;
     const anchor =
       target && typeof target.closest === 'function'
@@ -530,6 +601,12 @@ function installLinkHandler(container) {
     } else {
       console.warn('不支持打开该链接：', href);
     }
+  };
+  container.addEventListener('click', activate);
+  // Middle-click arrives as auxclick; without this the WebView could still
+  // navigate the app itself to the note-controlled href.
+  container.addEventListener('auxclick', (event) => {
+    if (event.button === 1) activate(event);
   });
 }
 
@@ -578,6 +655,41 @@ function restoreMath(container, store) {
       frag.appendChild(document.createTextNode(value.slice(pos)));
     }
     node.parentNode.replaceChild(frag, node);
+  }
+  // Math protection rewrites `$…$` everywhere, including link destinations and
+  // raw-HTML attributes (title/alt/…), but the restore above only walks text
+  // nodes: without this the token itself showed up in a link URL and in
+  // tooltips. Restoring must not smuggle a URL back past DOMPurify, so a
+  // restored URL attribute is re-checked against the same scheme allowlist and
+  // dropped when it would be dangerous.
+  const urlAttrs = new Set([
+    'href',
+    'src',
+    'xlink:href',
+    'action',
+    'formaction',
+    'poster',
+    'background',
+  ]);
+  const tokenRe = new RegExp(`${MATH_TOKEN_PREFIX}(\\d+)X`, 'g');
+  const tokenText = (index) => {
+    const entry = store[Number(index)];
+    if (entry === undefined) return null;
+    return entry && typeof entry === 'object' && entry.escape ? entry.escape : entry;
+  };
+  for (const el of container.querySelectorAll('*')) {
+    for (const attr of [...el.attributes]) {
+      if (!attr.value.includes(MATH_TOKEN_PREFIX)) continue;
+      const restored = attr.value.replace(tokenRe, (match, index) => {
+        const text = tokenText(index);
+        return text === null ? match : text;
+      });
+      if (urlAttrs.has(attr.name.toLowerCase()) && !SANITIZE_CONFIG.ALLOWED_URI_REGEXP.test(restored)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      attr.value = restored;
+    }
   }
   return spans;
 }
@@ -866,22 +978,53 @@ function htmlPreviewBaseHref(ctx = imageCtx) {
   );
 }
 
+/// Regex work on a raw HTML source must skip `<script>`/`<style>` raw text:
+/// a note that documents `<base>`/`<meta charset>` inside a JS string must not
+/// have its script text rewritten by the document builder.
+const RAW_TEXT_RE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
+
+function replaceOutsideRawText(html, re, replacer) {
+  let out = '';
+  let last = 0;
+  let match;
+  RAW_TEXT_RE.lastIndex = 0;
+  while ((match = RAW_TEXT_RE.exec(html))) {
+    out += html.slice(last, match.index).replace(re, replacer);
+    out += match[0];
+    last = match.index + match[0].length;
+  }
+  return out + html.slice(last).replace(re, replacer);
+}
+
+function findOutsideRawText(html, re) {
+  let last = 0;
+  let match;
+  RAW_TEXT_RE.lastIndex = 0;
+  while ((match = RAW_TEXT_RE.exec(html))) {
+    const hit = re.exec(html.slice(last, match.index));
+    if (hit) return { index: last + hit.index, length: hit[0].length };
+    last = match.index + match[0].length;
+  }
+  const hit = re.exec(html.slice(last));
+  return hit ? { index: last + hit.index, length: hit[0].length } : null;
+}
+
 function injectHtmlHead(html, injection) {
   let out = String(html || '');
-  out = out.replace(/<base\b[^>]*>/gi, '');
-  const head = /<head\b[^>]*>/i.exec(out);
+  out = replaceOutsideRawText(out, /<base\b[^>]*>/gi, () => '');
+  const head = findOutsideRawText(out, /<head\b[^>]*>/i);
   if (head) {
-    const at = head.index + head[0].length;
+    const at = head.index + head.length;
     return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
   }
-  const htmlTag = /<html\b[^>]*>/i.exec(out);
+  const htmlTag = findOutsideRawText(out, /<html\b[^>]*>/i);
   if (htmlTag) {
-    const at = htmlTag.index + htmlTag[0].length;
+    const at = htmlTag.index + htmlTag.length;
     return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
   }
-  const doctype = /<!doctype[^>]*>/i.exec(out);
+  const doctype = findOutsideRawText(out, /<!doctype[^>]*>/i);
   if (doctype) {
-    const at = doctype.index + doctype[0].length;
+    const at = doctype.index + doctype.length;
     return out.slice(0, at) + '\n' + injection + '\n' + out.slice(at);
   }
   return injection + '\n' + out;
@@ -1007,6 +1150,15 @@ function controlHtmlFrame(iframe, timeoutMs = 30000) {
       waiter.reject(new Error('HTML preview closed'));
     }
     pending.clear();
+    // A note switch can dispose the control before the frame ever reports
+    // ready; leaving that promise pending stalls the awaiting render forever
+    // (and leaks the iframe control). Reject it once, and mark it handled so a
+    // dispose with no awaiter cannot surface as an unhandled rejection.
+    if (!readySettled) {
+      readySettled = true;
+      rejectReady(new Error('HTML preview closed'));
+      ready.catch(() => {});
+    }
   };
   return { ready, capture, dispose, getState: () => state };
 }
@@ -1061,7 +1213,8 @@ const HTML_NATIVE_LINK_SCRIPT = `<script>
   // Keep note links from navigating the sandboxed preview to an arbitrary
   // remote page: hand http(s)/mailto to the trusted parent, which opens it in
   // the system browser. Internal anchors and non-web links are left alone.
-  document.addEventListener('click', function (event) {
+  function handle(event) {
+    if (event.type === 'auxclick' && event.button !== 1) return;
     var a = event.target && event.target.closest
       ? event.target.closest('a')
       : null;
@@ -1074,7 +1227,9 @@ const HTML_NATIVE_LINK_SCRIPT = `<script>
       event.preventDefault();
       parent.postMessage({ __rmdPreviewLink: url.href }, '*');
     }
-  }, true);
+  }
+  document.addEventListener('click', handle, true);
+  document.addEventListener('auxclick', handle, true);
 })();
 </script>`;
 
@@ -1470,6 +1625,11 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
      align-self: flex-start;
      display: flex;
      flex-direction: column;
+     /* A table hands its overflow to .data-table-scroll, but JSON and the
+        invalid-JSON raw block have no inner scroll box: without this the
+        viewport-high card clips them and the rest of the file is unreadable
+        (no page scroll either, because body has a definite height). */
+     overflow-y: auto;
    }
    body.data-export .data-view .data-view-head {
      flex: 0 0 auto;
@@ -1606,13 +1766,15 @@ export function ensureUtf8HtmlCharset(source) {
 
   // A bare fragment has no head to parse; insert the declaration after any
   // doctype (never before it) and avoid touching body script text.
-  let normalized = html.replace(
+  let normalized = replaceOutsideRawText(
+    html,
     /<meta\b[^>]*\bcharset\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/gi,
-    ''
+    () => ''
   );
-  normalized = normalized.replace(
+  normalized = replaceOutsideRawText(
+    normalized,
     /<meta\b[^>]*\bhttp-equiv\s*=\s*(?:"content-type"|'content-type'|content-type)[^>]*>/gi,
-    ''
+    () => ''
   );
   if (/^\s*<!doctype[^>]*>/i.test(normalized)) {
     return normalized.replace(

@@ -49,13 +49,45 @@ async function fetchRemoteBytes(url) {
   }
 }
 
-export async function runSelfTest({ getState }) {
+export async function runSelfTest(options) {
+  try {
+    await runSelfTestInner(options);
+  } catch (err) {
+    // A crashed run must still leave a report and exit with code 1: CI waits
+    // up to 1200 s for the app, and a silent rejection would only time out.
+    console.error('[selftest] crashed:', err);
+    const report = {
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      ok: false,
+      config: {},
+      entries: [],
+      errors: [`selftest crashed: ${(err && err.stack) || err}`],
+      warnings: [],
+    };
+    try {
+      await api.selftestWrite(
+        'report.json',
+        new TextEncoder().encode(JSON.stringify(report, null, 2))
+      );
+    } catch (writeErr) {
+      console.error('[selftest] cannot write the crash report:', writeErr);
+    }
+    try {
+      await api.selftestFinish(false);
+    } catch (finishErr) {
+      console.error('[selftest] cannot finish:', finishErr);
+    }
+  }
+}
+
+async function runSelfTestInner({ getState }) {
   let config;
   try {
     config = await api.selftestConfig();
   } catch (err) {
     console.error('[selftest] cannot read selftest config:', err);
-    return;
+    throw err;
   }
   const SELFTEST_EXAMPLES_DIR = config.examplesDir;
   const SELFTEST_OUT_DIR = config.outDir;
@@ -431,10 +463,11 @@ export async function runSelfTest({ getState }) {
     }
   }
 
-  // Serve the examples vault through the `rmd` image protocol for this
-  // run (local-image regression); restore the user's root afterwards.
-  await api.setNotesRoot(SELFTEST_EXAMPLES_DIR);
   try {
+    // Serve the examples vault through the `rmd` image protocol for this
+    // run (local-image regression); the finally block restores the user's
+    // root afterwards.
+    await api.setNotesRoot(SELFTEST_EXAMPLES_DIR);
     const notes = await api.listNotes(SELFTEST_EXAMPLES_DIR);
     for (const meta of notes) {
       await progress('note:start', meta.path);
@@ -1036,9 +1069,34 @@ export async function runSelfTest({ getState }) {
       'light',
       'markdown'
     );
-    report.hljsExport = { ok: /.hljs/.test(codeExport) };
+    // `renderMarkdownInto` always sets `class="hljs language-*"`, so the class
+    // name alone passed even when the /hljs/*.css fetch failed and no colours
+    // were inlined. Require an actual `.hljs` rule from the stylesheet.
+    report.hljsExport = {
+      ok: codeExport.includes('.hljs'),
+      classPresent: /class="hljs/.test(codeExport),
+    };
     if (!report.hljsExport.ok) {
       report.errors.push('HTML export is missing highlight.js colours');
+    }
+
+    // 5c) CSS `url()` images must be inlined as well: the hidden export
+    //     WebView requests them with an Origin header the strict rmd allowlist
+    //     rejects, so a background image would silently vanish from the
+    //     exported PNG/PDF even though the preview showed it.
+    const cssImageHtml =
+      '<html><head><style>.hero{background:url(assets/fig1-adaptation-score.png)}</style>' +
+      '</head><body><div class="hero">x</div></body></html>';
+    const cssInlined = await inlineLocalAssetsInHtml(cssImageHtml, {
+      root: SELFTEST_EXAMPLES_DIR,
+      notePath: 'html-page-demo.html',
+    });
+    report.cssAssets = {
+      inlined: /url\("data:image\/png;base64,/.test(cssInlined),
+      leaked: cssInlined.includes('assets/fig1-adaptation-score.png'),
+    };
+    if (!report.cssAssets.inlined || report.cssAssets.leaked) {
+      report.errors.push('CSS url() images were not inlined for HTML export');
     }
 
     // 6) Inline-SVG PNG regression (viewBox-only image must not be cropped

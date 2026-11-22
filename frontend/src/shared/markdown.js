@@ -91,7 +91,7 @@ export function mdSourceHasMath(text) {
 
 // A random prefix makes the opaque token collision-proof against a note that
 // literally contains the token text (the old fixed `RMDMATH3X` namespace).
-const MATH_TOKEN_PREFIX = `RMDMATH${Math.random()
+export const MATH_TOKEN_PREFIX = `RMDMATH${Math.random()
   .toString(36)
   .slice(2, 10)
   .toUpperCase()}`;

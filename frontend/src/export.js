@@ -94,14 +94,16 @@ async function mapLimit(items, limit, task) {
 async function inlineRemoteImages(stage) {
   const remotes = [...stage.querySelectorAll('img')].filter((img) => {
     const src = img.currentSrc || img.getAttribute('src') || '';
-    return isRmdUrl(src) || /^https?:\/\//i.test(src);
+    return isRmdUrl(src) || /^https?:\/\//i.test(src) || src.startsWith('//');
   });
   await mapLimit(remotes, 4, async (img) => {
     const src = img.currentSrc || img.getAttribute('src');
     try {
+      // A protocol-relative URL (`//cdn.example/x.png`) is a network image:
+      // fetch it over https instead of treating it as a vault path.
       const image = isRmdUrl(src)
         ? await api.readLocalImage(rmdUrlPath(src))
-        : await api.fetchImageBytes(src);
+        : await api.fetchImageBytes(src.startsWith('//') ? `https:${src}` : src);
       img.removeAttribute('srcset');
       img.src = bytesToDataUrl(
         image.bytes,
@@ -328,7 +330,14 @@ async function renderDataTablePages(stage, html2canvas) {
       'position:fixed;left:-100000px;top:0;' +
       `width:${cssWidth}px;background:${getComputedStyle(stage).backgroundColor};`;
     const cardClone = card.cloneNode(false);
-    if (head) cardClone.appendChild(head.cloneNode(true));
+    // Keep every non-scroll part of the card (head, TXT prose, notices); only
+    // the table body is replaced. Cloning just the head + table dropped the
+    // prose/notice siblings from the fallback PDF.
+    for (const child of card.children) {
+      if (child === table || child.contains(table)) continue;
+      if (child.classList.contains('data-hscroll')) continue;
+      cardClone.appendChild(child.cloneNode(true));
+    }
     const tableClone = table.cloneNode(false);
     if (colgroup) tableClone.appendChild(colgroup.cloneNode(true));
     if (table.tHead) tableClone.appendChild(table.tHead.cloneNode(true));
@@ -338,16 +347,26 @@ async function renderDataTablePages(stage, html2canvas) {
     cardClone.appendChild(tableClone);
     chunk.appendChild(cardClone);
     document.body.appendChild(chunk);
-    const height = chunk.offsetHeight;
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const canvas = await html2canvas(chunk, {
-      scale: SCALE,
-      backgroundColor: getComputedStyle(chunk).backgroundColor,
-      useCORS: true,
-      logging: false,
-    });
-    chunk.remove();
-    pages.push({ canvas, cssWidth, cssHeight: height });
+    try {
+      const height = chunk.offsetHeight;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const canvas = await html2canvas(chunk, {
+        scale: SCALE,
+        backgroundColor: getComputedStyle(chunk).backgroundColor,
+        useCORS: true,
+        logging: false,
+      });
+      // Keep the encoded page, not the canvas: a 10k-row table is ~250 chunks,
+      // and a 3x canvas each (~45 MB) would exhaust the renderer before the PDF
+      // is assembled. JPEG at 0.92 keeps the text legible at a fraction of it.
+      pages.push({
+        dataUrl: canvas.toDataURL('image/jpeg', 0.92),
+        cssWidth,
+        cssHeight: height,
+      });
+    } finally {
+      chunk.remove();
+    }
   }
   return pages;
 }
@@ -473,7 +492,7 @@ export async function exportPdf(source, kind = 'markdown') {
       const orientation = pdfPageOrientation(wPt, hPt);
       if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [wPt, hPt], orientation });
       else pdf.addPage([wPt, hPt], orientation);
-      pdf.addImage(page.canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, wPt, hPt);
+      pdf.addImage(page.dataUrl, 'JPEG', 0, 0, wPt, hPt);
     }
     const data = new Uint8Array(pdf.output('arraybuffer'));
     return { data, ext: 'pdf', mime: 'application/pdf' };

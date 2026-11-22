@@ -1,7 +1,7 @@
 # Linux 编译手册
 
 本文说明如何在 Linux 上从源码构建 rustmd，并产出一个可直接拷贝的绿色二进制。
-构建基线：Ubuntu 26.04 x86_64 / Rust stable（edition 2024）/ Node.js 24 / Tauri CLI 2.12.4 + `tauri` crate 2.12.5。
+构建基线：Ubuntu 26.04 x86_64 / Rust stable（edition 2024）/ Node.js 24 / Tauri CLI 2.12.5（`package-lock.json`）+ `tauri` crate 2.12.6（`Cargo.lock`）。
 
 ## 1. 产物
 
@@ -23,7 +23,7 @@ GTK 3 / WebKitGTK 4.1 使用系统库（和 Windows 版依赖系统 WebView2 是
 | 系统 | Ubuntu 24.04+ x86_64（本项目在 26.04 上构建/验证） |
 | glibc | ≥ 2.39；要在 22.04 上运行，请在 22.04 上重新构建 |
 | Rust | stable，≥ 1.85（项目使用 edition 2024） |
-| Node.js | ≥ 20.19（Vite 8；本项目用 24） |
+| Node.js | 20.19.x 或 ≥ 22.12（Vite 8 `engines`；本项目用 24） |
 | 桌面 | GTK 3 + WebKitGTK 4.1 运行库 |
 
 先确认工具链：
@@ -125,8 +125,10 @@ ldd target/release/rustmd | grep 'not found' || echo 'all shared libs resolved'
 # 需要桌面会话（Wayland 或 X11）
 ./target/release/rustmd
 
-# Rust 单测；网络测试离线时会自动跳过
-cargo test
+# Rust 单测；网络测试默认 #[ignore]，不会因离线自动跳过
+cargo test --workspace
+# 需要真实联网时显式跑被忽略的网络测试
+cargo test --workspace -- --ignored
 ```
 
 前端改动可以先在浏览器里验证（Tauri API 会自动切到内存 mock）：
@@ -304,7 +306,7 @@ done
 OS            Ubuntu 26.04 LTS (glibc 2.43)
 Rust          1.99.1
 Node.js       24.22.2
-Tauri         2.12.0
+Tauri         CLI 2.12.5 / crate 2.12.6
 WebKitGTK     2.52.6
 产物          11,670,752 bytes (11.1 MiB), stripped
 ```

@@ -7,34 +7,38 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 ```
 ┌──────────────────────────── WebView（frontend/）────────────────────────────┐
 │ main.js  UI 状态 / DOM / 保存队列 / 文件夹树 / 搜索 / 导出 / 笔记库切换     │
-│   ├─ notelist.js   纯函数：排序、过滤、文件夹树                             │
-│   ├─ layout.js     纯函数：侧栏宽度 / 分屏比例边界                          │
-│   ├─ vaultlist.js  纯函数：最近目录去重 / MRU(20) / 置顶 / 显示名           │
-│   ├─ markdown.js   纯函数：代码段切分、数学公式保护                         │
-│   ├─ dataformat.js 纯函数：CSV/TSV 解析、分隔符嗅探、TXT 制表列、JSON 统计   │
-│   ├─ dataview.js / dataview.css  CSV/TXT/JSON 表格与可折叠检查器渲染            │
-│   ├─ preview.js    Markdown → DOMPurify；HTML → sandbox iframe 原生渲染 / 隐藏 WebView 截图 │
-│   ├─ export.js     离屏舞台 → 图片内联 → html2canvas（PNG）/ WebView 打印（PDF）│
-│   ├─ editor.js     CodeMirror 6                                             │
-│   └─ api.js        唯一的 Tauri 桥（浏览器模式走内存 mock）                 │
+│   ├─ shared/notelist.js   纯函数：排序、过滤、文件夹树                     │
+│   ├─ layout.js            纯函数：侧栏宽度 / 分屏比例边界                  │
+│   ├─ vaultlist.js         纯函数：最近目录去重 / MRU(20) / 置顶 / 显示名   │
+│   ├─ shared/markdown.js   纯函数：代码段切分、数学公式保护                 │
+│   ├─ shared/dataformat.js 纯函数：CSV/TSV 解析、分隔符嗅探、TXT 制表列、JSON 统计 │
+│   ├─ shared/dataview.js / dataview.css  CSV/TXT/JSON 表格与可折叠检查器    │
+│   ├─ shared/preview.js    Markdown → DOMPurify；HTML → sandbox iframe 原生渲染 / 隐藏 WebView 截图 │
+│   ├─ export.js            离屏舞台 → 图片内联 → html2canvas（PNG）/ WebView 打印（PDF）│
+│   ├─ shared/editor.js     CodeMirror 6                                     │
+│   └─ api.js               唯一的 Tauri 桥（浏览器模式走内存 mock）         │
 └──────────────────────────────┬─────────────────────────────────────────────┘
                                │ invoke / rmd 协议
 ┌──────────────────────────────▼─────────────────────────────────────────────┐
-│ src/main.rs                                                                 │
+│ src/main.rs（GPL-3.0-or-later，Tauri 层）                                   │
+│  render_html_note / html_preview_finish（隐藏 WebView，3×/分段截图+PNG 拼接） │
+│  set_html_preview（rmdhtml 协议的 sandbox iframe 预览文档）                 │
+│  rmd Origin 隔离（发布版只接受 Tauri 源；回环 dev 源仅 debug 构建）          │
+│  笔记命令 list/read/save/create/rename/delete/move/search/list_folders      │
+│  导出 save_export（原生保存对话框 + 写入）                                  │
+│  print_note_pdf / print_html_note（WebView2 / WKWebView / WebKitGTK 打印） │
+│  网络 fetch_image_bytes（SSRF 防护 + 重定向校验）                           │
+│  rmd 协议 serve_rmd（多库根）+ VaultFileCache + read_local_image/asset     │
+│  自测命令（仅 debug）                                                       │
+└──────────────────────────────┬─────────────────────────────────────────────┘
+                               │ path dependency
+┌──────────────────────────────▼─────────────────────────────────────────────┐
+│ crates/rustmd-core（MIT OR Apache-2.0，平台无关）                           │
 │  路径封闭 resolve_in_root / canonical_root / symlink 检查                  │
 │  front matter split_document / compose_note（保留未知字段与换行）           │
 │  decode_note_text / encode_note_text（UTF-8/BOM、GBK、GB18030）             │
 │  note_kind / compose_html / html_to_text / html_meta / data_snippet         │
-│  render_html_note / html_preview_finish（隐藏 WebView，3×/分段截图+PNG 拼接） │
-│  set_html_preview（rmdhtml 协议的 sandbox iframe 预览文档）                 │
-│  rmd Origin 隔离（拒绝 sandbox/rmdhtml 源的 CORS 读）                      │
-│  笔记命令 list/read/save/create/rename/delete/move/search/list_folders      │
-│  原子写 atomic_write + hash 冲突检测                                        │
-│  导出 save_export（原生保存对话框 + 写入）                                  │
-│  print_note_pdf / print_html_note（WebView2 / WKWebView / WebKitGTK 打印） │
-│  网络 fetch_image_bytes（SSRF 防护 + 重定向校验）                           │
-│  rmd 协议 serve_rmd（多库根）+ VaultFileCache + read_local_image           │
-│  自测命令（仅 debug）                                                       │
+│  collect_notes / collect_folders / 原子写 atomic_write + hash              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,28 +47,28 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 1. 启动时前端从 `localStorage` 读取上次目录；有则 `list_notes` + `list_folders`，随后用 `set_notes_roots` 注册所有已打开库根（单库时只有一个），失败则回到引导页。最近使用过的目录保存在 `rustmd-recent-dirs`（MRU，最多 20 个；条目为 `{ dir, pinned }`，置顶库永不被淘汰并显示在最上方），引导页和侧栏切换器都能一键重开。侧栏“多库”按钮（`rustmd-multi-vault`）会同时加载所有置顶库和当前库：笔记列表汇总，文件夹树按库分组，各库子目录独立选择。扫描识别 `.md` / `.html` / `.htm` / `.csv` / `.txt` / `.json`。列表与搜索默认只覆盖当前文件夹的直属笔记，侧栏“包含子文件夹”开关（`rustmd-include-subfolders`）打开后才递归到整个子树；文件夹计数与标签云也按当前范围统计。
 2. 选择笔记：`read_note` 返回 `{ tags, body, mtime, hash, kind, encoding }`；后端按 BOM → 合法 UTF-8 → GBK → GB18030 自动解码，编辑器按 `kind` 切换 Markdown/HTML/JSON（CSV/TXT 为纯文本）语法，预览走对应渲染管线；`setImageContext(root, notePath)` 记录图片解析上下文。
 3. 编辑/标签变化：500 ms 防抖后进入保存队列；`save_note` 带 `baseHash`，后端比较磁盘内容 hash，不一致返回 `conflict:`，前端询问是否覆盖；写盘使用同目录临时文件 + rename。
-4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。CSV/TXT/JSON 由 `dataview.js` 用 DOM API 构建（表格 / 制表符对齐的隔行底色与列文字色文本 / 可折叠 JSON 检查器）；所有笔记文本都只经 `textContent` 进入 DOM。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
-5. 导出：Markdown 与 CSV/TXT/JSON 走同一个离屏舞台（默认 948 px；数据表超宽时按表格自然宽度扩宽，HTML 笔记另有隐藏 WebView 渲染）；远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image` 内联为 data URL。PNG 由 html2canvas 光栅化后直接输出。PDF 交给系统 WebView 的打印管线：Markdown 用 `print_note_pdf`（`body.rmd-printing` + `@media print` 隐藏应用界面，A4 重排、嵌入字体子集），HTML 笔记用 `print_html_note`（隐藏 `html-render-*` 窗口按可打印宽度排版，`scrollWidth` 超过可打印宽度时整体缩放，保留笔记自己的样式）。Windows 走 WebView2 `PrintToPdfStream`；macOS 走 WKWebView 的 `NSPrintOperation`；Linux 走 WebKitGTK 打印操作（`libloading` 运行时解析 GTK C API）。两者都输出可选中、可搜索的矢量文字 PDF，分页由引擎按 CSS 规则完成（不会把行切成两半，也不会出现只有几像素的尾页）。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印到临时 PDF 后由 `stamp_page_numbers`（lopdf）在每页底部补一个居中的「N / M」页脚，不添加浏览器地址信息。不支持原生打印的平台或旧 WebView2 回退到 html2canvas 光栅 + jsPDF 按块边界切片。数据笔记的 HTML 导出包含相同的表格/树样式与完整内容，并使用全宽 `data-export` 布局（Markdown 仍保持 820px 阅读栏宽）；PNG/栅格 PDF 会扩宽到表格自然宽度，窄数据表的矢量 PDF 正常走打印管线，宽数据表自动回退横向栅格 PDF（保证所有列完整、文字不可选）。HTML 笔记的 HTML 导出按 UTF-8 写出并规范化遗留 charset；PNG 仍由隐藏 Tauri WebView 整页渲染——最高 3×（目标约 48k 设备像素高），CSS 高度超过 12000px 时按垂直段截取（单张模式以 30000/h 为缩放上限），Rust `png` 拼接为单图。
+4. 预览：Markdown 走 `protectMath` → `marked.parse` → DOMPurify → 恢复公式 span → Mermaid / MathJax。CSV/TXT/JSON 由 `shared/dataview.js` 用 DOM API 构建（表格 / 制表符对齐的隔行底色与列文字色文本 / 可折叠 JSON 检查器）；所有笔记文本都只经 `textContent` 进入 DOM。HTML 笔记写入 `rmdhtml` 内存文档，在 `sandbox="allow-scripts allow-forms"` 的 null-origin iframe 中原生渲染（内联/远程脚本、样式、本地相对 CSS/JS/字体/图片、ECharts 直接执行），父页面只收高度消息；不需要外部浏览器，也不会把笔记脚本注入主文档。
+5. 导出：Markdown 与 CSV/TXT/JSON 走同一个离屏舞台（默认 948 px；数据表超宽时按表格自然宽度扩宽，HTML 笔记另有隐藏 WebView 渲染）；远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image` 内联为 data URL。PNG 由 html2canvas 光栅化后直接输出。PDF 交给系统 WebView 的打印管线：Markdown/数据表用 `print_note_pdf`（`body.rmd-printing` + `@media print` 隐藏应用界面，嵌入字体子集，分页交给打印引擎；Markdown 为 A4，A4 放不下的数据表按实测宽度请求自定义宽纸张，Rust 把宽/高夹取到 3–60 in），HTML 笔记用 `print_html_note`（隐藏 `html-render-*` 窗口按可打印宽度排版，`scrollWidth` 超过可打印宽度时整体缩放，保留笔记自己的样式）。Windows 走 WebView2 `PrintToPdfStream`；macOS 走 WKWebView 的 `NSPrintOperation`；Linux 走 WebKitGTK 打印操作（`libloading` 运行时解析 GTK C API）。两者都输出可选中、可搜索的矢量文字 PDF，分页由引擎按 CSS 规则完成（不会把行切成两半，也不会出现只有几像素的尾页）。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印到临时 PDF 后由 `stamp_page_numbers`（lopdf）在每页底部补一个居中的「N / M」页脚，不添加浏览器地址信息。平台没有原生打印管线（或 Windows 上 `ICoreWebView2_16`/`PrintToPdfStream` 初始化失败）时回退到 html2canvas 光栅 + jsPDF 按块边界切片。数据笔记的 HTML 导出包含相同的表格/树样式与完整内容，并使用全宽 `data-export` 布局（Markdown 仍保持 820px 阅读栏宽）；宽表在矢量 PDF 中按整表宽度排版为可选文字（纵向仍由打印引擎分页），只有超过前端 55 in 上限的超宽表才回退栅格 PDF（自然宽度、每页方向自适应；超长表按行分页，保证所有列完整）。HTML 笔记的 HTML 导出按 UTF-8 写出并规范化遗留 charset；PNG 仍由隐藏 Tauri WebView 整页渲染——最高 3×（目标约 48k 设备像素高），CSS 高度超过 12000px 时按垂直段截取（单张模式以 30000/h 为缩放上限），Rust `png` 拼接为单图。
 6. 保存导出文件：前端把字节交给 `save_export`；Rust 打开系统保存对话框，只有用户选中的路径会被写入。
 
 ## 前端模块
 
 | 文件 | 职责 |
 | --- | --- |
-| `main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`，多库时键为 `<vault>\0<path>`）；库根节点折叠状态存 `rustmd-collapsed-vaults`）、目录范围开关（`rustmd-include-subfolders`：默认仅当前目录，打开后含子树）、排序（键 + 升/降序）、可拖动的文件夹/标签 ↔ 笔记列表分隔条（`rustmd-nav-height`，双击重置）、左栏宽度手柄（`rustmd-sidebar-width`，220–680px）、编辑/预览分隔条（`rustmd-split`，20–80%）、顶栏“恢复默认布局宽度”（`layout.js` 负责边界计算）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`，最多 20 个、可钉死置顶）、多库同开（`rustmd-multi-vault`，按库聚合笔记与分组文件夹树）、MD/HTML/CSV/TXT/JSON 格式徽标（列表与顶栏一致）及状态栏编码标签与标签编辑器切换、自动折行/全屏（`F11`）状态；每条笔记在内存中带 `vault` 绝对目录，读写命令按该目录执行 |
-| `api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
-| `i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
-| `notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`folderInScope`、`countTags`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
-| `layout.js` | 侧栏宽度（220–680px，视口 42% 上限）与编辑/预览比例（20–80%）的纯边界函数；无 DOM，可单测 |
-| `dataformat.js` | `parseDelimited`（引号/换行/转义）、`detectDelimiter`、`buildTextRows`（制表符列）、`analyzeJson`/`jsonStats`、数字列对齐；无 DOM，可单测 |
-| `dataview.js` / `dataview.css` | CSV 对齐表格、TXT 制表符列 + 隔行底色/列文字色、JSON 可折叠检查器；纯 DOM 构建，CSS 同时供应用内预览与独立 HTML 导出使用 |
-| `vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限 20、置顶标记（不参与淘汰）、置顶优先显示、显示名；无 DOM，可单测 |
-| `markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
-| `preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；CSV/TXT/JSON 分派到 `dataview.js`；本地图片在导出前 data URL 内联 |
-| `export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；Markdown/窄数据表 PDF 优先 `exportPdfVector`（WebView 打印，矢量文字），宽数据表或失败时回退扩宽舞台的图片 PDF；HTML 笔记 PDF 走 `print_html_note`；长 Markdown 由 `exportgeom.js` 自适应（常规 0.25–3×，极端尺寸更低），同时限制宽/高/总像素面积，超宽表按画布宽度再次降采样；栅格 PDF 每页按自身宽高选择方向 |
-| `editor.js` | CodeMirror 6、Markdown/HTML/JSON 语法（Compartment 按笔记切换，CSV/TXT 用纯文本）、HTML 标签/属性/内嵌 JS/CSS 与 JSON 配色、自动折行 Compartment |
-| `imgutil.js` | bytes→data URL、魔数 MIME 嗅探（SVG/ICO/AVIF 兜底） |
-| `selftest.js` | dev-only E2E；`main.js` 在 `import.meta.env.DEV` 下动态 import |
+| `frontend/src/main.js` | 状态、DOM 接线、保存队列、冲突重试、未保存守卫、搜索序列号、文件夹树渲染（默认折叠，展开集合存 `rustmd-expanded-folders`，多库时键为 `<vault>\0<path>`）；库根节点折叠状态存 `rustmd-collapsed-vaults`）、目录范围开关（`rustmd-include-subfolders`：默认仅当前目录，打开后含子树）、排序（键 + 升/降序）、可拖动的文件夹/标签 ↔ 笔记列表分隔条（`rustmd-nav-height`，双击重置）、左栏宽度手柄（`rustmd-sidebar-width`，220–680px）、编辑/预览分隔条（`rustmd-split`，20–80%）、顶栏“恢复默认布局宽度”（`layout.js` 负责边界计算）、新建/导出菜单、最近笔记库切换器（`rustmd-recent-dirs`，最多 20 个、可钉死置顶）、多库同开（`rustmd-multi-vault`，按库聚合笔记与分组文件夹树）、MD/HTML/CSV/TXT/JSON 格式徽标（列表与顶栏一致）及状态栏编码标签与标签编辑器切换、自动折行/全屏（`F11`）状态；每条笔记在内存中带 `vault` 绝对目录，读写命令按该目录执行 |
+| `frontend/src/api.js` | 唯一 Tauri 桥；浏览器 mock 必须与 Rust 的校验/冲突/搜索行为保持一致；`setFullscreen` / `isFullscreen` 走 Tauri window API，浏览器模式走 Fullscreen API |
+| `frontend/src/shared/i18n.js` | 中英词典、系统语言检测、`rustmd-lang` 持久化、`t()` / `data-i18n*` 静态翻译 |
+| `frontend/src/shared/notelist.js` | `fileNameOf`、`noteKindOf`、`noteStemOf`、`sortNotes`、`filterNotes`、`folderInScope`、`countTags`、`buildFolderTree`、`flattenFolderTree`；无 DOM，可单测 |
+| `frontend/src/layout.js` | 侧栏宽度（220–680px，视口 42% 上限）与编辑/预览比例（20–80%）的纯边界函数；无 DOM，可单测 |
+| `frontend/src/shared/dataformat.js` | `parseDelimited`（引号/换行/转义）、`detectDelimiter`、`buildTextRows`（制表符列）、`analyzeJson`/`jsonStats`、数字列对齐；无 DOM，可单测 |
+| `frontend/src/shared/dataview.js` / `dataview.css` | CSV 对齐表格、TXT 制表符列 + 隔行底色/列文字色、JSON 可折叠检查器；纯 DOM 构建，CSS 同时供应用内预览与独立 HTML 导出使用 |
+| `frontend/src/vaultlist.js` | 最近笔记库目录的纯函数：路径规范化、去重、MRU 上限 20、置顶标记（不参与淘汰）、置顶优先显示、显示名；无 DOM，可单测 |
+| `frontend/src/shared/markdown.js` | `splitCodeSegments`、`splitInlineCode`、`protectMath`、`sourceHasMath`；无 DOM，可单测 |
+| `frontend/src/shared/preview.js` | marked、DOMPurify、highlight.js、Mermaid、MathJax、`rmd` 图片/资源改写、Markdown/HTML 外链拦截、HTML 导出；HTML 笔记走 sandbox iframe 原生预览，导出走隐藏 WebView 截图；CSV/TXT/JSON 分派到 `dataview.js`；本地图片/样式/脚本在导出前 data URL 内联 |
+| `frontend/src/export.js` | 离屏舞台、远程/本地图片内联、html2canvas、PNG、多页 PDF；Markdown/数据表 PDF 优先 `exportPdfVector`（WebView 打印，矢量文字；宽表请求自定义宽纸张，仅超过 55 in 上限才回退），HTML 笔记 PDF 走 `print_html_note`；长 Markdown 由 `exportgeom.js` 自适应（常规 0.25–3×，极端尺寸更低），同时限制宽/高/总像素面积；栅格 PDF 超长表按行分页、每页按自身宽高选择方向 |
+| `frontend/src/shared/editor.js` | CodeMirror 6、Markdown/HTML/JSON 语法（Compartment 按笔记切换，CSV/TXT 用纯文本）、HTML 标签/属性/内嵌 JS/CSS 与 JSON 配色、自动折行 Compartment |
+| `frontend/src/shared/imgutil.js` | bytes→data URL、魔数 MIME 嗅探（SVG/ICO/AVIF 兜底） |
+| `frontend/src/selftest.js` | dev-only E2E；`main.js` 在 `import.meta.env.DEV` 下动态 import |
 
 ## 后端命令
 
@@ -83,7 +87,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 | `html_preview_finish` | `{ payload: { token, dataUrl?, segments?, error?, cssWidth?, cssHeight?, width?, height?, ready?, scrollWidth? } }` | `()` | 隐藏 WebView 回传 PNG/分段，或打印模式回报就绪与布局宽度；必须来自 `html-render-{token}` 窗口；失败也唤醒等待方 |
 | `set_html_preview` | `html` | `token` | 注册 sandbox iframe 预览文档（随机 `p-*`）；仅主窗口允许；最多保留 8 份 |
 | `save_export` | `defaultName, filterName, extensions, data` | `string?` | Rust 打开保存对话框并写文件；async 命令 + `spawn_blocking`（dialog 插件禁止主线程阻塞） |
-| `print_note_pdf` | `title` | `bytes` | 把**当前窗口文档**交给平台打印引擎（Windows WebView2 / macOS WKWebView / Linux WebKitGTK）打成矢量 PDF；A4 分页；Windows 带标题页眉 + 页码页脚，macOS/Linux 用 `stamp_page_numbers` 补页码；macOS/Linux 只写系统临时文件并删除；不接收输出路径 |
+| `print_note_pdf` | `title, pageWidthIn?, pageHeightIn?` | `bytes` | 把**当前窗口文档**交给平台打印引擎（Windows WebView2 / macOS WKWebView / Linux WebKitGTK）打成矢量 PDF；`pageWidthIn`/`pageHeightIn` 为可选纸张尺寸（英寸，Rust 夹取 3–60，缺省 A4），宽数据表用它打印整张宽纸；Windows 带标题页眉 + 页码页脚，macOS/Linux 用 `stamp_page_numbers` 补页码；macOS/Linux 只写系统临时文件并删除；不接收输出路径 |
 | `print_html_note` | `dir, path, html, title` | `bytes` | 在隐藏 `html-render-*` 窗口加载 HTML 笔记（`mode=print`），等字体/图表/图片就绪后经平台打印引擎输出矢量 PDF；固定宽度页面按 `scrollWidth` 缩放；页码与 Markdown 一致 |
 | `fetch_image_bytes` | `url` | `{bytes, mime}` | 仅 http(s)；SSRF/重定向防护；async 命令 + 阻塞线程池，避免网络等待冻结 UI |
 | `set_notes_root` | `dir` | `()` | 注册一个 `rmd` 协议与 `read_local_image` 的根（自测/单库兼容） |
@@ -104,7 +108,7 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 - `walk`/`walk_folders` 用 `symlink_metadata` + Windows reparse point 属性跳过符号链接/junction，避免环和越界读取。
 - `resolve_vault_file` 对 `rmd` 请求做同样的 canonicalize + 前缀检查；`resolve_vault_file_in_roots` 逐个检查所有已注册 root，只服务位于至少一个 root 下的文件。
 - `serve_rmd` 的路径契约：URL 路径去掉**恰好一个**前导 `/` 后 percent-decode，再要求绝对路径；Unix `/home/...` 用 `rmd://localhost//home/...`，Windows `C:/...` 用 `http://rmd.localhost/C%3A/...`，UNC 用 `//server/share/...`。
-- `rmd` 的 Origin 白名单：无 Origin 的普通 `<img>/<link>/<script>` 允许；带 Origin 的请求只允许应用自身 webview（Tauri / 本地 dev server），以及预览 iframe/隐藏窗口的 `font`/`script`/`style` 子资源（`Sec-Fetch-Dest`），预览源按精确 host 匹配（`rmdhtml.localhost` / null），前缀相近的域名不放行。`fetch`/XHR（空 dest）、文档读取和远程 iframe 一律 403。`Access-Control-Allow-Origin` 只回显允许的 Origin，不再 `*`；`rmd` 返回的 HTML/SVG 文档加 sandbox CSP + `nosniff`。预览/导出的本地 CSS/JS 优先内联，减少对这条回退通道的依赖。
+- `rmd` 的 Origin 白名单：无 Origin 的普通 `<img>/<link>/<script>` 允许；带 Origin 的请求只允许应用自身 webview 以及预览 iframe/隐藏窗口的 `font`/`script`/`style` 子资源（`Sec-Fetch-Dest`）。发布版应用来源只认 Tauri 源（`tauri://localhost`、`http(s)://tauri.localhost`）；任意 `http://127.0.0.1:<port>` / `http://localhost:<port>` 只在 debug 构建放行（Vite 端口随机），避免本机任意网页 CORS 读取已打开笔记库。预览源按精确 host 匹配（`rmdhtml.localhost` / null），前缀相近的域名不放行。`fetch`/XHR（空 dest）、文档读取和远程 iframe 一律 403。`Access-Control-Allow-Origin` 只回显允许的 Origin，不再 `*`；`rmd` 返回的 HTML/SVG 文档加 sandbox CSP + `nosniff`。预览/导出的本地 CSS/JS/图片优先内联，减少对这条回退通道的依赖。
 - 导出的目标路径不来自前端命令参数，而是 `save_export` 内部的原生对话框结果。`print_note_pdf` 只打印当前窗口已渲染的文档（由 `export.js` 的离屏舞台 + `body.rmd-printing` 决定），`print_html_note` 只打印隐藏渲染窗口里的笔记文档；两者都不接收输出路径。Windows 直接在内存里取 PDF；macOS/Linux 的打印引擎只能写文件，因此写到 `std::env::temp_dir()` 下的随机名临时文件，读回后立即删除。
 - 自测写文件使用 debug-only 命令，根固定为 `RUSTMD_SELFTEST_OUT`（默认系统临时目录）。
 
@@ -114,9 +118,9 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 - 文本笔记按 BOM → 合法 UTF-8 → GBK → GB18030 的顺序检测编码并解码；`NoteContent.encoding` / `NoteMeta.encoding` 返回标签，状态栏展示。保存时按原始编码重新编码并恢复 BOM；重复 UTF-8 BOM 归一化，不会累积。GBK 文件写入 GB18030 可表示的四字节字符（emoji）时兼容升级，保存后状态栏同步。其余原编码无法表示的字符直接报错，避免静默转义。检测顺序很重要：GBK 几乎接受所有 ASCII 字节，先试 GBK 会把普通英文笔记误判；极少数字节序列同时是合法 UTF-8 和 GBK，按 UTF-8 优先（残余歧义见 SECURITY）。纯 GB18030 四字节序列通过字节形态识别。
 - 仅 Markdown 笔记（`.md`）识别文件开头的 `---` 块，闭合行 `---` 或 `...`。
 - HTML（`.html` / `.htm`）、CSV、TXT、JSON 没有 front matter 和标签：`read_note` 返回整篇源码（去 BOM、统一 LF），`compose_html` 保存时恢复原 CRLF/LF，绝不插入 `tags:`；`save_note_impl` 负责原始编码和 BOM。HTML 源码导出会规范化遗留 charset。
-- CSV/TXT/JSON 的列表标题使用文件名；CSV 支持引号字段、内嵌换行、逗号/制表符/分号/竖线分隔符嗅探、列宽提示、数字/日期/货币/布尔列智能对齐（表头与数据一致）、隔行底色和按列文字色。TXT 按制表符拆列对齐并保留行内空格，跳过前置整行说明；仅当第一行多列全为文本且后续行含数字/日期/布尔时才作为表头，含数值的首行按数据行处理；JSON 展示统计信息、类型着色、类型/数量标签和可折叠检查器，非法 JSON 显示错误与原文。数据视图不设行/列/节点上限；CSV/TXT 共用同一套列宽/对齐/表头检测逻辑，窄表按内容收缩，宽表使用预览区全宽并提供上下同步横向滚动条。
-- 所有数据预览都通过 `textContent`/DOM API 构建，不经过 `innerHTML`；HTML 导出复用同一份 `dataview.css` 及其主题变量（`--font-body`、`--card` 等），因此屏幕与导出外观一致；Markdown HTML 导出还会内联当前主题的 highlight.js CSS。导出舞台和 `@media print` 会解除预览的 `overflow`/`max-height`，避免 PDF 分页被单块裁剪；`@media print` 强制浅色变量并使用 `print-color-adjust: exact`，保证深色主题下的 PDF 在 macOS/Linux（不打印页面背景）也可读。
-- HTML 笔记的预览在 `rmdhtml` 文档的 sandbox iframe 中运行（null origin，无 `allow-same-origin`，`allow-scripts allow-forms`），按原生 WebView 渲染；导出在隐藏的独立 Tauri WebView 窗口中运行，所有保险库命令按窗口 label 拒绝该窗口，只允许回传截图。相对资源通过注入的 `rmd` base 解析（MIME 覆盖 CSS/JS/字体/图片）。
+- CSV/TXT/JSON 的列表标题使用文件名；CSV 支持引号字段、内嵌换行、逗号/制表符/分号/竖线分隔符嗅探、列宽提示、数字/日期/货币/布尔列智能对齐（表头与数据一致）、隔行底色和按列文字色。CSV 直接把第一行当作表头；TXT 按制表符拆列对齐并保留行内空格，跳过前置整行说明，且仅当第一行多列全为文本、后续行含数字/日期/布尔时（`looksLikeHeaderRow`）才把该行作为表头，含数值的首行按数据行处理；JSON 展示统计信息、类型着色、类型/数量标签和可折叠检查器，非法 JSON 显示错误与原文。数据视图不设行/列/节点上限；CSV/TXT 共用列宽/对齐逻辑但表头判定不同，窄表按内容收缩，宽表使用预览区全宽并提供上下同步横向滚动条。
+- 所有数据预览都通过 `textContent`/DOM API 构建，不经过 `innerHTML`；HTML 导出复用同一份 `dataview.css` 及其主题变量（`--font-body`、`--card` 等），因此屏幕与导出外观一致；Markdown HTML 导出还会内联当前主题的 highlight.js CSS。保存的独立数据 HTML 文件在屏幕上使用视口高度的 `body.data-export` 单列布局（表格在卡片内滚动，JSON/非法 JSON 原文也在卡片内滚动），打印时 `@media print` 恢复流式分页；捕获/打印用的 `.export-stage` 则始终按内容撑开，并解除预览的 `overflow`/`max-height`，避免 PDF 分页被单块裁剪。`@media print` 强制浅色变量并使用 `print-color-adjust: exact`，保证深色主题下的 PDF 在 macOS/Linux（不打印页面背景）也可读，同时把数据表字号固定为 13px，避免打印时 `vw` 按纸张宽度放大列宽、裁掉最后一列。
+- HTML 笔记的预览在 `rmdhtml` 文档的 sandbox iframe 中运行（null origin，无 `allow-same-origin`，`allow-scripts allow-forms`），按原生 WebView 渲染；导出在隐藏的独立 Tauri WebView 窗口中运行，所有保险库命令按窗口 label 拒绝该窗口，只允许回传截图。相对 CSS/JS/图片会先由受信任的父页面通过 `read_local_asset`/`read_local_image` 读取并内联（`read_local_image` 仅图片、`read_local_asset` 仅 `.css`/`.js`/`.mjs`）；字体等剩余资源通过注入的 `rmd` base 解析，`rmd` 只是回退协议而不是内联器。
 - 超长 HTML 导出按垂直段（默认每段 CSS 高度约 16000/scale，不超过 canvas 高度）截取，Rust `png` crate 校验格式后拼接为单张 PNG；预览保持单个原生 iframe，速度快且文字清晰。
 - HTML 标题优先取 `<title>`，其次第一个 `<h1>`，最后文件名；摘要和搜索使用 `html_to_text` 提取的可见文本。
 - 读取时解析 `tags:`（行内 `a, b`、`["a,b", c]`、块列表 `- a`），忽略嵌套 key 下的 `tags:`。
@@ -132,18 +136,18 @@ rustmd 以主窗口为交互界面；HTML 预览使用主窗口内的 sandbox if
 - `restoreMath` 在文本节点里把 token 换成 `<span class="rm-math">`，MathJax 逐公式回退，坏公式不会拖垮整篇。
 - Mermaid `securityLevel: 'strict'`；SVG 由库生成，不来自笔记原文。
 - MathJax/Mermaid 生成 DOM 后再跑 `sanitizeRenderedDom`：移除脚本/iframe、`on*`、危险链接和 mermaid 样式里的外部 URL。
-- 本地图片改写为 `rmd` URL；导出时再内联 data URL，保证 HTML/PNG/PDF 自包含。
+- 本地图片先改写为笔记库内的绝对路径：Markdown/数据笔记的独立 HTML 导出、PNG 与 PDF 捕获都会把本地图片内联为 data URL（自包含）；**HTML 笔记的独立 `.html` 文件导出不是自包含的**：`main.js` 把笔记源码按 UTF-8 原样写出（只规范化遗留 charset），不会复制本地 CSS/JS/图片，脱离笔记库后这些相对资源会失效（README 已说明）。
 - 外链点击被拦截，经 `opener` 插件交给系统浏览器。
 
 ## 构建与产物
 
 - `frontend/dist` 由 Vite 生成；`npx tauri build` 将其嵌入可执行文件。
-- `cargo test` 与 `npx tauri build --no-bundle` 不需要打包器；发布 workflow 再按平台生成 zip/deb/AppImage/dmg。
+- `cargo test --workspace` 与 `npx tauri build --no-bundle` 不需要打包器；发布 workflow 再按平台生成 zip/deb/AppImage/dmg。
 - `npm run check` 是本地与 CI 的统一质量门禁。
 
 ## 设计取舍
 
-- **单文件 Rust**：命令、路径安全、协议和单测在一屏内可审；规模变大时再按 `paths/`、`notes/`、`vault/` 拆分。
-- **无框架前端**：状态集中在一个对象里，纯逻辑拆到可单测模块（`notelist.js`、`vaultlist.js`、`markdown.js`）。
+- **分层工作区**：平台无关的路径/编码/front matter/扫描/原子写放在 `crates/rustmd-core`，`src/main.rs` 只保留 Tauri 命令、协议、打印与窗口胶水；两边可以独立测试（`cargo test --workspace`），core 也能在不带桌面壳的情况下复用。
+- **无框架前端**：状态集中在一个对象里，纯逻辑拆到可单测模块（`shared/notelist.js`、`vaultlist.js`、`shared/markdown.js` 等）。
 - **浏览器 mock**：不需要 Rust 就能复现白屏/UI 问题；代价是必须持续与真实后端对齐。
 - **examples/ 兼作夹具**：示例笔记同时是渲染/导出回归样本。

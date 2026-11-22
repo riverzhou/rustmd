@@ -1,4 +1,4 @@
-// Generates Tauri app icons (PNG + ICO) with zero external dependencies.
+// Generates Tauri app icons (PNG + ICO + ICNS) with zero external dependencies.
 // Usage: node scripts/gen-icons.mjs
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';

@@ -94,21 +94,28 @@ for (const rel of ['licenses/LICENSE-MIT', 'licenses/LICENSE-APACHE']) {
 }
 
 // --- 5. the future shared frontend layer stays Tauri-free ---
+// Every source file in the reusable layer carries its permissive SPDX header,
+// stylesheets included: `dataview.css` is part of the reusable renderer and is
+// embedded in exported documents, not part of the GPL shell.
 const sharedDir = 'frontend/src/shared';
+const JS_SPDX = '// SPDX-License-Identifier: MIT OR Apache-2.0';
+const CSS_SPDX = '/* SPDX-License-Identifier: MIT OR Apache-2.0 */';
 let sharedFiles = 0;
 const walkJs = (dir) => {
   for (const entry of readdirSync(path.join(root, dir), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
     if (entry.isDirectory()) walkJs(rel);
-    else if (/\.m?js$/.test(entry.name)) {
+    else if (/\.m?js$/.test(entry.name) || entry.name.endsWith('.css')) {
       sharedFiles += 1;
       const raw = read(rel);
-      const text = stripComments(raw);
-      if (/@tauri-apps|__TAURI_INTERNALS__|\binvoke\s*\(/.test(text)) {
-        errors.push(`${rel}: shared renderer code must not call Tauri directly`);
-      }
-      if (!raw.startsWith('// SPDX-License-Identifier: MIT OR Apache-2.0')) {
+      if (!raw.startsWith(JS_SPDX) && !raw.startsWith(CSS_SPDX)) {
         errors.push(`${rel}: missing permissive SPDX header`);
+      }
+      if (/\.m?js$/.test(entry.name)) {
+        const text = stripComments(raw);
+        if (/@tauri-apps|__TAURI_INTERNALS__|\binvoke\s*\(/.test(text)) {
+          errors.push(`${rel}: shared renderer code must not call Tauri directly`);
+        }
       }
     }
   }
@@ -124,5 +131,5 @@ if (errors.length) {
   process.exit(1);
 }
 notes.push(`${rustFiles.length} core Rust files`);
-notes.push(sharedFiles ? `${sharedFiles} shared JS files` : 'shared JS layer not extracted yet');
+notes.push(sharedFiles ? `${sharedFiles} shared source files` : 'shared layer not extracted yet');
 console.log(`license boundary OK (${notes.join(', ')})`);

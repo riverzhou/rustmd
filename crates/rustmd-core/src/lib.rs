@@ -247,7 +247,13 @@ pub struct FrontMatterDoc {
     pub bom: bool,
     pub line_ending: &'static str,
     pub frontmatter: Option<Vec<String>>,
+    /// Body after the front matter, LF-normalized. The blank lines that
+    /// followed the closing delimiter stay at the start of the body so a
+    /// read/save round-trip preserves them.
     pub body: String,
+    /// Closing delimiter that was present (`---` or `...`); `"---"` when there
+    /// is no front matter. Saving restores the form the file used.
+    pub terminator: &'static str,
 }
 
 pub fn line_ending_of(text: &str) -> &'static str {
@@ -271,46 +277,76 @@ pub fn split_document(text: &str) -> FrontMatterDoc {
     };
     let line_ending = line_ending_of(rest);
     let normalized = normalize_newlines(rest);
-    let mut lines = normalized.split('\n');
-    let first = lines.next().unwrap_or("");
-    if first.trim_end() != "---" {
-        return FrontMatterDoc {
-            bom,
-            line_ending,
-            frontmatter: None,
-            body: normalized,
-        };
-    }
-    let rest_lines: Vec<&str> = lines.collect();
-    let Some(end_idx) = rest_lines
-        .iter()
-        .position(|l| matches!(l.trim_end(), "---" | "..."))
-    else {
-        return FrontMatterDoc {
-            bom,
-            line_ending,
-            frontmatter: None,
-            body: normalized,
-        };
-    };
-    let frontmatter = rest_lines[..end_idx]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let mut body_start = end_idx + 1;
-    while body_start < rest_lines.len() && rest_lines[body_start].is_empty() {
-        body_start += 1;
-    }
-    FrontMatterDoc {
+    let no_frontmatter = |body: String| FrontMatterDoc {
         bom,
         line_ending,
-        frontmatter: Some(frontmatter),
-        body: rest_lines[body_start..].join("\n"),
+        frontmatter: None,
+        body,
+        terminator: "---",
+    };
+    let Some(first_end) = normalized.find('\n') else {
+        return no_frontmatter(normalized);
+    };
+    if normalized[..first_end].trim_end() != "---" {
+        return no_frontmatter(normalized);
     }
+    // Walk the remaining lines once. The old implementation collected every
+    // line of the file into a Vec before looking for the delimiter, so a
+    // 32 MB note with a front-matter opener allocated ~1.6 GB; only the front
+    // matter itself is collected now.
+    let mut frontmatter = Vec::new();
+    let mut cursor = first_end + 1;
+    while cursor <= normalized.len() {
+        let end = normalized[cursor..]
+            .find('\n')
+            .map(|offset| cursor + offset)
+            .unwrap_or(normalized.len());
+        let line = &normalized[cursor..end];
+        let terminator = match line.trim_end() {
+            "---" => Some("---"),
+            "..." => Some("..."),
+            _ => None,
+        };
+        if let Some(terminator) = terminator {
+            // The blank line(s) between the closing delimiter and the text are
+            // the front-matter separator, not body content: skipping them keeps
+            // a stable one-blank-line form instead of growing a blank line on
+            // every save. (Blank lines inside the body are preserved.)
+            let mut body_start = if end < normalized.len() { end + 1 } else { end };
+            while body_start < normalized.len() && normalized.as_bytes()[body_start] == b'\n' {
+                body_start += 1;
+            }
+            return FrontMatterDoc {
+                bom,
+                line_ending,
+                frontmatter: Some(frontmatter),
+                body: normalized[body_start..].to_string(),
+                terminator,
+            };
+        }
+        frontmatter.push(line.to_string());
+        if end >= normalized.len() {
+            break;
+        }
+        cursor = end + 1;
+    }
+    // An unclosed block is not front matter; the whole file is the body.
+    no_frontmatter(normalized)
 }
 
 pub fn starts_with_whitespace(s: &str) -> bool {
     s.chars().next().is_some_and(|c| c.is_whitespace())
+}
+
+/// True when a quote at `idx` starts a YAML scalar (start of the value, or
+/// after `[`, `,` or `:` plus whitespace). An apostrophe inside a plain scalar
+/// (`tags: it's fine`) must not open a quoted string: doing so hid the trailing
+/// comment and merged comma-separated tags.
+fn quote_starts_scalar(s: &str, idx: usize) -> bool {
+    s[..idx]
+        .chars()
+        .next_back()
+        .is_none_or(|c| c.is_whitespace() || matches!(c, '[' | ',' | ':'))
 }
 
 /// Strip a YAML comment (` #…`) that is outside a quoted scalar.
@@ -331,7 +367,7 @@ pub fn strip_yaml_comment(s: &str) -> &str {
                 }
             }
             None => {
-                if ch == '"' || ch == '\'' {
+                if (ch == '"' || ch == '\'') && quote_starts_scalar(s, idx) {
                     quote = Some(ch);
                 } else if ch == '#' {
                     let before = s[..idx].chars().next_back();
@@ -365,7 +401,7 @@ pub fn split_top_level_commas(s: &str) -> Vec<&str> {
                 }
             }
             None => {
-                if ch == '"' || ch == '\'' {
+                if (ch == '"' || ch == '\'') && quote_starts_scalar(s, i) {
                     quote = Some(ch);
                 } else if ch == ',' {
                     parts.push(&s[start..i]);
@@ -432,6 +468,19 @@ pub fn push_unique(tags: &mut Vec<String>, tag: String) {
 
 pub fn parse_tags(lines: &[String]) -> Vec<String> {
     let mut tags: Vec<String> = Vec::new();
+    // Dedupe through a set: a linear `contains` per tag made a large tag list
+    // quadratic (32k tags took ~0.5 s on the list path). A note with more than
+    // 1000 tags, or one absurdly long tag, is malicious front matter, so the
+    // result is bounded instead of being serialized into every list payload.
+    const MAX_TAGS: usize = 1000;
+    const MAX_TAG_CHARS: usize = 256;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut push = |tags: &mut Vec<String>, tag: String| {
+        let tag = truncate_chars(tag.trim(), MAX_TAG_CHARS);
+        if !tag.is_empty() && tags.len() < MAX_TAGS && seen.insert(tag.clone()) {
+            tags.push(tag);
+        }
+    };
     let mut i = 0;
     while i < lines.len() {
         let line = &lines[i];
@@ -451,7 +500,7 @@ pub fn parse_tags(lines: &[String]) -> Vec<String> {
                     }
                     if let Some(item) = l.strip_prefix("- ") {
                         let tag = parse_yaml_scalar(strip_yaml_comment(item));
-                        push_unique(&mut tags, tag);
+                        push(&mut tags, tag);
                         j += 1;
                     } else if l == "-" {
                         j += 1;
@@ -463,7 +512,7 @@ pub fn parse_tags(lines: &[String]) -> Vec<String> {
                 continue;
             }
             for tag in parse_tag_list(value) {
-                push_unique(&mut tags, tag);
+                push(&mut tags, tag);
             }
         }
         i += 1;
@@ -488,32 +537,54 @@ pub fn render_tags_line(tags: &[String]) -> String {
 }
 
 /// Replace (or insert/remove) only the `tags:` entry in a front matter block,
-/// preserving every other key and its comment.
+/// preserving every other key and its comment. Duplicate top-level `tags:`
+/// keys (invalid YAML, but a vault is untrusted) are all rewritten/removed:
+/// touching only the first one made a removed tag reappear on the next read.
 pub fn set_tags_in_lines(lines: &mut Vec<String>, tags: &[String]) {
-    let Some(tags_idx) = lines
-        .iter()
-        .position(|l| !starts_with_whitespace(l) && l.trim_start().starts_with("tags:"))
-    else {
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if !starts_with_whitespace(&lines[i]) && lines[i].trim_start().starts_with("tags:") {
+            // Consume an inline value plus the block list that follows it.
+            let mut end = i + 1;
+            while end < lines.len() {
+                let t = lines[end].trim();
+                if t.is_empty() || t == "-" || t.starts_with("- ") {
+                    end += 1;
+                } else {
+                    break;
+                }
+            }
+            ranges.push((i, end));
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    if ranges.is_empty() {
         if !tags.is_empty() {
             lines.push(render_tags_line(tags));
         }
         return;
-    };
-    // Consume an inline value plus an optional block list that follows it.
-    let mut end = tags_idx + 1;
-    while end < lines.len() {
-        let t = lines[end].trim();
-        if t.is_empty() || t == "-" || t.starts_with("- ") {
-            end += 1;
-        } else {
-            break;
-        }
     }
-    if tags.is_empty() {
-        lines.drain(tags_idx..end);
+    let replacement = if tags.is_empty() {
+        None
     } else {
-        lines.splice(tags_idx..end, [render_tags_line(tags)]);
+        Some(render_tags_line(tags))
+    };
+    let mut out = Vec::with_capacity(lines.len());
+    let mut cursor = 0;
+    for (index, (start, end)) in ranges.iter().enumerate() {
+        out.extend_from_slice(&lines[cursor..*start]);
+        if index == 0
+            && let Some(line) = &replacement
+        {
+            out.push(line.clone());
+        }
+        cursor = *end;
     }
+    out.extend_from_slice(&lines[cursor..]);
+    *lines = out;
 }
 
 /// Parse (tags, body). Kept as the single entry point used by the read paths.
@@ -533,26 +604,26 @@ pub fn parse_frontmatter(text: &str) -> (Vec<String>, String) {
 /// custom field.
 pub fn compose_note(existing: Option<&str>, tags: &[String], body: &str) -> String {
     let normalized_body = normalize_newlines(body);
-    let (bom, line_ending, frontmatter) = match existing {
+    // `existing` must be the DECODED text (BOM already stripped): the BOM is
+    // restored by `encode_note_text`, not here. Passing raw bytes-decoded text
+    // with a leading U+FEFF would produce two BOMs.
+    let (bom, line_ending, frontmatter, terminator) = match existing {
         Some(text) => {
             let doc = split_document(text);
-            (doc.bom, doc.line_ending, doc.frontmatter)
+            (doc.bom, doc.line_ending, doc.frontmatter, doc.terminator)
         }
-        None => (false, "\n", None),
+        None => (false, "\n", None, "---"),
     };
-
+    let had_frontmatter = frontmatter.is_some();
     let mut lines = frontmatter.unwrap_or_default();
     set_tags_in_lines(&mut lines, tags);
     let wrote_frontmatter = !lines.is_empty();
 
-    let mut body_out = if line_ending == "\r\n" {
+    let body_out = if line_ending == "\r\n" {
         normalized_body.replace('\n', "\r\n")
     } else {
         normalized_body
     };
-    if wrote_frontmatter && !body_out.is_empty() && !body_out.ends_with('\n') {
-        body_out.push_str(line_ending);
-    }
 
     let mut out = String::new();
     if bom {
@@ -565,13 +636,28 @@ pub fn compose_note(existing: Option<&str>, tags: &[String], body: &str) -> Stri
             out.push_str(line);
             out.push_str(line_ending);
         }
-        out.push_str("---");
+        out.push_str(terminator);
         out.push_str(line_ending);
-        if !body_out.is_empty() {
-            out.push_str(line_ending);
+        if had_frontmatter {
+            // One blank separator, then the body exactly as the editor has it
+            // (no forced trailing newline: a file that ended without one keeps
+            // ending without one).
+            if !body_out.is_empty() {
+                out.push_str(line_ending);
+            }
+            out.push_str(&body_out);
+        } else {
+            // Front matter is being added in front of a previously untagged
+            // body: keep one blank line between the block and the text.
+            if !body_out.is_empty() && !body_out.starts_with('\n') && !body_out.starts_with("\r\n")
+            {
+                out.push_str(line_ending);
+            }
+            out.push_str(&body_out);
         }
+    } else {
+        out.push_str(&body_out);
     }
-    out.push_str(&body_out);
     out
 }
 
@@ -721,22 +807,37 @@ pub fn encode_note_text(text: &str, encoding: TextEncoding) -> Result<Vec<u8>, S
 /// list. Data notes deliberately keep their file stem as the title: a CSV
 /// header is data, not a document title.
 pub fn data_snippet(text: &str, max_chars: usize) -> String {
+    // Build at most `max_chars` characters and collapse whitespace as it is
+    // copied: the old version joined the whole first block and then collected
+    // it into a Vec<char> just to cut 100 characters (a 32 MB single-line note
+    // allocated ~128 MB on the list path).
     let mut out = String::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(trimmed);
-        if out.chars().count() >= max_chars {
-            break;
+    let mut count = 0usize;
+    let mut truncated = false;
+    'outer: for line in text.lines() {
+        for word in line.split_whitespace() {
+            if count > 0 {
+                if count >= max_chars {
+                    truncated = true;
+                    break 'outer;
+                }
+                out.push(' ');
+                count += 1;
+            }
+            for ch in word.chars() {
+                if count >= max_chars {
+                    truncated = true;
+                    break 'outer;
+                }
+                out.push(ch);
+                count += 1;
+            }
         }
     }
-    let collapsed = out.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_chars(&collapsed, max_chars)
+    if truncated {
+        out.push('…');
+    }
+    out
 }
 
 // ---------------- HTML notes ----------------
@@ -832,17 +933,14 @@ pub fn decode_html_entities(raw: &str) -> String {
     while let Some(pos) = rest.find('&') {
         out.push_str(&rest[..pos]);
         let tail = &rest[pos..];
-        let Some(end) = tail.find(';') else {
-            out.push_str(tail);
-            return out;
-        };
-        // An ampersand followed by an implausibly long run is plain text, not
-        // an entity; emit it and continue scanning from the next character.
-        if end > 12 {
+        // Only look at the next 13 bytes: an entity name is short, and a `;`
+        // further away is plain text. Searching the whole tail for every `&`
+        // was quadratic on a long run of ampersands.
+        let Some(end) = tail.bytes().take(13).position(|b| b == b';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
-        }
+        };
         let entity = &tail[1..end];
         let decoded = match entity {
             "amp" => Some('&'),
@@ -929,6 +1027,10 @@ pub fn html_to_text(html: &str) -> String {
                     }
                     continue;
                 }
+                // No closing tag: a browser treats the rest as raw text, so
+                // stop here. Falling through made every unclosed opener scan
+                // the whole remaining string (a 256 KB note took 6 s).
+                break;
             }
             if matches!(
                 lower.as_str(),
@@ -1013,11 +1115,72 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     out
 }
 
+/// Copy of `html` with comments and `<script>/<style>` bodies removed, so a
+/// `<title>` that only appears in a comment or a script string cannot become
+/// the note's title.
+fn html_title_source(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            if html[i..].starts_with("<!--") {
+                match html[i + 4..].find("-->") {
+                    Some(end) => {
+                        i += 4 + end + 3;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            let name_start = j;
+            while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
+                j += 1;
+            }
+            if name_start < j {
+                let name = html[name_start..j].to_ascii_lowercase();
+                if (name == "script" || name == "style")
+                    && let Some(tag_end) = find_tag_end(html, i + 1)
+                {
+                    let close = format!("</{name}");
+                    if let Some(close_at) = find_ascii_ci(html, &close, tag_end + 1) {
+                        if let Some(gt) = html[close_at..].find('>') {
+                            i = close_at + gt + 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    // Unclosed raw text: the rest is script/style content.
+                    break;
+                }
+            }
+            // A tag we keep (title/h1/…): copy the `<` and continue with the
+            // following text. (Falling through to the copy step below would
+            // find `<` at offset 0 and loop forever.)
+            out.push('<');
+            i += 1;
+            continue;
+        }
+        let next = html[i..]
+            .find('<')
+            .map(|offset| i + offset)
+            .unwrap_or(bytes.len());
+        out.push_str(&html[i..next]);
+        i = next;
+    }
+    out
+}
+
 /// Title + snippet for an HTML note: `<title>` first, then the first `<h1>`,
 /// then the file stem. The snippet is visible text, never raw markup.
 pub fn html_meta(text: &str, fallback_title: &str) -> (String, String) {
-    let title = extract_html_element_text(text, "title")
-        .or_else(|| extract_html_element_text(text, "h1"))
+    let title_source = html_title_source(text);
+    let title = extract_html_element_text(&title_source, "title")
+        .or_else(|| extract_html_element_text(&title_source, "h1"))
         .unwrap_or_else(|| fallback_title.to_string());
     let plain = html_to_text(text);
     (
@@ -1029,7 +1192,13 @@ pub fn html_meta(text: &str, fallback_title: &str) -> (String, String) {
 // ---------------- Text helpers ----------------
 
 pub fn heading_text(line: &str) -> Option<String> {
-    let t = line.trim_start();
+    // CommonMark: 4+ spaces (or a tab) of indentation make an indented code
+    // block, so `    # not a heading` must stay text.
+    let indent = line.chars().take_while(|c| *c == ' ').count();
+    if indent > 3 || line[indent..].starts_with('\t') {
+        return None;
+    }
+    let t = &line[indent..];
     let hashes = t.chars().take_while(|c| *c == '#').count();
     if !(1..=6).contains(&hashes) {
         return None;
@@ -1044,23 +1213,57 @@ pub fn heading_text(line: &str) -> Option<String> {
     if rest.is_empty() {
         return None;
     }
-    let cleaned = rest.trim_end_matches('#').trim().to_string();
-    if cleaned.is_empty() {
+    // A closing run of `#` is syntax only when a space precedes it, so
+    // `# C#` keeps its sharp sign.
+    let without_close = {
+        let trimmed = rest.trim_end();
+        let body = trimmed.trim_end_matches('#');
+        if body.len() != trimmed.len() && (body.is_empty() || body.ends_with([' ', '\t'])) {
+            body.trim_end()
+        } else {
+            trimmed
+        }
+    };
+    if without_close.is_empty() {
         None
     } else {
-        Some(cleaned)
+        Some(without_close.to_string())
     }
 }
 
+/// Fence marker at the start of a line (3+ backticks or tildes).
+fn fence_marker(line: &str) -> Option<char> {
+    let c = line.chars().next()?;
+    if c != '`' && c != '~' {
+        return None;
+    }
+    let count = line.chars().take_while(|x| *x == c).count();
+    (count >= 3).then_some(c)
+}
+
 pub fn extract_title(body: &str, fallback: &str) -> String {
-    let mut in_fence = false;
+    // Track the opening marker and its length: a `~~~` line inside a ```
+    // fence is content, not a fence toggle (that bug picked `# fake` as the
+    // title).
+    let mut fence: Option<(char, usize)> = None;
     for line in body.lines() {
-        let t = line.trim_start();
-        if t.starts_with("```") || t.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue;
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if indent <= 3 {
+            if let Some((marker, len)) = fence {
+                let count = trimmed.chars().take_while(|x| *x == marker).count();
+                if count >= len && trimmed[count..].trim().is_empty() {
+                    fence = None;
+                }
+                continue;
+            }
+            if let Some(marker) = fence_marker(trimmed) {
+                let len = trimmed.chars().take_while(|x| *x == marker).count();
+                fence = Some((marker, len));
+                continue;
+            }
         }
-        if in_fence {
+        if fence.is_some() {
             continue;
         }
         if let Some(title) = heading_text(line) {
@@ -1135,14 +1338,31 @@ pub fn strip_inline(s: &str) -> String {
 /// First few lines of visible body text as a snippet (max_chars chars).
 pub fn plain_snippet(body: &str, max_chars: usize) -> String {
     let mut out = String::new();
-    let mut in_fence = false;
+    let mut count = 0usize;
+    let mut truncated = false;
+    let mut fence: Option<(char, usize)> = None;
     let mut in_math = false;
-    for line in body.lines() {
+    'outer: for line in body.lines() {
         let t = line.trim();
-        if t.starts_with("```") || t.starts_with("~~~") {
-            in_fence = !in_fence;
+        let indent = line.len() - line.trim_start().len();
+        if indent <= 3 {
+            if let Some((marker, len)) = fence {
+                let n = t.chars().take_while(|x| *x == marker).count();
+                if n >= len && t[n..].trim().is_empty() {
+                    fence = None;
+                }
+                continue;
+            }
+            if let Some(marker) = fence_marker(t) {
+                let len = t.chars().take_while(|x| *x == marker).count();
+                fence = Some((marker, len));
+                continue;
+            }
+        }
+        if fence.is_some() {
             continue;
         }
+        // `$$` inside a fence is content, not a display-math toggle.
         if let Some(rest) = t.strip_prefix("$$") {
             // Skip display math instead of showing TeX source in the card.
             if rest.contains("$$") {
@@ -1151,7 +1371,7 @@ pub fn plain_snippet(body: &str, max_chars: usize) -> String {
             in_math = !in_math;
             continue;
         }
-        if in_fence || in_math || t.is_empty() {
+        if in_math || t.is_empty() {
             continue;
         }
         if heading_text(t).is_some() {
@@ -1174,20 +1394,23 @@ pub fn plain_snippet(body: &str, max_chars: usize) -> String {
         if s.is_empty() {
             continue;
         }
-        if !out.is_empty() {
+        if count > 0 {
             out.push(' ');
+            count += 1;
         }
-        out.push_str(&s);
-        if out.chars().count() >= max_chars {
-            break;
+        for ch in s.chars() {
+            if count >= max_chars {
+                truncated = true;
+                break 'outer;
+            }
+            out.push(ch);
+            count += 1;
         }
     }
-    let chars: Vec<char> = out.chars().collect();
-    if chars.len() > max_chars {
-        chars[..max_chars].iter().collect::<String>() + "…"
-    } else {
-        out
+    if truncated {
+        out.push('…');
     }
+    out
 }
 
 pub fn mtime_of(path: &Path) -> i64 {
@@ -1250,7 +1473,13 @@ pub fn read_meta(rel: &Path, full: &Path) -> Option<NoteMeta> {
         }
         "markdown" => {
             let (tags, body) = parse_frontmatter(&text);
-            (tags, extract_title(&body, &name), plain_snippet(&body, 100))
+            // Cap the title like the HTML path: a 1 MB heading must not be
+            // serialized into every list/search payload.
+            (
+                tags,
+                truncate_chars(&extract_title(&body, &name), 120),
+                plain_snippet(&body, 100),
+            )
         }
         _ => (Vec::new(), name, data_snippet(&text, 100)),
     };
@@ -1328,7 +1557,13 @@ pub fn walk(
             continue;
         };
         let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
+        // The note protocol carries `String` paths: a non-UTF-8 name (legal on
+        // Unix, possible on NTFS with unpaired surrogates) would be listed
+        // with a lossy replacement glyph and could never be opened again.
+        // Skip it instead of listing an unusable entry.
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
         // The note protocol uses `/` as its separator. On Unix a backslash is
         // a legal filename character but cannot be represented unambiguously
         // in that protocol, so skip it instead of opening a different path.
@@ -1388,7 +1623,9 @@ pub fn walk_folders(
             continue;
         };
         let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
         let ambiguous_unix_separator = cfg!(not(windows)) && name.contains('\\');
         if name.starts_with('.') || ambiguous_unix_separator || is_link_or_reparse(&path) {
             continue;
@@ -1420,6 +1657,10 @@ pub fn sanitize_filename(s: &str) -> String {
         .trim()
         .trim_start_matches(['.', ' '])
         .trim_end_matches(['.', ' ']);
+    // A very long stem has no room for the `-1` collision suffix or an
+    // extension within the 255-unit filename limit.
+    let trimmed = truncate_chars(trimmed, 200);
+    let trimmed = trimmed.trim_end_matches(['.', ' ']).to_string();
     let reserved = matches!(
         trimmed
             .split('.')
@@ -1431,6 +1672,9 @@ pub fn sanitize_filename(s: &str) -> String {
             | "PRN"
             | "AUX"
             | "NUL"
+            | "CONIN$"
+            | "CONOUT$"
+            | "CLOCK$"
             | "COM1"
             | "COM2"
             | "COM3"
@@ -1449,13 +1693,19 @@ pub fn sanitize_filename(s: &str) -> String {
             | "LPT7"
             | "LPT8"
             | "LPT9"
+            | "COM¹"
+            | "COM²"
+            | "COM³"
+            | "LPT¹"
+            | "LPT²"
+            | "LPT³"
     );
     if trimmed.is_empty() {
         "untitled".to_string()
     } else if reserved {
         format!("_{trimmed}")
     } else {
-        trimmed.to_string()
+        trimmed
     }
 }
 

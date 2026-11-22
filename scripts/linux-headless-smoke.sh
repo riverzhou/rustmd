@@ -3,7 +3,7 @@
 #
 # Starts an isolated Xvfb display (no root), launches target/release/rustmd
 # with a throw-away HOME, captures the window via xwd and verifies that it
-# rendered content (window size, colour variety, dark pixels, edge density).
+# rendered content (window size, colour variety, edge density).
 # It never opens a window on the user's desktop and never displays the image.
 #
 # Usage: scripts/linux-headless-smoke.sh

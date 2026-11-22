@@ -1,6 +1,7 @@
+/* SPDX-License-Identifier: MIT OR Apache-2.0 */
 /* CSV / TXT / JSON previews. Imported after style.css in the app and appended
    verbatim to standalone HTML exports, so these rules must only rely on theme
-   variables (no app-only DOM). */
+   variables (plus the app-only hooks that simply never match outside it). */
 
 .data-view {
   margin: 0 0 20px;
@@ -570,7 +571,10 @@
     print-color-adjust: exact;
   }
 
-  .data-table-scroll {
+  /* Same specificity as the preview rule `.data-view .data-table-scroll`, but
+     later in the sheet: the flow layout must win, or printing a saved
+     standalone data export clips the table to one viewport (~100vh). */
+  .data-view .data-table-scroll {
     max-height: none;
     overflow: visible;
   }

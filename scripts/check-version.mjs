@@ -22,6 +22,11 @@ const cargoPackageSection =
   cargoToml.split(/^\[/m).find((section) => section.startsWith('package]')) || '';
 const cargo = cargoPackageSection.match(/^version\s*=\s*"([^"]+)"/m);
 
+const coreCargoToml = read('crates/rustmd-core/Cargo.toml');
+const coreCargoPackageSection =
+  coreCargoToml.split(/^\[/m).find((section) => section.startsWith('package]')) || '';
+const coreCargo = coreCargoPackageSection.match(/^version\s*=\s*"([^"]+)"/m);
+
 const tauri = JSON.parse(read('tauri.conf.json'));
 const packageLock = JSON.parse(read('package-lock.json'));
 const lockPackagesVersion = packageLock.packages?.['']?.version;
@@ -29,14 +34,19 @@ const lockTopVersion = packageLock.version;
 const cargoLock = read('Cargo.lock').match(
   /\[\[package\]\]\s*\nname = "rustmd"\s*\nversion = "([^"]+)"/
 );
+const cargoLockCore = read('Cargo.lock').match(
+  /\[\[package\]\]\s*\nname = "rustmd-core"\s*\nversion = "([^"]+)"/
+);
 
 const versions = {
   'package.json': pkg.version,
   'Cargo.toml': cargo ? cargo[1] : null,
+  'crates/rustmd-core/Cargo.toml': coreCargo ? coreCargo[1] : null,
   'tauri.conf.json': tauri.version,
   'package-lock.json (packages[""])': lockPackagesVersion,
   'package-lock.json (top-level)': lockTopVersion,
   'Cargo.lock': cargoLock ? cargoLock[1] : null,
+  'Cargo.lock (rustmd-core)': cargoLockCore ? cargoLockCore[1] : null,
 };
 
 const errors = [];

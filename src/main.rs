@@ -25,22 +25,45 @@ fn require_main(window: &tauri::WebviewWindow) -> Result<(), String> {
     }
 }
 
+/// Note commands only accept the file types the app lists. `note_kind()` falls
+/// back to "markdown" for any other extension, so without this check a
+/// compromised main webview could use `read_note`/`save_note` as a generic
+/// reader/writer for arbitrary text files inside the vault (e.g. read a
+/// `.png` as text or overwrite a `.js` asset).
+fn require_note_path(rel: &str) -> Result<(), String> {
+    let name = Path::new(rel)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if is_note_file_name(name) {
+        Ok(())
+    } else {
+        Err("not a note file type".into())
+    }
+}
+
 #[tauri::command]
-fn list_notes(window: tauri::WebviewWindow, dir: String) -> Result<Vec<NoteMeta>, String> {
+async fn list_notes(window: tauri::WebviewWindow, dir: String) -> Result<Vec<NoteMeta>, String> {
     require_main(&window)?;
-    collect_notes(Path::new(&dir))
+    // Vault scans read, hash and parse every note; keep that off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || collect_notes(Path::new(&dir)))
+        .await
+        .map_err(|e| format!("list_notes task failed: {e}"))?
 }
 
 /// All folders under the vault (including empty ones), so the sidebar tree and
 /// the "move to folder" dialog can offer folders that do not contain a note
 /// yet.
 #[tauri::command]
-fn list_folders(window: tauri::WebviewWindow, dir: String) -> Result<Vec<String>, String> {
+async fn list_folders(window: tauri::WebviewWindow, dir: String) -> Result<Vec<String>, String> {
     require_main(&window)?;
-    collect_folders(Path::new(&dir))
+    tauri::async_runtime::spawn_blocking(move || collect_folders(Path::new(&dir)))
+        .await
+        .map_err(|e| format!("list_folders task failed: {e}"))?
 }
 
 fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
+    require_note_path(path)?;
     let full = resolve_in_root(root, path)?;
     if fs::metadata(&full)
         .map(|m| m.len() > MAX_NOTE_BYTES)
@@ -72,13 +95,15 @@ fn read_note_impl(root: &Path, path: &str) -> Result<NoteContent, String> {
 }
 
 #[tauri::command]
-fn read_note(
+async fn read_note(
     window: tauri::WebviewWindow,
     dir: String,
     path: String,
 ) -> Result<NoteContent, String> {
     require_main(&window)?;
-    read_note_impl(Path::new(&dir), &path)
+    tauri::async_runtime::spawn_blocking(move || read_note_impl(Path::new(&dir), &path))
+        .await
+        .map_err(|e| format!("read_note task failed: {e}"))?
 }
 
 const CONFLICT_ERR: &str = "conflict: note changed on disk";
@@ -92,6 +117,7 @@ fn save_note_impl(
     base_mtime: Option<i64>,
     force: bool,
 ) -> Result<NoteMeta, String> {
+    require_note_path(rel)?;
     let full = resolve_in_root(root, rel)?;
     // Cap the save path too: a note opened below 64 MB can grow externally
     // (sync client, another editor) and the next autosave would otherwise
@@ -150,6 +176,11 @@ fn save_note_impl(
         .map(|(_, encoding)| *encoding)
         .unwrap_or(TextEncoding::Utf8);
     let output = encode_note_text(&content, encoding)?;
+    // The read path caps at 64 MB; an oversized composed body must not be
+    // written in the first place (the next open would refuse the note).
+    if output.len() as u64 > MAX_NOTE_BYTES {
+        return Err("note is too large (> 64 MB)".into());
+    }
     // Skip the write when the on-disk bytes are already identical. A
     // no-op write still updates the file mtime, which (a) re-sorts the
     // note list and (b) under `tauri dev` trips the file watcher,
@@ -164,22 +195,26 @@ fn save_note_impl(
 }
 
 #[tauri::command]
-fn save_note(
+async fn save_note(
     window: tauri::WebviewWindow,
     dir: String,
     path: String,
     args: SaveNoteArgs,
 ) -> Result<NoteMeta, String> {
     require_main(&window)?;
-    save_note_impl(
-        Path::new(&dir),
-        &path,
-        &args.tags,
-        &args.body,
-        args.base_hash.as_deref(),
-        args.base_mtime,
-        args.force,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        save_note_impl(
+            Path::new(&dir),
+            &path,
+            &args.tags,
+            &args.body,
+            args.base_hash.as_deref(),
+            args.base_mtime,
+            args.force,
+        )
+    })
+    .await
+    .map_err(|e| format!("save_note task failed: {e}"))?
 }
 
 fn create_note_impl(root: &Path, folder: &str, kind: Option<&str>) -> Result<String, String> {
@@ -198,14 +233,27 @@ fn create_note_impl(root: &Path, folder: &str, kind: Option<&str>) -> Result<Str
         Some("json") => "json",
         _ => "md",
     };
-    let mut candidate = format!("untitled.{ext}");
-    let mut i = 1u32;
-    while target_dir.join(&candidate).exists() {
-        candidate = format!("untitled {i}.{ext}");
+    // Claim the name with `create_new` instead of `exists()` + rename: two
+    // concurrent creates must not both pick `untitled.md` and overwrite.
+    let mut i = 0u32;
+    let full = loop {
+        let candidate = if i == 0 {
+            format!("untitled.{ext}")
+        } else {
+            format!("untitled {i}.{ext}")
+        };
         i += 1;
-    }
-    let full = target_dir.join(&candidate);
-    atomic_write(&full, b"")?;
+        let full = target_dir.join(&candidate);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&full)
+        {
+            Ok(_) => break full,
+            Err(e) if e.kind() == ErrorKind::AlreadyExists && i < 10_000 => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    };
     rel_from_root(root, &full)
 }
 
@@ -221,6 +269,7 @@ fn create_note(
 }
 
 fn rename_note_impl(root: &Path, path: &str, name: &str) -> Result<String, String> {
+    require_note_path(path)?;
     let full = resolve_in_root(root, path)?;
     // Keep the note's current format: renaming an HTML page never silently
     // turns it into a Markdown note (or vice versa). A supported extension in
@@ -275,6 +324,7 @@ fn rename_note(
 #[tauri::command]
 fn delete_note(window: tauri::WebviewWindow, dir: String, path: String) -> Result<(), String> {
     require_main(&window)?;
+    require_note_path(&path)?;
     let full = resolve_in_root(Path::new(&dir), &path)?;
     if !full.is_file() {
         return Err("not a file".into());
@@ -299,7 +349,9 @@ fn unique_sibling(parent: &Path, name: &str, exclude: &Path) -> Result<PathBuf, 
         .unwrap_or("md");
     for i in 1..10_000u32 {
         let candidate = parent.join(format!("{stem} ({i}).{ext}"));
-        if candidate == exclude || !candidate.exists() {
+        // `exclude` is the source being renamed/moved: returning it made the
+        // rename a silent no-op when `note (1).md` was renamed to `note`.
+        if candidate != exclude && !candidate.exists() {
             return Ok(candidate);
         }
     }
@@ -307,6 +359,7 @@ fn unique_sibling(parent: &Path, name: &str, exclude: &Path) -> Result<PathBuf, 
 }
 
 fn move_note_impl(root: &Path, path: &str, dest_folder: &str) -> Result<String, String> {
+    require_note_path(path)?;
     let full = resolve_in_root(root, path)?;
     let normalized = dest_folder.replace('\\', "/").trim_matches('/').to_string();
     let dest = if normalized.is_empty() {
@@ -441,7 +494,7 @@ fn search_notes_impl(
 }
 
 #[tauri::command]
-fn search_notes(
+async fn search_notes(
     window: tauri::WebviewWindow,
     dir: String,
     query: String,
@@ -450,13 +503,18 @@ fn search_notes(
     locale: Option<String>,
 ) -> Result<Vec<SearchHit>, String> {
     require_main(&window)?;
-    search_notes_impl(
-        Path::new(&dir),
-        &query,
-        folder.as_deref(),
-        recursive.unwrap_or(true),
-        locale.as_deref().unwrap_or(""),
-    )
+    // Search reads every note once; a large vault must not freeze the UI.
+    tauri::async_runtime::spawn_blocking(move || {
+        search_notes_impl(
+            Path::new(&dir),
+            &query,
+            folder.as_deref(),
+            recursive.unwrap_or(true),
+            locale.as_deref().unwrap_or(""),
+        )
+    })
+    .await
+    .map_err(|e| format!("search_notes task failed: {e}"))?
 }
 
 /// Open the native save dialog and write the selected bytes. The frontend
@@ -915,7 +973,7 @@ fn linux_print_webview(
         // Only needed when the caller asks for a sheet that is not A4; older
         // GTK builds without it fall back to A4.
         let paper_new_custom: Option<libloading::Symbol<PaperNewCustom>> =
-            gtk.get(b"gtk_paper_size_new_custom ").ok();
+            gtk.get(b"gtk_paper_size_new_custom\0").ok();
         let paper_free: libloading::Symbol<Unref> = gtk
             .get(b"gtk_paper_size_free\0")
             .map_err(|e| e.to_string())?;
@@ -1238,7 +1296,9 @@ fn wrap_page_content(
         b"q\n".to_vec(),
     )));
     let mut closing = Vec::with_capacity(footer.len() + 8);
-    closing.extend_from_slice(b"Q\nq\n");
+    // A content stream that does not end in whitespace would merge with this
+    // `Q`; start the wrapper with a newline so the token always stands alone.
+    closing.extend_from_slice(b"\nQ\nq\n");
     closing.extend_from_slice(footer);
     closing.extend_from_slice(b"Q\n");
     let close_id = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), closing)));
@@ -1420,6 +1480,8 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
         || (seg[0] & 0xfe00) == 0xfc00
         // fe80::/10 link-local
         || (seg[0] & 0xffc0) == 0xfe80
+        // fec0::/10 deprecated site-local
+        || (seg[0] & 0xffc0) == 0xfec0
         // 2001:db8::/32 documentation
         || (seg[0] == 0x2001 && seg[1] == 0x0db8)
         // 2002::/16 6to4 can encapsulate private IPv4
@@ -1633,6 +1695,9 @@ fn mime_for_path(p: &Path) -> &'static str {
 
 struct CacheEntry {
     mtime: SystemTime,
+    /// Byte length at cache time: mtime alone is not enough on filesystems
+    /// with coarse timestamps (a same-tick rewrite could serve stale bytes).
+    len: u64,
     bytes: Vec<u8>,
 }
 
@@ -1681,6 +1746,7 @@ impl VaultFileCache {
             let inner = self.inner.lock().unwrap();
             if let Some(entry) = inner.entries.get(canonical)
                 && entry.mtime == mtime
+                && entry.len == meta.len()
             {
                 return Ok(entry.bytes.clone());
             }
@@ -1710,6 +1776,7 @@ impl VaultFileCache {
                 canonical.to_path_buf(),
                 CacheEntry {
                     mtime,
+                    len: bytes.len() as u64,
                     bytes: bytes.clone(),
                 },
             );
@@ -1845,13 +1912,17 @@ fn read_local_image_impl(
 }
 
 #[tauri::command]
-fn read_local_image(
+async fn read_local_image(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, VaultState>,
     path: String,
 ) -> Result<LocalImage, String> {
     require_main(&window)?;
-    read_local_image_impl(&state.roots(), &state.cache, &path)
+    let roots = state.roots();
+    let cache = state.cache.clone();
+    tauri::async_runtime::spawn_blocking(move || read_local_image_impl(&roots, &cache, &path))
+        .await
+        .map_err(|e| format!("read_local_image task failed: {e}"))?
 }
 
 /// Read a CSS/JS asset from the open vault for HTML-note asset inlining.
@@ -1876,13 +1947,17 @@ fn read_local_asset_impl(
 }
 
 #[tauri::command]
-fn read_local_asset(
+async fn read_local_asset(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, VaultState>,
     path: String,
 ) -> Result<LocalImage, String> {
     require_main(&window)?;
-    read_local_asset_impl(&state.roots(), &state.cache, &path)
+    let roots = state.roots();
+    let cache = state.cache.clone();
+    tauri::async_runtime::spawn_blocking(move || read_local_asset_impl(&roots, &cache, &path))
+        .await
+        .map_err(|e| format!("read_local_asset task failed: {e}"))?
 }
 
 /// The sandboxed preview is a null origin; the hidden HTML render window
@@ -1952,9 +2027,16 @@ fn serve_rmd(
             None => None,
             Some("tauri://localhost")
             | Some("http://tauri.localhost")
-            | Some("https://tauri.localhost")
-            | Some("http://127.0.0.1:5173") => Some(origin.unwrap()),
-            Some(o) if o.starts_with("http://127.0.0.1:") || o.starts_with("http://localhost:") => {
+            | Some("https://tauri.localhost") => Some(origin.unwrap()),
+            // Development serves the app from the Vite dev server (a random
+            // loopback port chosen at launch). A RELEASE build must not accept
+            // any localhost origin: an arbitrary local page could then
+            // CORS-read every file under the open vault roots.
+            Some(o)
+                if cfg!(debug_assertions)
+                    && (o.starts_with("http://127.0.0.1:")
+                        || o.starts_with("http://localhost:")) =>
+            {
                 Some(o)
             }
             Some(_) => return text(StatusCode::FORBIDDEN, "forbidden origin"),
@@ -2184,6 +2266,13 @@ impl HtmlPreviewState {
         if let Some(tx) = self.pending.lock().unwrap().remove(token) {
             let _ = tx.send(result);
         }
+    }
+
+    /// Whether a renderer is still waiting for this token. A hostile HTML note
+    /// can call `html_preview_finish` whenever it likes; a payload nobody waits
+    /// for must be dropped instead of decoded.
+    fn has_pending(&self, token: &str) -> bool {
+        self.pending.lock().unwrap().contains_key(token)
     }
 
     fn cancel(&self, token: &str) {
@@ -2524,6 +2613,10 @@ const MAX_RENDER_TOTAL_PIXELS: u64 = 128_000_000;
 /// Stitched output caps (the capture targets ~48k device px; these still
 /// stop a hostile note from stitching a huge canvas while allowing normal
 /// long notes, including 3600 × 48,000).
+/// Decoded PNG buffer cap for one segment. The pixel cap alone allows a
+/// small, highly compressible 16-bit RGBA PNG at 128M pixels to expand to a
+/// ~1 GB allocation in the host process.
+const MAX_RENDER_DECODED_BYTES: usize = 128 * 1024 * 1024;
 const MAX_RENDER_TOTAL_HEIGHT: u32 = 100_000;
 const MAX_RENDER_STITCHED_PIXELS: u64 = 180_000_000;
 const MAX_RENDER_STITCHED_BYTES: usize = 256 * 1024 * 1024;
@@ -2618,6 +2711,9 @@ fn stitch_png_segments(segments: &[Vec<u8>]) -> Result<(Vec<u8>, u32, u32), Stri
             let size = reader
                 .output_buffer_size()
                 .ok_or_else(|| "invalid PNG segment".to_string())?;
+            if size > MAX_RENDER_DECODED_BYTES {
+                return Err("rendered HTML segment decodes to an implausible size".into());
+            }
             let mut buf = vec![0; size];
             let frame = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
             stream
@@ -2701,8 +2797,58 @@ struct HtmlPreviewPayload {
     scroll_width: Option<f64>,
 }
 
+/// Decode and stitch one renderer payload. Kept free of Tauri state so it can
+/// run on a blocking worker: the payload may carry 256 MB of base64, and PNG
+/// stitching is CPU-heavy.
+fn decode_html_capture(
+    data_url: Option<String>,
+    segments: Option<Vec<String>>,
+    css_width: u32,
+    css_height: u32,
+) -> Result<HtmlCapture, String> {
+    if let Some(segments) = segments.filter(|parts| !parts.is_empty()) {
+        if segments.len() > MAX_HTML_SEGMENTS {
+            return Err("HTML renderer returned too many segments".into());
+        }
+        let total_encoded = segments
+            .iter()
+            .fold(0usize, |total, segment| total.saturating_add(segment.len()));
+        if total_encoded > MAX_RENDER_SEGMENT_TOTAL_BYTES {
+            return Err("rendered HTML segments are too large".into());
+        }
+        let mut decoded = Vec::with_capacity(segments.len());
+        for segment in segments {
+            decoded.push(decode_png_data_url(&segment)?);
+        }
+        return stitch_png_segments(&decoded).map(|(png, width, height)| HtmlCapture {
+            png,
+            width,
+            height,
+            css_width,
+            css_height,
+            scroll_width: 0,
+        });
+    }
+    let data_url = data_url.ok_or_else(|| "missing image data".to_string())?;
+    if data_url.len() > MAX_RENDER_BASE64_BYTES {
+        return Err("rendered HTML image payload is too large".into());
+    }
+    let png = decode_png_data_url(&data_url)?;
+    // Trust the PNG header, not the width/height the note script reported.
+    let (width, height) = png_dimensions(&png)?;
+    validate_render_dimensions(width, height)?;
+    Ok(HtmlCapture {
+        png,
+        width,
+        height,
+        css_width,
+        css_height,
+        scroll_width: 0,
+    })
+}
+
 #[tauri::command]
-fn html_preview_finish(
+async fn html_preview_finish(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, HtmlPreviewState>,
     payload: HtmlPreviewPayload,
@@ -2717,8 +2863,8 @@ fn html_preview_finish(
         error,
         css_width,
         css_height,
-        width,
-        height,
+        width: _width,
+        height: _height,
         ready,
         scroll_width,
     } = payload;
@@ -2746,47 +2892,19 @@ fn html_preview_finish(
     }
     // Always resolve the waiting renderer, even when decoding/stitching fails;
     // otherwise the command error would leave it blocked until the 60 s
-    // timeout.
-    let result = (|| -> Result<HtmlCapture, String> {
-        if let Some(error) = error {
-            return Err(error);
-        }
-        if let Some(segments) = segments.filter(|parts| !parts.is_empty()) {
-            if segments.len() > MAX_HTML_SEGMENTS {
-                return Err("HTML renderer returned too many segments".into());
-            }
-            let total_encoded = segments
-                .iter()
-                .fold(0usize, |total, segment| total.saturating_add(segment.len()));
-            if total_encoded > MAX_RENDER_SEGMENT_TOTAL_BYTES {
-                return Err("rendered HTML segments are too large".into());
-            }
-            let mut decoded = Vec::with_capacity(segments.len());
-            for segment in segments {
-                decoded.push(decode_png_data_url(&segment)?);
-            }
-            return stitch_png_segments(&decoded).map(|(png, width, height)| HtmlCapture {
-                png,
-                width,
-                height,
-                css_width,
-                css_height,
-                scroll_width: 0,
-            });
-        }
-        let data_url = data_url.ok_or_else(|| "missing image data".to_string())?;
-        if data_url.len() > MAX_RENDER_BASE64_BYTES {
-            return Err("rendered HTML image payload is too large".into());
-        }
-        decode_png_data_url(&data_url).map(|png| HtmlCapture {
-            png,
-            width: width.unwrap_or(0),
-            height: height.unwrap_or(0),
-            css_width,
-            css_height,
-            scroll_width: 0,
+    // timeout. A renderer that already timed out gets nothing decoded at all.
+    let result = if let Some(error) = error {
+        Err(error)
+    } else if !state.has_pending(&token) {
+        state.remove_doc(&token);
+        return Ok(());
+    } else {
+        tauri::async_runtime::spawn_blocking(move || {
+            decode_html_capture(data_url, segments, css_width, css_height)
         })
-    })();
+        .await
+        .map_err(|e| format!("HTML renderer result task failed: {e}"))?
+    };
     state.finish(&token, result);
     state.remove_doc(&token);
     Ok(())
@@ -2955,7 +3073,15 @@ async fn print_html_note_webview2(
     };
     let layout = f64::from(ready.scroll_width.max(1));
     let scale = if layout > HTML_PDF_VIEWPORT_WIDTH + 1.0 {
-        (HTML_PDF_VIEWPORT_WIDTH / layout).clamp(0.1, 1.0)
+        let required = HTML_PDF_VIEWPORT_WIDTH / layout;
+        // WebView2 treats scale < 0.1 as invalid; clamping there would print
+        // a clipped page, so report the host as unable to print this note and
+        // let the frontend use the raster exporter instead.
+        if required < 0.1 {
+            close_html_render_window(&state, &token, window);
+            return Err("unsupported: the HTML page is too wide to print as text".into());
+        }
+        required.min(1.0)
     } else {
         1.0
     };
@@ -4312,6 +4438,32 @@ needle
     }
 
     #[test]
+    fn vault_file_cache_rejects_a_same_mtime_stale_entry() {
+        let dir = test_dir("cache_len");
+        let f = dir.join("a.bin");
+        fs::write(&f, b"fresh").unwrap();
+        let cache = VaultFileCache::new();
+        let canonical = strip_extended_prefix(&fs::canonicalize(&f).unwrap());
+        let mtime = fs::metadata(&canonical).unwrap().modified().unwrap();
+        // Simulate a rewrite that landed in the same timestamp tick: the
+        // cached entry has the right mtime but a stale length.
+        {
+            let mut inner = cache.inner.lock().unwrap();
+            inner.entries.insert(
+                canonical.clone(),
+                CacheEntry {
+                    mtime,
+                    len: 1,
+                    bytes: b"stale".to_vec(),
+                },
+            );
+            inner.total_bytes = 5;
+        }
+        assert_eq!(cache.read(&canonical).unwrap(), b"fresh");
+        cleanup(&dir);
+    }
+
+    #[test]
     fn read_meta_after_canonicalize_has_relative_path() {
         // Regression: `fs::canonicalize` on Windows returns `\\?\`-prefixed
         // paths, which used to make `strip_prefix(root)` fail after save.
@@ -4434,6 +4586,63 @@ plain
         assert_eq!(moved, "dest/note (1).md");
         let renamed = rename_note_impl(&dir, "dest/note.md", "note (1)").unwrap();
         assert_eq!(renamed, "dest/note (1) (1).md");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn rename_onto_its_own_collision_suffix_is_not_a_noop() {
+        let dir = test_dir("rename_self_collision");
+        fs::write(
+            dir.join("note.md"),
+            "# Main
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("note (1).md"),
+            "# One
+",
+        )
+        .unwrap();
+        // Renaming "note (1).md" to "note" must not pick the source itself as
+        // the unique sibling (that made fs::rename a silent no-op on Windows).
+        let renamed = rename_note_impl(&dir, "note (1).md", "note").unwrap();
+        assert_eq!(renamed, "note (2).md");
+        assert_eq!(
+            fs::read_to_string(dir.join("note (2).md")).unwrap(),
+            "# One
+"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn note_commands_reject_non_note_extensions() {
+        let dir = test_dir("note_extensions");
+        fs::write(dir.join("image.png"), b"not a note").unwrap();
+        assert!(read_note_impl(&dir, "image.png").is_err());
+        assert!(save_note_impl(&dir, "image.png", &[], "x", None, None, false).is_err());
+        assert!(rename_note_impl(&dir, "image.png", "renamed").is_err());
+        assert!(move_note_impl(&dir, "image.png", "").is_err());
+        let meta = save_note_impl(&dir, "ok.txt", &[], "text", None, None, false).unwrap();
+        assert_eq!(meta.kind, "txt");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn concurrent_creates_never_pick_the_same_name() {
+        let dir = test_dir("create_race");
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let dir = dir.clone();
+            handles.push(std::thread::spawn(move || {
+                create_note_impl(&dir, "", None).unwrap()
+            }));
+        }
+        let mut names: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), 8, "create_note reused a name: {names:?}");
         cleanup(&dir);
     }
 

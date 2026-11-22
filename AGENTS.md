@@ -10,14 +10,15 @@ this file is the developer/agent contract.
 
 | Task | Command |
 | --- | --- |
-| All checks (lint, units, repo+IPC/docs, license boundary, version, fmt/clippy/test, build) | `npm run check` |
+| All checks (lint, units, repo+IPC/docs, license boundary, packaging, version, fmt/clippy/test, build) | `npm run check` |
 | License boundary (core stays permissive + Tauri-free) | `npm run check:license` |
+| Packaging manifests (winget/Scoop/Homebrew/AUR consistency) | `npm run check:packaging` |
 | Dev window (real Tauri, hot frontend reload) | `node scripts/launch-dev.mjs` |
 | Dev window shortcut (Windows) | `scripts\run-dev.bat` |
 | Browser dev (in-memory mock) | `npm run dev` → http://127.0.0.1:5173 |
 | Release exe, no installer | `npx tauri build --no-bundle` |
 | Linux release binary | `npx tauri build --no-bundle` → `target/release/rustmd` |
-| Linux Rust tests | `source "$HOME/.cargo/env" && cargo test` |
+| Linux Rust tests | `source "$HOME/.cargo/env" && cargo test --workspace` |
 | Linux headless release smoke | `scripts/linux-headless-smoke.sh` (isolated Xvfb) |
 | Linux headless Wayland smoke | `scripts/linux-wayland-smoke.sh` (sway headless + grim; non-blocking in CI) |
 | Windows release shortcut | `scripts\run-build.bat` |
@@ -25,8 +26,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.11.0` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.11.0 >/dev/null` |
+| Version/tag preflight | `node scripts/check-version.mjs v1.11.1` |
+| Release notes preflight | `node scripts/release-notes.mjs v1.11.1 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -42,6 +43,11 @@ this file is the developer/agent contract.
   report checker enforces HTML + data coverage (`--require-html --require-data`),
   freshness (24 h default), and verifies every reported PNG/PDF/HTML artifact
   exists with the exact recorded byte length.
+- Current counts: 69 frontend unit tests; 99 Rust tests on Windows / 100 on
+  Linux+macOS (1 network test `#[ignore]`d; run `cargo test --workspace -- --ignored`
+  explicitly) with `cargo test --workspace` including the core integration
+  tests; 10 example notes in `examples/`; 23 IPC commands (checked by
+  `npm run check:repo`).
 - CI: `.github/workflows/ci.yml` (quality gate on Ubuntu 22.04, compile on
   Windows / Ubuntu 22.04 / Ubuntu 26.04 / macOS, Windows sign/portable-zip dry
   run, macOS app bundle + ad-hoc sign, Ubuntu 26.04 deb/AppImage dry run, Ubuntu
@@ -94,7 +100,7 @@ this file is the developer/agent contract.
     including decode/stitch errors; close/cancel on timeout or task failure;
   - the `rmd` custom protocol (`serve_rmd`, `VaultFileCache`, mtime + byte
     budget), `read_local_image` (**image-extension only**) and
-    `read_local_asset` (**CSS/JS only**): both read commands accept files under
+    `read_local_asset` (**CSS/JS/MJS only**): both read commands accept files under
     any registered vault root (`set_notes_roots`, multi-vault mode) and return
     bytes to the trusted asset inliner. Splitting the two commands keeps
     arbitrary vault files out of a note document a note script can read;
@@ -152,11 +158,19 @@ this file is the developer/agent contract.
   plan's `ch` cap; the JSON view is an inspector with aligned keys,
   a semantic per-type palette (group tints/rails, type/count pills, leaf
   type dots) and collapsible groups (no raw braces/commas). `main.js` imports the CSS; `preview.js`
-  imports the raw string so exported files stay visually identical.
+  imports the raw string so exported files stay visually identical. `@media
+  print` pins the table to `font-size: 13px` (the on-screen `clamp(13px, 0.72vw,
+  14.5px)` floor): `vw` resolves against the *page* width when printing, so
+  `em`-sized columns would outgrow the sheet the exporter measured and clip
+  the last column.
 - `frontend/src/layout.js` — pure bounds for the resizable sidebar width and
   editor/preview split (covered by `node --test`).
-- `frontend/src/pdfgeom.js` — pure raster-PDF page orientation helper (covered
-  by `node --test`); wide data-table PDFs use landscape pages.
+- `frontend/src/pdfgeom.js` — pure raster-PDF page orientation helper, used only
+  by the raster fallback (each page chooses portrait/landscape from its own
+  dimensions; covered by `node --test`). Data-table PDFs within the vector cap
+  do **not** use landscape pages: they go through the vector print path with a
+  deliberately wide portrait sheet (below). Only the ultra-wide raster fallback
+  lets each page pick landscape again from its measured dimensions.
 - `frontend/src/exportgeom.js` — pure raster export geometry (adaptive scale
   with width/height/total-area caps, page cuts, sliver trimming; covered by
   `node --test`).
@@ -172,21 +186,38 @@ this file is the developer/agent contract.
   in both Markdown and HTML previews; timeout warning; generation guards so a
   stale Markdown render cannot sanitize/mutate a newer preview; HTML export
   (including data views) and local-image inlining for the hidden capture.
+  `buildExportHtml` builds the standalone Markdown/data file (inlining local
+  images and highlight.js colours); an **HTML note's
+  file export is intentionally not self-contained** — `main.js` writes the note
+  source verbatim (charset normalized) and does not copy local CSS/JS/images.
+  `host.htmlIsolationScript` is injected only by the browser-dev
+  `buildHtmlPreviewDocument`; the desktop native preview
+  (`buildNativeHtmlPreviewDocument`) relies on the iframe sandbox plus the
+  Tauri origin/label checks instead.
   `inlineLocalAssetsInHtml` parses the whole document with `DOMParser`
-  (preserving `<html>/<head>/<body>` attributes) and moves inlined
-  deferred/async scripts to the end of `<body>`.
+  (preserving `<html>/<head>/<body>` attributes), inlines `url(...)` images in
+  `<style>`/local stylesheets, and moves inlined deferred/async scripts to the
+  end of `<body>`.
 - `frontend/src/export.js` — off-screen stage, image inlining, html2canvas,
-  multi-page jsPDF, `pdfFromPngDataUrl` for WebView-rendered HTML notes, and
+  chunked raster jsPDF, `pdfFromPngDataUrl` for WebView-rendered HTML notes, and
   an adaptive (normally 0.25–3×, lower only for absurd geometry) scale for very
-  long Markdown notes. Markdown PDF export
-  prefers the WebView's own print pipeline (`exportPdfVector` →
-  `print_note_pdf`, `print_html_note`): the browser lays the note out on real
-  pages and embeds font subsets, so the PDF is vector text (selectable, sharp,
-  small) instead of sliced canvas images. The raster exporter stays as the
-  fallback for unsupported platforms and older WebView2 runtimes. The raster
-  PDF picks page orientation per page (jsPDF swaps a short portrait page's
-  box) and the `@media print` palette is forced to light so dark-theme exports
-  stay legible on macOS/Linux (whose print paths do not paint backgrounds).
+  long Markdown notes. Markdown and in-document data PDFs prefer the WebView's
+  own print pipeline (`exportPdfVector` → `print_note_pdf`, `print_html_note`):
+  the browser lays the note out on real pages and embeds font subsets, so the
+  PDF is vector text (selectable, sharp, small) instead of sliced canvas
+  images. For a data table wider than A4, `exportPdfVector` measures the table
+  and passes `{widthIn, heightIn}` to `print_note_pdf`; Rust clamps both to
+  3–60 in, so the platform engine prints a deliberately wide sheet (WebView2
+  portrait `PageWidth`/`PageHeight`, macOS `NSPrintInfo`, Linux
+  `GtkPaperSize`) with the whole table as selectable text. Only a table wider
+  than the ~55 in frontend cap throws and uses the raster exporter. That
+  fallback widens the stage to the table's natural width, renders tall tables
+  as page-sized row chunks at the normal 3× (JPEG per page) and assembles them
+  with jsPDF; `@media print` pins the table font to 13 px so `vw` cannot grow
+  the columns past the measured sheet. The raster PDF picks page orientation
+  per page (jsPDF swaps a short portrait page's box) and the `@media print`
+  palette is forced to light so dark-theme exports stay legible on
+  macOS/Linux (whose print paths do not paint backgrounds).
 - `frontend/src/shared/editor.js` — CodeMirror 6 setup; Markdown/HTML/JSON language
   (plain text for CSV/TXT) is swapped per note through a `Compartment`;
   HTML/JS/CSS/JSON highlight rules and line-wrap compartment. Opening a note
@@ -206,7 +237,10 @@ this file is the developer/agent contract.
 
 - Notes root = plain folder. Note paths are root-relative with forward slashes.
   Recognized note extensions: `.md`, `.html`, `.htm`, `.csv`, `.txt`, `.json`
-  (case-insensitive). On Unix, filenames containing a literal backslash are
+  (case-insensitive). Note commands reject every other extension
+  (`require_note_path`), so a compromised webview cannot use `read_note`/
+  `save_note` as a generic vault text reader/writer. On Unix, filenames
+  containing a literal backslash are
   skipped because the note protocol cannot represent them unambiguously; on
   Windows the backend normalizes `\` separators to `/`.
 - `kind` is `"markdown"`, `"html"`, `"csv"`, `"txt"` or `"json"`, derived
@@ -237,8 +271,10 @@ this file is the developer/agent contract.
   and quickly; local fonts use `rmd`. Export uses a hidden
   Tauri WebView window; note scripts run there, but every vault command is
   label-guarded and the hidden window may only call `html_preview_finish`
-  with the exact `html-render-{token}` label. Tokens are random, not
-  PID/counter-derived. No Edge/Chrome is required.
+  with the exact `html-render-{token}` label. Tokens are 128-bit `getrandom`
+  values; if that call fails (ultra-rare), the fallback is a time+counter seed
+  rather than failing preview/export, so do not treat tokens as a security
+  boundary on their own. No Edge/Chrome is required.
 - Tall HTML exports are captured in vertical slices and stitched into one PNG
   in Rust (`png` crate); preview stays a single native iframe.
 - `NoteMeta` includes `hash` and `encoding`; `NoteContent` includes
@@ -292,10 +328,12 @@ platform print engine — WebView2 `PrintToPdfStream` on Windows, WKWebView's
 `NSPrintOperation` on macOS, WebKitGTK's print operation on Linux (resolved at
 runtime through `libloading`, so no GTK dev headers are needed to build) — and
 returns the PDF bytes (which then go through `save_export` like any other
-export). It takes only a header `title` — no output path. `export.js` supplies
-the document: the `.export-stage` stays mounted and `body.rmd-printing`
-activates the `@media print` rules in `style.css`, which hide the app chrome
-and let the note flow across pages.
+export). It takes a header `title` plus optional `pageWidthIn`/`pageHeightIn`
+(inches; Rust `page_width_in`/`page_height_in`, each clamped to 3–60, A4 when
+either is missing) — no output path. `export.js` supplies the document: the
+`.export-stage` stays mounted and `body.rmd-printing` activates the `@media
+print` rules in `style.css`, which hide the app chrome and let the note flow
+across pages.
 
 `print_html_note` does the same for an HTML note, but in a hidden
 `html-render-{token}` window (`mode = "print"`, no html2canvas). The window is
@@ -309,9 +347,12 @@ Windows gets WebView2's header (title + export date) and page-number footer.
 macOS/Linux print without browser chrome and then `stamp_page_numbers` appends
 a centered "N / M" footer (base-14 Helvetica, wrapped in `q`/`Q` so a
 page-wide `cm` cannot move it) — a stamping failure returns the PDF untouched.
-On unsupported platforms (and WebView2 runtimes older than 1.0.1518) both
-commands return an unsupported/too-old runtime error and the frontend falls
-back to the html2canvas PDF. macOS uses the `objc2` crates; the print runs through
+On platforms without a print pipeline both commands reject and the frontend
+falls back to the html2canvas PDF. On Windows the check is interface presence,
+not a version number: the command reports "this WebView2 runtime is too old to
+print PDFs" whenever the `ICoreWebView2_16` / `ICoreWebView2Environment6` cast
+fails, and "cannot start PDF printing: …" when `PrintToPdfStream` setup fails.
+macOS uses the `objc2` crates; the print runs through
 `runOperationModalForWindow:` with `canSpawnSeparateThread`, so AppKit detaches
 a print thread and the UI is not blocked — the command then polls for the
 finished PDF (`wait_for_printed_pdf`, 45 s) before stamping. Linux only needs
@@ -355,7 +396,7 @@ If a new Tauri *plugin* is used:
    guard for the `rmd` protocol and `read_local_image`;
    `resolve_vault_file_in_roots` applies it to every registered vault root and
    still rejects a file outside all of them. `read_local_image` also rejects
-   non-image extensions and `read_local_asset` accepts only CSS/JS: a
+   non-image extensions and `read_local_asset` accepts only `.css`/`.js`/`.mjs`: a
    note-controlled `<img src>` must never turn an arbitrary vault file into a
    data URL readable by the note's own scripts.
 4. **SSRF guard.** `fetch_image_bytes` only accepts http(s), rejects
@@ -368,11 +409,14 @@ If a new Tauri *plugin* is used:
    the `opener` plugin instead of navigating the app.
 7. **`rmd` origin allowlist.** No-Origin subresource requests are allowed for
    `<img>/<link>/<script>`; requests with an `Origin` header are accepted only
-   from the app webview (Tauri origins or localhost dev server) plus preview
-   `font`/`script`/`style` subresources (`Sec-Fetch-Dest`). `fetch`/XHR, document
-   reads, remote iframes and all other origins get 403. Do not restore
-   `Access-Control-Allow-Origin: *`. Local CSS/JS/images are inlined first so
-   this is only a fallback.
+   from the app webview plus preview `font`/`script`/`style` subresources
+   (`Sec-Fetch-Dest`). In release builds the app origin is limited to Tauri
+   origins (`tauri://localhost`, `http(s)://tauri.localhost`); arbitrary
+   `http://127.0.0.1:<port>` / `http://localhost:<port>` dev-server origins are
+   accepted **only in debug builds** (`cfg!(debug_assertions)`) because the Vite
+   port is random. `fetch`/XHR, document reads, remote iframes and all other
+   origins get 403. Do not restore `Access-Control-Allow-Origin: *`. Local
+   CSS/JS/images are inlined first so this is only a fallback.
 
 ## Licensing invariants
 
@@ -393,8 +437,10 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
 5. **Host capabilities go through the bridge**, never through a direct IPC
    call: the shell installs `configureHost({...})` (`host.js`) and the
    reusable layer only sees that interface.
-6. **External contributions**: the terms must land in `CONTRIBUTING.md`
-   **before** the first outside PR is merged — moving a contributed line from
+6. **External contributions**: the terms live in `CONTRIBUTING.md` (app changes
+   GPL-3.0-or-later; `crates/rustmd-core` / `frontend/src/shared` contributions
+   offered under MIT OR Apache-2.0 with the contributor's consent) and must stay
+   there before the first outside PR is merged — moving a contributed line from
    the GPL layer to the permissive one needs that contributor's consent. The
    repository has a single human author today, which is what makes the split
    possible at all.
@@ -427,8 +473,13 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   head/top bar and sets the table scroll box to that height; tables with at
   least 18 rows stretch to fill it. Never reintroduce a fixed `100vh - Npx`
   guess: it overflows the preview holder and adds a phantom vertical
-  scrollbar. Export/selftest containers must stay content-sized. Exports must
-  hide the top bar and must not inherit the scroll box.
+  scrollbar. Capture/print containers (`.export-stage`, selftest stages) must
+  stay content-sized: exports hide the top bar and must not inherit the app
+  preview's scroll box. The standalone data HTML file is the deliberate
+  exception — `buildExportHtml` gives `body.data-export` a viewport-height flex
+  column with a bounded `.data-table-scroll` on screen (the table, and the JSON
+  / invalid-JSON raw view inside the card, scroll within it), and `@media
+  print` restores normal flow so the saved file still spans pages when printed.
 - **Search**: `search_notes` searches body, heading, filename and tags, scoped
   by its `folder` argument (the selected/current folder; empty/null = vault
   root) and the `recursive` flag (the sidebar's “include subfolders” switch).
@@ -460,9 +511,17 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   `export.js` starts from a 948 px Markdown stage (860 content + 2×44 padding),
   widens it to a data table's natural width, and adapts the scale with
   `exportgeom.js` (width/height/total-canvas-area caps; normally ≥0.25×, only
-  absurd geometry goes lower); wide data tables deliberately fall back
-  from vector printing to the raster PDF, with natural table width and a
-  landscape custom page so no columns are clipped or rotated into portrait.
+  absurd geometry goes lower). `exportPdfVector` measures a data table and, if
+  it does not fit A4, asks `print_note_pdf` for a sheet as wide as the table
+  (plus margins/padding, 8% headroom): Rust clamps both dimensions to 3–60 in
+  and the platform engine prints the whole table as selectable vector text on a
+  deliberately wide portrait sheet (WebView2 portrait `PageWidth`/`PageHeight`,
+  `NSPrintInfo` paper size, GTK custom `GtkPaperSize`). Only a table wider than
+  the ~55 in frontend cap throws and falls back to the raster exporter, which
+  uses the natural table width and renders tall tables as page-sized row chunks
+  at the normal 3× (JPEG per page) assembled with jsPDF; each raster page picks
+  its own orientation. `@media print` pins the table font to 13 px so `vw`
+  cannot grow the `em`-based columns past the measured sheet.
   Markdown PDF export goes through `exportPdfVector` (`print_note_pdf`):
   keep the `.export-stage` markup print-friendly (the `@media print`
   block in `style.css` owns page hiding, page width and `break-inside`), and
@@ -530,16 +589,22 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   pending saves first, reloads a clean note whose hash changed, closes a clean
   note deleted on disk, keeps unsaved edits, and clears stale folder/tag
   filters.
-- **Release**: bump `package.json`, `Cargo.toml`, `tauri.conf.json`,
-  `Cargo.lock`, `package-lock.json`; update README version banners; add a
-  `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the preflight
-  accepts either, but ship both); regenerate README screenshots when the UI or
-  mock vault changed; run `npm run check` + a clean `npm run selftest`; audit
-  version/test-count/screenshot references across `AGENTS.md`, READMEs,
-  `CHANGELOG.md`, `RELEASE_NOTES-<version>.md`, docs and `AUDIT_REPORT.md`;
-  commit, tag `v<version>`, and push the commit + tag to
+- **Release**: bump `package.json`, `Cargo.toml`,
+  `crates/rustmd-core/Cargo.toml`, `tauri.conf.json`, and the lockfile entries
+  (`Cargo.lock` for `rustmd` + `rustmd-core`, `package-lock.json` root/top
+  level) — `npm run check:version` checks all 8 values; update README version
+  banners; add a `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the
+  preflight accepts either, but ship both); regenerate README screenshots when
+  the UI or mock vault changed; run `npm run check` (includes
+  `check:license`/`check:packaging` and `cargo test --workspace`) plus a clean
+  `npm run selftest`; audit version/test-count/screenshot references across
+  `AGENTS.md`, READMEs, `CHANGELOG.md`, `RELEASE_NOTES-<version>.md`, docs and
+  `AUDIT_REPORT.md`; commit, tag `v<version>`, and push the commit + tag to
   **both** remotes (`github` and `origin`/GitLab). GitHub tag triggers the
-  three-platform release; GitLab is a mirror with no CI.
+  three-platform release; GitLab is a mirror with no CI. After the GitHub
+  release assets exist, refresh the winget/Scoop/Homebrew/AUR manifests from
+  their URLs + SHA256 and run `npm run check:packaging` (manifests are
+  intentionally updated post-release, not in the version-bump commit).
 
 ## Gotchas
 
@@ -586,7 +651,8 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   because each remote image export waits on its fetch timeout). HTML entries use the built-in WebView
   (native preview iframe + hidden export window), check `--require-html` and
   `--require-data`, and assert iframe readiness, local-JS execution,
-  PNG/PDF magic/dimensions and local CSS/JS/image inlining; data entries
+  PNG/PDF magic/dimensions, highlight.js colours, inline-SVG round-trip and
+  CSS `url()`/local CSS/JS/image inlining; data entries
   assert the table/JSON structure,
   smart header alignment, markup escaping, data HTML export, HTML charset
   normalization and GBK detection. A synthetic CSV/TXT table (independent of
@@ -595,8 +661,11 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   path really produced text (`/Font` in the PDF, not just image slices) on
   every desktop platform. No external browser is installed or required. Clear
   the output dir first (the runner also deletes the previous report); the
-  checker rejects reports older than 24h, verifies every artifact's existence
-  and byte length, requires one entry per example note, and prints warnings. It
+  checker rejects reports older than 24h, requires `report.config.examplesDir`
+  to exist and to match `RUSTMD_SELFTEST_EXAMPLES`, verifies every artifact is
+  inside the output directory and not older than the run, checks every
+  artifact's existence and exact byte length, requires one entry per example
+  note, and prints warnings. It
   restores the user’s notes root afterwards and exits with 0/1.
 - **Promo assets**: `docs/social-preview.html` is the source for the 1280×640
   `docs/social-preview.png` (headless Edge `--screenshot`, see the file header); upload it

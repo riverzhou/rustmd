@@ -8,12 +8,12 @@
 
 | 指标 | 当前值 | 说明 |
 | --- | --- | --- |
-| Stars / forks | 2 / 0 | 项目 2026-09-29 创建，v1.10.4 刚发布 |
+| Stars / forks | 2 / 0 | 项目 2026-09-29 创建；v1.11.1 于 2026-11-22 发布 |
 | GitHub 14 天独立访客 | 2 | 基本只有作者本人 |
 | 14 天外部 referrer | 1（github.com） | **没有外部入口** |
-| v1.10.4 Release 下载 | 10（全部版本累计 207） | 其中包含 LICENSE / SHA256 等小文件；不是“下载页做得不好”，是没人到达 |
+| 最新 Release 下载 | 见 GitHub Releases 统计 | 其中包含 LICENSE / SHA256 等小文件；不是“下载页做得不好”，是没人到达 |
 | GitHub Topics | 20 / 20 | About 与 topics 已按 [GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 更新 |
-| 包管理器 | Scoop + Homebrew 已发布 | winget 待 CLA，AUR 待 AUR 账号；清单在 `packaging/` |
+| 包管理器 | Scoop + Homebrew 已发布并跟随版本更新 | winget 清单 PR 等待 moderator，AUR 待 AUR 账号；清单在 `packaging/` |
 
 结论：**当前瓶颈不是转化，而是流量入口**。仓库资料优化只能接住已有流量，必须主动建立外部入口。
 目标不用虚高：30 天内 **50 stars、300 次 Release 下载、10 个外部 referrer** 就是很好的第一步。
@@ -21,7 +21,7 @@
 > **2026-11-14 已自动执行**：3 个 awesome list PR 已提交（awesome-local-first #66、
 > awesome-markdown-editors #316、awesome-note-taking #190）；Scoop bucket 与 Homebrew tap
 > 已发布；Discussions 欢迎帖已创建。
-> **2026-11-21**：winget 的旧 PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911)
+> **2026-11-22**：winget 1.11.0 的 PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332) 已通过全部自动校验，等待 moderator；Scoop / Homebrew 已跟随到 1.11.0（1.11.1 发布后同步）；AUR 需要 AUR 账号。
 > 已完成 CLA 与 validation 但排队过久，已关闭；新 PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332)（1.11.0）已提交，等待 moderator；Scoop / Homebrew 已更新到 1.11.0；AUR 需要 AUR 账号。
 
 ## 1. 定位：不要卖“又一个 Markdown 编辑器”
@@ -117,7 +117,7 @@
 
 1. 看 referrers / stars / 下载，判断哪个渠道有效；
 2. 把有效渠道的评论/问题整理成 FAQ 与下个版本改动；
-3. 发布一个包含真实反馈的小版本（如 v1.10.5），在**最有效的那个渠道**再发一次更新说明；
+3. 发布一个包含真实反馈的小版本（如 v1.12.0），在**最有效的那个渠道**再发一次更新说明；
 4. 更新 README 的“新功能”与截图，保持 Release 节奏。
 
 ## 5. 现成文案
@@ -159,7 +159,7 @@ with no external browser. Markdown gets MathJax, Mermaid and highlighting; CSV/T
 tables; JSON gets a collapsible inspector. Export is HTML/PNG/PDF (PDF text is vector on the
 platform print pipeline).
 
-The Windows build is a ~9 MB portable zip; there are Linux deb/AppImage and macOS (Apple
+The Windows build is a ~17 MB portable zip; there are Linux deb/AppImage and macOS (Apple
 Silicon) builds too. GPL-3.0. Repo: https://github.com/riverzhou/rustmd
 
 I'd especially appreciate feedback on the HTML sandbox / export isolation and on the PDF
@@ -205,7 +205,7 @@ A local-first Markdown/HTML notes app in Tauri 2 — hidden-WebView capture, nat
 正文要点：
 
 ```
-- Tauri 2 app; ~9 MB portable Windows zip, deb/AppImage on Linux, arm64 DMG on macOS.
+- Tauri 2 app; ~17 MB portable Windows zip, deb/AppImage on Linux, arm64 DMG on macOS.
 - HTML notes: sandboxed iframe preview (null origin), hidden WebView export with a label-guarded
   `html_preview_finish` command; segmented full-page PNG capture stitched in Rust.
 - PDF export uses WebView2 PrintToPdfStream / WKWebView NSPrintOperation / WebKitGTK print, then
@@ -244,7 +244,7 @@ rustmd 的取舍：
   图表都能跑），不需要 Edge/Chrome；
 - Markdown 支持 MathJax、Mermaid、代码高亮；CSV/TXT 有智能表格；JSON 有可折叠检查器；
 - 支持 HTML/PNG/PDF 导出、UTF-8/GBK/GB18030、文件夹树、全文搜索、最近/置顶/多库；
-- Rust + Tauri 2，Windows 绿色版约 9 MB，另有 Linux deb/AppImage 和 macOS Apple Silicon。
+- Rust + Tauri 2，Windows 绿色版约 17 MB，另有 Linux deb/AppImage 和 macOS Apple Silicon。
 
 项目是 GPL-3.0 开源的：https://github.com/riverzhou/rustmd
 目前还很早期，想听听大家对“HTML 当笔记格式”这个方向的看法，以及还缺什么功能。
@@ -314,7 +314,7 @@ Tauri Discord `#showcase`：
 Hi! I built rustmd, a local-first notes app in Tauri 2 (Rust + vanilla JS).
 HTML notes are edited as source and rendered as full pages in a hidden/sandboxed WebView;
 PDF export goes through WebView2/WKWebView/WebKitGTK print-to-PDF.
-Windows portable zip is ~9 MB. GPL-3.0: https://github.com/riverzhou/rustmd
+Windows portable zip is ~17 MB. GPL-3.0-or-later: https://github.com/riverzhou/rustmd
 Happy to share details about the WebView capture/print pipeline if useful.
 ```
 
@@ -323,7 +323,7 @@ X / Twitter 线程：
 1. `rustmd — local-first Markdown & HTML notes that stay plain files. Edit HTML, preview the real page in-app, export PDF. Rust + Tauri 2. GPL. https://github.com/riverzhou/rustmd`
 2. 一张 `html-note.png` + “HTML notes are files, not Markdown snippets.”
 3. 一张 `csv-note.png` + “CSV/TXT get smart tables; JSON gets an inspector.”
-4. 一张 `dark.png` + “Windows portable zip ~9 MB; Linux deb/AppImage; macOS arm64. Feedback welcome.”
+4. 一张 `dark.png` + “Windows portable zip ~17 MB; Linux deb/AppImage; macOS arm64. Feedback welcome.”
 
 ### 5.10 GitHub Discussions 欢迎帖
 
@@ -406,8 +406,8 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 
 详细清单与校验命令在 [../packaging/README.md](../packaging/README.md)。提交顺序建议：
 
-1. **winget**：PR [#479911](https://github.com/microsoft/winget-pkgs/pull/479911) 已提交，
-   在 PR 里回复 `@microsoft-github-policy-service agree` 即完成 CLA（本人操作）；
+1. **winget**：PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332)（1.11.0）已通过
+   全部自动校验（含 CLA），等待 moderator 合并；1.11.1 清单在发布后提交；
 2. **Scoop**：✅ 已发布到自建 [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket)；
    如需进 Extras，再按 Extras 的知名度门槛提交；
 3. **AUR**：创建 `rustmd-bin` 包，推 `PKGBUILD` 与 `makepkg --printsrcinfo` 生成的
@@ -426,7 +426,7 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 gh api repos/riverzhou/rustmd/traffic/views
 gh api repos/riverzhou/rustmd/traffic/popular/referrers
 gh api repos/riverzhou/rustmd/traffic/popular/paths
-gh release view v1.10.4 -R riverzhou/rustmd --json assets \
+gh release view v1.11.1 -R riverzhou/rustmd --json assets \
   --jq '.assets[] | "\(.name)\t\(.downloadCount)"'
 ```
 

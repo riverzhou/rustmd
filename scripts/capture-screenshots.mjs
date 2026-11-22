@@ -34,6 +34,12 @@ if (!target) {
   );
 }
 
+if (typeof globalThis.WebSocket !== 'function') {
+  throw new Error(
+    'this Node.js has no global WebSocket; run the script with Node >= 22.4 ' +
+      '(Node 20 needs --experimental-websocket)'
+  );
+}
 const ws = new globalThis.WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
   ws.onopen = resolve;
