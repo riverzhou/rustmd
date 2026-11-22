@@ -34,6 +34,61 @@ const MATHJAX_CONFIG = {
     inlineMath: [['$', '$']],
     displayMath: [['$$', '$$']],
     processEscapes: true,
+    // Macros from these packages are NOT in MathJax's autoload table: without
+    // loading them, `\dv`, `\pdv`, `\mathbbm`, `\mathds`, `\degree`,
+    // `\textcelsius`, `\upalpha`, `\unit`, `\coloneqq` … render as red
+    // "undefined control sequence" text. The TeX extension modules are
+    // mirrored locally by vite.config.js, so this never touches the network.
+    // `units` loads before `physics` and `braket` loads last on purpose:
+    // both units/physics define `\qty` and both physics/braket define
+    // `\braket`, and the later package wins — this order keeps physics'
+    // `\qty(…)` delimiters and braket's `\braket{a|b}` pipe syntax.
+    packages: {
+      '[+]': [
+        'units',
+        'bbm',
+        'dsfont',
+        'bboldx',
+        'textcomp',
+        'gensymb',
+        'upgreek',
+        'mathtools',
+        'physics',
+        'braket',
+      ],
+    },
+    // Equation numbering / `\label` + `\eqref`: MathJax's default `tags:
+    // 'none'` silently drops labels, so every reference renders "(???)".
+    // `ams` numbers equation/align environments and makes references work.
+    tags: 'ams',
+  },
+  // MathJax v4 is not self-contained: it fetches optional font data
+  // (calligraphic, double-struck, fraktur, script, …) from cdn.jsdelivr.net
+  // at typeset time and autoloads TeX extensions (`\cancel`, `\ce`, …) the
+  // same way. In the installed app the CSP allows scripts from 'self' only
+  // and the app is offline-first, so a fetch fails and MathJax rejects the
+  // ENTIRE typeset batch — every formula in the note, not just the one that
+  // needed the optional component, stays raw `$…$` text. vite.config.js
+  // mirrors those runtime files into the app origin; redirect MathJax there.
+  loader: {
+    // Components for the non-autoloaded packages above; the local `tex`
+    // path keeps every fetch on the app origin.
+    load: [
+      '[tex]/units',
+      '[tex]/bbm',
+      '[tex]/dsfont',
+      '[tex]/bboldx',
+      '[tex]/textcomp',
+      '[tex]/gensymb',
+      '[tex]/upgreek',
+      '[tex]/mathtools',
+      '[tex]/physics',
+      '[tex]/braket',
+    ],
+    paths: {
+      fonts: '/mathjax-fonts',
+      tex: '/mathjax/tex-extensions',
+    },
   },
   svg: { fontCache: 'local' },
   startup: { typeset: false },
@@ -131,6 +186,16 @@ async function typesetMath(container, spans, isCurrent = () => true) {
     // typesetting at that point would mutate the NEXT note's DOM.
     if (!isCurrent()) return;
     disableMathJaxA11y(MathJax);
+    // Equation labels and numbering are global to the MathJax document: the
+    // second render of a note that uses \label otherwise reports "Label 'x'
+    // multiply defined" (the preview re-renders on every keystroke, and the
+    // export stage renders the same note again). A reset per render also
+    // stops \eqref targets leaking from the previously opened note.
+    try {
+      MathJax.texReset();
+    } catch (err) {
+      console.warn('MathJax texReset 失败：', err);
+    }
     try {
       await MathJax.typesetPromise([container]);
     } catch (err) {
@@ -467,11 +532,15 @@ function installLinkHandler(container) {
   });
 }
 
-/// Swap each token for a dedicated <span class="rm-math"> holding the raw
+/// Swap each token for a dedicated `<span class="rm-math">` holding the raw
 /// TeX, and return the spans. Tokens are plain alphanumeric words, so
 /// marked never splits one across text nodes. Per-formula spans let
 /// typesetMath typeset (and fall back) formula by formula — one bad formula
 /// must not take down the rest of the note.
+///
+/// A Markdown-escaped `\$` is stored as `{ escape: '$' }`: it becomes a
+/// literal `$` inside `mathjax_ignore`, so marked's backslash pass cannot
+/// turn two prices into a formula and MathJax does not pair them either.
 function restoreMath(container, store) {
   const spans = [];
   if (!store.length) return spans;
@@ -492,10 +561,16 @@ function restoreMath(container, store) {
     for (const [p, i] of hits) {
       if (p > pos) frag.appendChild(document.createTextNode(value.slice(pos, p)));
       const span = document.createElement('span');
-      span.className = 'rm-math';
-      span.textContent = store[i];
+      const entry = store[i];
+      if (entry && typeof entry === 'object' && entry.escape) {
+        span.className = 'mathjax_ignore';
+        span.textContent = entry.escape;
+      } else {
+        span.className = 'rm-math';
+        span.textContent = entry;
+        spans.push(span);
+      }
       frag.appendChild(span);
-      spans.push(span);
       pos = p + mathToken(i).length;
     }
     if (pos < value.length) {

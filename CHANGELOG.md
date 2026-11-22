@@ -5,6 +5,36 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 修复（Fixed）
+
+- **离线时数学公式全部不渲染**：MathJax v4 的字体数据（calligraphic、
+  double-struck、fraktur…）和未内置的 TeX 扩展默认从 `cdn.jsdelivr.net`
+  按需加载。安装版 CSP 只允许 `'self'`，请求被拦截后 MathJax 会丢弃**整个**
+  排版批次，整篇笔记的公式都停留在 `$…$` 原文（`数学公式全面测试.md`
+  34/34 未渲染）。现在 Vite 构建把字体包与 41 个 TeX 扩展镜像到应用同源，
+  `loader.paths` 指向本地副本，断网 + CSP 下完整可用。
+- **引用块 / 列表中的块级公式被压扁**：`> $$…$$`、`- $$…$$` 不在原有保护
+  正则的匹配范围内，marked 吃掉 `\\` 行分隔符；新增容器感知的块级公式保护，
+  并把 CRLF 归一化后再扫描。
+- **`\$` 转义被误当成公式**：marked 会先去掉反斜杠，两个价格因此被 MathJax
+  配成公式；现在 `\$` 还原为 `mathjax_ignore` 中的字面 `$`。
+- **公式编号与引用失效**：启用 AMS tags 后 `\label` / `\eqref` / `\tag`
+  正常编号；每次渲染前 `texReset()`，消除二次渲染的
+  “Label … multiply defined” 与跨笔记引用串号。
+- **扩展宏显示为红色未定义**：显式加载并离线镜像 physics、bbm、dsfont、
+  textcomp、gensymb、upgreek、mathtools、units、braket，
+  `\dv`、`\pdv`、`\mathbbm`、`\mathds`、`\degree`、`\braket{a|b}` 等可用。
+- **Markdown 表格对齐**：`:--` / `--:` / `:-:` 的 `align` 属性此前被全局
+  `text-align: left` 覆盖，现在左 / 中 / 右对齐都生效。
+
+### 质量（Quality）
+
+- 新增 CSP + 断网数学回归页 `frontend/mathlab.html`；数学保护单测增至 13 个；
+  22 篇多格式笔记（MD / HTML / CSV / TXT / JSON / GBK / BOM）的 PNG + PDF
+  导出自测通过，0 错误、0 警告。
+
 ## [1.10.7] - 2026-11-21
 
 ### 修复（Fixed）

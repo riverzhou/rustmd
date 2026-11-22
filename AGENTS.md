@@ -529,7 +529,14 @@ If a new Tauri *plugin* is used:
 - **Math delimiters**: display math must start a line and end a line; inline
   `$…$` is protected outside fenced/inline code. Tokens are random-prefixed
   to avoid collisions. `DISPLAY_MATH_RE` must keep its `g` flag (the
-  multi-row matrix regression).
+  multi-row matrix regression). Blockquote (`> $$`) and list (`- $$`) display
+  blocks are protected separately, CRLF is normalized, and `\$` becomes an
+  ignored literal `$`. MathJax v4 fetches optional font data **and**
+  autoload-only TeX extensions from `cdn.jsdelivr.net` at runtime; the CSP
+  only allows `'self'`, so a failed fetch discards the entire typeset batch.
+  `frontend/vite.config.js` mirrors both into the app origin and
+  `MATHJAX_CONFIG.loader.paths` points there — do not remove that mapping.
+  `frontend/mathlab.html` is the CSP-enforcing offline regression page.
 - **Selftest**: dev-only; requires examples/ and network for the remote image
   checks. Remote images are best-effort: a fetch failure is recorded in
   `report.warnings` (and the remaining remote URLs are skipped for the run),

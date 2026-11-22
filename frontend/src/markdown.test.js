@@ -58,3 +58,79 @@ test('protectMath protects inline math and leaves code alone', () => {
   assert.ok(out.includes('`$code$`'));
   assert.ok(out.includes('$fenced$'));
 });
+
+test('protectMath handles display math inside blockquotes', () => {
+  const nl = String.fromCharCode(10);
+  const md = [
+    '> $$',
+    '> \\begin{pmatrix}',
+    '> a & b \\',
+    '> c & d',
+    '> \\end{pmatrix}',
+    '> $$',
+  ].join(nl);
+  const store = [];
+  const out = protectMath(md, store);
+  assert.equal(store.length, 1);
+  assert.ok(sourceHasMath(md));
+  assert.ok(store[0].includes('\\'), 'row separator must survive');
+  assert.ok(!store[0].includes('> '), 'quote markers must be stripped');
+  assert.match(out, /^> RMDMATH[0-9A-Z]+0X$/);
+});
+
+test('protectMath handles display math inside list items', () => {
+  const nl = String.fromCharCode(10);
+  const md = [
+    '- $$',
+    '  \\begin{aligned}',
+    '  x &= 1 \\',
+    '  y &= 2',
+    '  \\end{aligned}',
+    '  $$',
+  ].join(nl);
+  const store = [];
+  const out = protectMath(md, store);
+  assert.equal(store.length, 1);
+  assert.ok(store[0].includes('\\'));
+  assert.match(out, /^- RMDMATH[0-9A-Z]+0X$/);
+});
+
+test('protectMath handles same-line display math in a quote', () => {
+  const store = [];
+  const out = protectMath('> $$x = y$$', store);
+  assert.equal(store.length, 1);
+  assert.equal(store[0], '$$x = y$$');
+  assert.match(out, /^> RMDMATH[0-9A-Z]+0X$/);
+});
+
+test('protectMath leaves quoted prose containing $$ alone', () => {
+  const nl = String.fromCharCode(10);
+  const md = ['> 使用双 $$ 包裹公式', '', '> $$', '> x', '> $$'].join(nl);
+  const store = [];
+  protectMath(md, store);
+  assert.equal(store.length, 1);
+});
+
+test('protectMath hides escaped dollars from marked and MathJax', () => {
+  const store = [];
+  const out = protectMath('price \\$5 and \\$6 only', store);
+  assert.equal(store.length, 2);
+  assert.deepEqual(store, [{ escape: '$' }, { escape: '$' }]);
+  assert.ok(!out.includes('\\$'));
+});
+
+test('escaped dollars coexist with real inline math', () => {
+  const store = [];
+  const out = protectMath('price \\$5 and $x + y$', store);
+  assert.equal(store.length, 2);
+  assert.equal(store[0], '$x + y$');
+  assert.deepEqual(store[1], { escape: '$' });
+  assert.ok(!out.includes('\\$'));
+});
+
+test('an escaped dollar inside math is kept for MathJax', () => {
+  const store = [];
+  protectMath('$\\$5$ tail', store);
+  assert.equal(store.length, 1);
+  assert.equal(store[0], '$\\$5$');
+});

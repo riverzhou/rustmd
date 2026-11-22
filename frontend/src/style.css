@@ -2146,6 +2146,18 @@ body.divider-resizing .html-preview-frame {
   text-align: left;
 }
 
+/* marked emits align="…" for `:--` / `--:` / `:-:` columns; the generic
+   `text-align: left` above would override the presentational attribute. */
+.markdown-body th[align='center'],
+.markdown-body td[align='center'] {
+  text-align: center;
+}
+
+.markdown-body th[align='right'],
+.markdown-body td[align='right'] {
+  text-align: right;
+}
+
 .markdown-body th {
   background: var(--code-bg);
   font-weight: 600;

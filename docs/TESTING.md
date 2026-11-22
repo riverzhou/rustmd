@@ -42,9 +42,24 @@ npm run check
 `node --test` 直接 import 纯函数模块，不需要 DOM：
 
 - `frontend/src/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名 / 多库同路径稳定排序）、当前目录直属/子树过滤、按库过滤、默认当前目录（启动时为库根目录）范围、范围标签计数、树计数、折叠扁平化、祖先；
-- `frontend/src/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码；
+- `frontend/src/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码、引用块/列表中的块级公式（`\\` 行分隔符与 CRLF）、`\$` 转义与真公式共存、公式内 `\$`；
 - `frontend/src/vaultlist.test.js`：路径规范化、Windows 大小写/分隔符去重、MRU 上限 20、置顶优先显示、置顶不参与淘汰、旧字符串数组兼容、移除、损坏 localStorage 容错；
 - `frontend/src/i18n.test.js`：中英词典完整性、插值、系统语言选择。
+
+## 数学离线回归（CSP + 断网）
+
+`frontend/mathlab.html` 是一个仅开发用的页面，带**与安装版一致的 CSP**；它只通过 `preview.js` 渲染传入的 Markdown。MathJax 的任何 CDN 请求都会被 CSP 拦截，因此能复现“安装版里公式全部保持原文”的问题。
+
+```bash
+npm run dev
+# 浏览器打开 http://127.0.0.1:5173/mathlab.html
+# 控制台执行（host 由页面的 __mathLab 暴露）：
+#   await __mathLab.renderPreview(mdText, __mathLab.host, 'markdown')
+```
+
+回归时至少覆盖：普通行内/块级、矩阵/align/cases、`\label`+`\eqref`、`\tag`、`\text` 中文、`\textcolor`/`\boxed`、`\mathbb`/`\mathcal`/`\mathfrak`/`\mathscr`、`\ce`、`\cancel`、`\bbox`、`\braket{a|b}`、`\dv`/`\pdv`、`\mathbbm`/`\mathds`、`\degree`/`\textcelsius`/`\upalpha`、引用块与列表中的多行公式、`\$` 货币。每个公式都应有 `mjx-container`，且 `mjx-container g[data-mml-node="mtext"][fill="red"]` 为空（红色 = 未定义宏）。
+
+已内置到真实应用的验证：`npm run selftest` 会导出 `examples/` 全部笔记的 PNG/PDF，并断言预览无残留 `$…$`、无 MathJax/Mermaid 错误；安装版（CSP 生效）还需人工/脚本打开 `数学公式全面测试.md` 确认 `mjx-container` 数量为 34。
 
 ## 端到端自测
 

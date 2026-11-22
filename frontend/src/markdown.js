@@ -112,15 +112,94 @@ export const mathToken = (index) => `${MATH_TOKEN_PREFIX}${index}X`;
 // stays readable in every WebKit version Tauri targets.
 export const DISPLAY_MATH_RE = /^([ \t]*)\$\$(?!\$)([\s\S]*?)\$\$[ \t]*$/gm;
 
+// Inline `$…$`: no line break, no trailing whitespace, not escaped.
+export const INLINE_MATH_RE = /(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/g;
+
+// A Markdown-escaped dollar (`\$`). marked would strip the backslash, after
+// which MathJax pairs two currency prices into a bogus formula; protect the
+// pair here and restore it as a literal `$` in an element MathJax ignores.
+export const ESCAPED_DOLLAR_RE = /(^|[^\\])(\\\$)/g;
+
+const QUOTE_PREFIX_RE = /^[ \t]*(?:>[ \t]?)+/;
+const LIST_MARKER_RE = /^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?/;
+
+/// Display math that opens a blockquote line (`> $$`) or a list item
+/// (`- $$`) is not matched by DISPLAY_MATH_RE (which only allows indentation
+/// before `$$`). Left unprotected, marked eats the `\\` row separators and
+/// the formula renders as one squashed line. Protect the whole block, strip
+/// the container markers from the TeX, and leave a single token behind in
+/// the same container so MathJax still renders the formula in place.
+function protectContainerDisplayMath(text, store) {
+  const lines = text.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const quoteOpen = line.match(/^([ \t]*(?:>[ \t]?)+)\$\$(?!\$)([\s\S]*)$/);
+    const open =
+      quoteOpen ||
+      line.match(/^([ \t]*(?:[-*+]|\d+[.)])[ \t]+)\$\$(?!\$)([\s\S]*)$/);
+    if (!open) {
+      out.push(line);
+      continue;
+    }
+    const isQuote = Boolean(quoteOpen);
+    const prefix = open[1];
+    const rest = open[2];
+    // Same-line block: `> $$x$$` / `- $$x$$`.
+    const sameLine = rest.match(/^([\s\S]*?)\$\$[ \t]*$/);
+    if (sameLine) {
+      store.push(`$$${sameLine[1]}$$`);
+      out.push(prefix + mathToken(store.length - 1));
+      continue;
+    }
+    if (rest.trim() !== '') {
+      out.push(line);
+      continue;
+    }
+    let close = -1;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const stripped = isQuote
+        ? lines[j].replace(QUOTE_PREFIX_RE, '')
+        : lines[j].replace(LIST_MARKER_RE, '');
+      if (/^\$\$[ \t]*$/.test(stripped)) {
+        close = j;
+        break;
+      }
+    }
+    if (close === -1) {
+      out.push(line);
+      continue;
+    }
+    const body = [''];
+    for (let j = i + 1; j < close; j += 1) {
+      body.push(isQuote ? lines[j].replace(QUOTE_PREFIX_RE, '') : lines[j]);
+    }
+    const closeText = isQuote
+      ? lines[close].replace(QUOTE_PREFIX_RE, '')
+      : lines[close].replace(LIST_MARKER_RE, '');
+    body.push(closeText.slice(0, closeText.lastIndexOf('$$')));
+    store.push(`$$${body.join('\n')}$$`);
+    out.push(prefix + mathToken(store.length - 1));
+    i = close;
+  }
+  return out.join('\n');
+}
+
 export function protectMathInText(text, store) {
-  // Display math first ($$...$$, may span lines), then inline $...$.
-  // Same inline-math heuristics as mdSourceHasMath above.
-  let out = text.replace(DISPLAY_MATH_RE, (match, prefix) => {
+  // Order matters: container display math first, then ordinary standalone
+  // $$ blocks, then inline $…$, then escaped \$ (which the math regexes must
+  // not see).
+  let out = protectContainerDisplayMath(text, store);
+  out = out.replace(DISPLAY_MATH_RE, (match, prefix) => {
     store.push(match.slice(prefix.length));
     return prefix + mathToken(store.length - 1);
   });
-  out = out.replace(/(^|[^\\$])\$[^\n]*?[^\s$\\]\$(?!\$)/g, (match, prefix) => {
+  out = out.replace(INLINE_MATH_RE, (match, prefix) => {
     store.push(match.slice(prefix.length));
+    return prefix + mathToken(store.length - 1);
+  });
+  out = out.replace(ESCAPED_DOLLAR_RE, (match, prefix) => {
+    store.push({ escape: '$' });
     return prefix + mathToken(store.length - 1);
   });
   return out;
@@ -128,7 +207,12 @@ export function protectMathInText(text, store) {
 
 /** Protect math outside fenced and inline code; returns opaque tokens. */
 export function protectMath(md, store) {
-  return splitCodeSegments(md)
+  // Normalize CRLF first: the container scanner works line by line and a
+  // trailing carriage return would hide every `$$` terminator in a CRLF
+  // note (the app reads LF-normalized text, but imports/pastes and the
+  // browser mock may hand us CRLF).
+  const source = String(md).replace(/\r\n?/g, '\n');
+  return splitCodeSegments(source)
     .map((segment) => {
       if (segment.code) return segment.text;
       return splitInlineCode(segment.text)
