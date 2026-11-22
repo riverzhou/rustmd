@@ -4,8 +4,10 @@
 `winget search markdown`、`scoop search rustmd`、`yay -Ss rustmd`、`brew search rustmd`
 这类**长期搜索入口**中——这是 GitHub 之外最稳定的新用户来源。
 
-> 状态（2026-11-22，v1.11.1 发布后）：本目录全部清单已按 **1.11.1** 的已发布资产
-> 更新版本号、URL 和 SHA256（`npm run check:packaging` 校验一致性）。
+> 状态（2026-11-22，v1.11.2 发布后）：本目录全部清单仍按 **1.11.1** 的已发布资产
+> 固定（`npm run check:packaging` 校验一致性）。1.11.2 只整理仓库结构与发布工具链，
+> 应用代码与功能未变，因此清单继续指向 1.11.1，安装后行为与 1.11.2 相同；
+> 下一次功能发布再统一刷新。
 > winget：PR [#486380](https://github.com/microsoft/winget-pkgs/pull/486380)（1.11.1）已提交，
 > 等待 moderator；1.11.0 的 #486332 已通过校验但由 1.11.1 取代并关闭（审核队列里只留一个版本）。
 > Scoop bucket 与 Homebrew tap：**已更新到线上的 1.11.1**（含正确处理 1.11.0→1.11.1 的

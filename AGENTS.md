@@ -26,8 +26,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/checks/check-version.mjs v1.11.1` |
-| Release notes preflight | `node scripts/release/release-notes.mjs v1.11.1 >/dev/null` |
+| Version/tag preflight | `node scripts/checks/check-version.mjs v1.11.2` |
+| Release notes preflight | `node scripts/release/release-notes.mjs v1.11.2 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/release/sign-win.ps1` and `scripts/release/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/dev/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
