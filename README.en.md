@@ -70,7 +70,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 | Offline, no account | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Open source | ✅ GPL-3.0 | ❌ | ❌ | ✅ MIT² | ✅ GPL | ✅ GPL-3.0 | ✅ AGPL-3.0 |
 | Price | Free | Free* | $14.99 | Free | Free | Free | Free* |
-| Platforms | 3 OS³ / ❌ | 3 OS / ✅ | 3 OS / ❌ | 3 OS + Web / ❌ | Windows only / ❌ | 3 OS / ❌ | 3 OS / ✅ |
+| Desktop platforms | 3 OS³ | 3 OS | 3 OS | 3 OS + Web | Windows only | 3 OS | 3 OS |
 
 > Based on public information and official documentation as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official docs. `✅` native; `⚠️` extension/plugin, partial capability or an extra dependency; `❌` not supported.
 >
