@@ -5,6 +5,31 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.11.2] - 2026-11-22
+
+仓库结构与发布工具链整理。**没有应用代码或文件格式变化**，功能与 1.11.1 相同。
+
+### 变更（Changed）
+
+- 根目录只保留入口文档、构建清单与目录：`AUDIT_REPORT.md`、`LINUX_BUILD.md`
+  移入 `docs/`；截图 / 演示图 / 海报移入 `docs/assets/`；对外文案移入
+  `docs/marketing/`；`release-notes/` 保持独立目录。
+- 许可全文改为 REUSE 规范命名：`LICENSES/MIT.txt`、`LICENSES/Apache-2.0.txt`
+  （原 `licenses/LICENSE-*`）。
+- 脚本按用途分组为 `scripts/checks/`、`dev/`、`lib/`、`release/`，全部从自身
+  位置定位仓库根；`package.json`、CI / release workflow、Tauri dev server、
+  Windows 绿色包与 DMG 脚本、Linux 冒烟脚本同步更新。
+
+### 文档（Docs）
+
+- 新增 `docs/CONVENTIONS.md`（目录与命名的唯一规范）与 `scripts/README.md`
+  （脚本索引）；README、AGENTS、RELEASING、TESTING 与营销文案同步新路径。
+- `check:repo` 校验新布局的必需文件与相对链接。
+
+### 修复（Fixed）
+
+- `CHANGELOG.md` 中误写入的 NUL 字节（此前 grep 会把整个文件当作二进制）。
+
 ## [1.11.1] - 2026-11-22
 
 1.11.0 之后的两处导出修复，加上一轮全量代码审计与回归：可用性、安全边界、
