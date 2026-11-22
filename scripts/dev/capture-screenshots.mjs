@@ -6,18 +6,22 @@
 //      msedge --headless=new --disable-gpu --hide-scrollbars \
 //        --remote-debugging-port=9333 --user-data-dir=<temp dir> \
 //        --window-size=1440,900 http://127.0.0.1:5173/
-//   3) node scripts/capture-screenshots.mjs
+//   3) node scripts/dev/capture-screenshots.mjs
 //
-// Outputs docs/screenshots/{overview,dark,sidebar,multi-vault,vault-switcher,
+// Outputs docs/assets/screenshots/{overview,dark,sidebar,multi-vault,vault-switcher,
 // html-note,csv-note,txt-note,json-note,json-note-dark}.png and the .en
 // variants. The script drives the mock vault that ships in
 // frontend/src/api.js, so it works without the Rust backend. CDP/APP can be
 // overridden with env vars.
 import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const CDP = process.env.CDP || 'http://127.0.0.1:9333';
 const APP = process.env.APP || 'http://127.0.0.1:5173/';
-const OUT = 'docs/screenshots';
+const OUT = path.join(root, 'docs', 'assets', 'screenshots');
 const NOTE = 'work/数学与图表.md';
 const VAULT = 'D:\\Notes';
 const RECENT_VAULTS = [

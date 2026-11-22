@@ -16,7 +16,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const errors = [];
 const notes = [];
 
@@ -85,7 +85,7 @@ if (pkg.license !== 'GPL-3.0-or-later') {
 }
 
 // --- 4. license texts exist ---
-for (const rel of ['licenses/LICENSE-MIT', 'licenses/LICENSE-APACHE']) {
+for (const rel of ['LICENSES/MIT.txt', 'LICENSES/Apache-2.0.txt']) {
   try {
     if (statSync(path.join(root, rel)).size < 500) errors.push(`${rel}: looks truncated`);
   } catch {

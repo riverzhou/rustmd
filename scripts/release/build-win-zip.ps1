@@ -4,7 +4,7 @@
 # Run after build + sign. ASCII only for Windows PowerShell 5.1.
 $ErrorActionPreference = 'Stop'
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
 
 $version = (node -p "require('./package.json').version").Trim()
@@ -43,9 +43,9 @@ if (Test-Path (Join-Path $root 'LICENSE')) {
 if (Test-Path (Join-Path $root 'docs/SECURITY.md')) {
   Copy-Item (Join-Path $root 'docs/SECURITY.md') (Join-Path $green 'SECURITY.md')
 }
-# README.md links to CHANGELOG.md, docs/*.md and docs/screenshots/*.png.
+# README.md links to CHANGELOG.md, docs/*.md and docs/assets/screenshots/*.png.
 # Ship those files so the offline README does not contain dead links.
-foreach ($doc in @('README.en.md', 'CHANGELOG.md', 'AUDIT_REPORT.md', 'AGENTS.md', 'LINUX_BUILD.md', 'CONTRIBUTING.md')) {
+foreach ($doc in @('README.en.md', 'CHANGELOG.md', 'AGENTS.md', 'CONTRIBUTING.md')) {
   $path = Join-Path $root $doc
   if (Test-Path $path) { Copy-Item $path (Join-Path $green $doc) }
 }
@@ -54,11 +54,16 @@ if (Test-Path $docs) {
   Copy-Item $docs (Join-Path $green 'docs') -Recurse
 }
 # GitHub-only promo artwork is not needed in the portable zip (the README GIF is).
-foreach ($promo in @('docs/social-preview.png', 'docs/social-preview.html')) {
+foreach ($promo in @(
+    'docs/assets/social-preview.png',
+    'docs/assets/social-preview.html',
+    'docs/assets/compare-wechat.png',
+    'docs/assets/compare-wechat.html'
+  )) {
   $promoPath = Join-Path $green $promo
   if (Test-Path $promoPath) { Remove-Item $promoPath -Force }
 }
-# docs/PROMOTION.md links to the package-manager README; ship it so the
+# docs/marketing/PROMOTION.md links to the package-manager README; ship it so the
 # offline docs have no dead relative links.
 $packagingReadme = Join-Path $root 'packaging/README.md'
 if (Test-Path $packagingReadme) {
@@ -113,9 +118,13 @@ try {
     'LICENSE',
     'SECURITY.md',
     'CHANGELOG.md',
-    'docs/screenshots/overview.png',
+    'docs/assets/screenshots/overview.png',
     'docs/ARCHITECTURE.md',
-    'docs/PROMOTION.md',
+    'docs/AUDIT_REPORT.md',
+    'docs/CONVENTIONS.md',
+    'docs/LINUX_BUILD.md',
+    'docs/marketing/GITHUB_PROJECT_COPY.md',
+    'docs/marketing/PROMOTION.md',
     'packaging/README.md',
     '.github/workflows/ci.yml',
     '.github/workflows/release.yml'
@@ -123,7 +132,7 @@ try {
   foreach ($entry in $required) {
     if ($names -notcontains $entry) { throw "$entry missing in zip" }
   }
-  $screenshots = @($names | Where-Object { $_ -like 'docs/screenshots/*.png' })
+  $screenshots = @($names | Where-Object { $_ -like 'docs/assets/screenshots/*.png' })
   if ($screenshots.Count -lt 20) {
     throw "expected at least 20 screenshots in the zip, found $($screenshots.Count)"
   }

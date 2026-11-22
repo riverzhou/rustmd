@@ -4,4 +4,5 @@ rem falls back to a random free port if it is occupied). cargo must be on
 rem PATH; this shell's PATH lacks it, so prepend the rustup bin dir (an
 rem older cargo.exe elsewhere on PATH must not win).
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-node scripts\launch-dev.mjs %*
+cd /d "%~dp0..\.."
+node scripts\dev\launch-dev.mjs %*

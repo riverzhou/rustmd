@@ -1,5 +1,5 @@
 // Dev-only end-to-end self-test (?selftest=1), extracted from main.js so the
-// app entry stays UI-only. Launch with `RUSTMD_SELFTEST=1 scripts\run-dev.bat`;
+// app entry stays UI-only. Launch with `RUSTMD_SELFTEST=1 scripts\dev\run-dev.bat`;
 // it renders every note of the examples/ vault through the REAL app (real
 // webview, real Rust backend, real remote images), exports PNG + PDF for each,
 // and verifies residual raw math, remote AND local (vault) images in the

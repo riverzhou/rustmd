@@ -9,7 +9,7 @@
   内置 WebView HTML 实时预览、HTML/PNG/PDF 导出。
 - GitHub Topics 新增 **`html`、`html-editor`、`html-notes`、`webview`**，
   同时保留 Markdown、Tauri/Rust、三平台、离线、Mermaid、LaTeX 等标签（共 20 个）。
-- README 中英文版、`AGENTS.md`、`AUDIT_REPORT.md`、架构/安全/测试/发布文档
+- README 中英文版、`AGENTS.md`、`docs/AUDIT_REPORT.md`、架构/安全/测试/发布文档
   同步 HTML 资源内联、WebKit 导出修复和 Origin 白名单例外。
 - 版本提升到 1.4.2；应用代码与 v1.4.1 相同。
 

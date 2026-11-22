@@ -13,28 +13,28 @@ this file is the developer/agent contract.
 | All checks (lint, units, repo+IPC/docs, license boundary, packaging, version, fmt/clippy/test, build) | `npm run check` |
 | License boundary (core stays permissive + Tauri-free) | `npm run check:license` |
 | Packaging manifests (winget/Scoop/Homebrew/AUR consistency) | `npm run check:packaging` |
-| Dev window (real Tauri, hot frontend reload) | `node scripts/launch-dev.mjs` |
-| Dev window shortcut (Windows) | `scripts\run-dev.bat` |
+| Dev window (real Tauri, hot frontend reload) | `node scripts/dev/launch-dev.mjs` |
+| Dev window shortcut (Windows) | `scripts\dev\run-dev.bat` |
 | Browser dev (in-memory mock) | `npm run dev` → http://127.0.0.1:5173 |
 | Release exe, no installer | `npx tauri build --no-bundle` |
 | Linux release binary | `npx tauri build --no-bundle` → `target/release/rustmd` |
 | Linux Rust tests | `source "$HOME/.cargo/env" && cargo test --workspace` |
-| Linux headless release smoke | `scripts/linux-headless-smoke.sh` (isolated Xvfb) |
-| Linux headless Wayland smoke | `scripts/linux-wayland-smoke.sh` (sway headless + grim; non-blocking in CI) |
-| Windows release shortcut | `scripts\run-build.bat` |
+| Linux headless release smoke | `scripts/release/linux-headless-smoke.sh` (isolated Xvfb) |
+| Linux headless Wayland smoke | `scripts/release/linux-wayland-smoke.sh` (sway headless + grim; non-blocking in CI) |
+| Windows release shortcut | `scripts\release\run-build.bat` |
 | Frontend pure unit tests | `npm run test:unit` |
 | Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/check-version.mjs v1.11.1` |
-| Release notes preflight | `node scripts/release-notes.mjs v1.11.1 >/dev/null` |
-| Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/sign-win.ps1` and `scripts/build-win-zip.ps1` |
+| Version/tag preflight | `node scripts/checks/check-version.mjs v1.11.1` |
+| Release notes preflight | `node scripts/release/release-notes.mjs v1.11.1 >/dev/null` |
+| Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/release/sign-win.ps1` and `scripts/release/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
-| Regenerate README screenshots | `node scripts/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
+| Regenerate README screenshots | `node scripts/dev/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
 
 - `cargo`/`rustup` are often not on this shell's PATH. Use
-  `node scripts/cargo.mjs …` (it probes `$CARGO`, `~/.cargo/bin/cargo`, PATH)
-  or the `scripts\run-*.bat` wrappers.
+  `node scripts/lib/cargo.mjs …` (it probes `$CARGO`, `~/.cargo/bin/cargo`, PATH)
+  or the `scripts\dev\run-dev.bat` / `scripts\release\run-build.bat` wrappers.
 - The E2E self-test writes artifacts and `report.json` to the system temp
   directory under `rustmd-selftest/`; **clear/override `RUSTMD_SELFTEST_OUT`
   before a release run** so a stale green report cannot be reused (the runner
@@ -56,11 +56,11 @@ this file is the developer/agent contract.
   zip, Linux deb/AppImage built on Ubuntu 26.04, macOS Apple Silicon (arm64)
   DMG). Details: `docs/RELEASING.md`.
 - Linux release binaries link system GTK 3 + WebKitGTK 4.1 (Tauri 2 has no GTK 4
-  backend); install/packaging/no-root sysroot notes live in `LINUX_BUILD.md`.
+  backend); install/packaging/no-root sysroot notes live in `docs/LINUX_BUILD.md`.
   Release packages are built on the latest Ubuntu (26.04) per that guide, with
   an Ubuntu 24.04+ / glibc 2.39 runtime baseline; CI still compiles on Ubuntu
   22.04 for older-distro coverage.
-  `scripts/linux-headless-smoke.sh` can smoke-test the release binary on an
+  `scripts/release/linux-headless-smoke.sh` can smoke-test the release binary on an
   isolated Xvfb display (artifacts in `target/headless-smoke/`).
 
 ## Architecture
@@ -600,7 +600,7 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   `check:license`/`check:packaging` and `cargo test --workspace`) plus a clean
   `npm run selftest`; audit version/test-count/screenshot references across
   `AGENTS.md`, READMEs, `CHANGELOG.md`,
-  `release-notes/RELEASE_NOTES-<version>.md`, docs and `AUDIT_REPORT.md`; commit, tag `v<version>`, and push the commit + tag to
+  `release-notes/RELEASE_NOTES-<version>.md`, docs and `docs/AUDIT_REPORT.md`; commit, tag `v<version>`, and push the commit + tag to
   **both** remotes (`github` and `origin`/GitLab). GitHub tag triggers the
   three-platform release; GitLab is a mirror with no CI. After the GitHub
   release assets exist, refresh the winget/Scoop/Homebrew/AUR manifests from
@@ -614,13 +614,13 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   (mock mode) and read the browser console; in the app use WebView2 devtools
   (F12 in dev builds).
 - **Vite binds IPv4 explicitly** (`127.0.0.1`) and `strictPort: true`;
-  `tauri.conf.json` `devUrl` must match. `scripts/launch-dev.mjs` chooses a
+  `tauri.conf.json` `devUrl` must match. `scripts/dev/launch-dev.mjs` chooses a
   free port and generates a temp config, but a direct `npm run dev` +
   `npx tauri dev` still assumes 5173; a stray process there yields stale
   content or a white window.
-- **`tauri dev` runs with `--no-watch`** (wired in `scripts/launch-dev.mjs`).
+- **`tauri dev` runs with `--no-watch`** (wired in `scripts/dev/launch-dev.mjs`).
   The watcher watches the whole project and killed/restarted the app on any
-  in-project write. Consequence: restart `scripts\run-dev.bat` after editing
+  in-project write. Consequence: restart `scripts\dev\run-dev.bat` after editing
   Rust/`tauri.conf.json`; frontend HMR is unaffected.
 - **Vite 8 / rolldown** is used. The main chunk warning is expected (MathJax
   and mermaid are lazy chunks; CodeMirror language-data is large).
@@ -668,15 +668,15 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   artifact's existence and exact byte length, requires one entry per example
   note, and prints warnings. It
   restores the user’s notes root afterwards and exits with 0/1.
-- **Promo assets**: `docs/social-preview.html` is the source for the 1280×640
-  `docs/social-preview.png` (headless Edge `--screenshot`, see the file header); upload it
-  manually in Settings → Social preview (no API). `docs/demo.gif` is the README hero tour
-  (880×550, ~1.3 MB) built from five `docs/screenshots/` images with ffmpeg crossfades.
+- **Promo assets**: `docs/assets/social-preview.html` is the source for the 1280×640
+  `docs/assets/social-preview.png` (headless Edge `--screenshot`, see the file header); upload it
+  manually in Settings → Social preview (no API). `docs/assets/demo.gif` is the README hero tour
+  (880×550, ~1.3 MB) built from five `docs/assets/screenshots/` images with ffmpeg crossfades.
   Re-render both when the UI or the copy changes.
-- **README screenshots** (`docs/screenshots/*.png`) are generated from the
+- **README screenshots** (`docs/assets/screenshots/*.png`) are generated from the
   browser mock vault, not the real examples folder: run `npm run dev`, start
   Edge headless with `--remote-debugging-port=9333` on
-  `http://127.0.0.1:5173/`, then `node scripts/capture-screenshots.mjs`. The
+  `http://127.0.0.1:5173/`, then `node scripts/dev/capture-screenshots.mjs`. The
   script captures 1440×900 zh/en light/dark overview, a 336 px sidebar crop that includes the width handle, a
   900×900 multi-vault view and a 640×460 recent-vault switcher crop, plus
   full-window HTML/CSV/TXT/JSON and dark JSON format shots (`*-note*.png`, with
@@ -693,23 +693,28 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
 - **Linux runtime deps**: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0`,
   `libsoup-3.0.so.0`; the app is dynamically linked. Release packages are built
   on Ubuntu 26.04 and target Ubuntu 24.04+ / glibc 2.39; CI still compiles on
-  22.04. See `LINUX_BUILD.md`.
+  22.04. See `docs/LINUX_BUILD.md`.
 - Shell here is git-bash on Windows: quote paths with spaces; `ls`/`grep`
   work, PowerShell-style syntax does not.
 
 ## Documentation map
 
+- `docs/CONVENTIONS.md` — repository layout and naming rules (canonical; keep new files in their group).
+- `scripts/README.md` — script groups and entry points.
 - `README.md` / `README.en.md` — user-facing features, downloads, usage (Chinese / English).
 - `docs/ARCHITECTURE.md` — data flow, IPC, security model.
 - `docs/TESTING.md` — unit/E2E/CI, how to run and debug.
 - `docs/RELEASING.md` — versioning, signing, three-platform release.
 - `docs/SECURITY.md` — threat model and residual risks.
-- `CHANGELOG.md` — history; `AUDIT_REPORT.md` — current audit status.
+- `CHANGELOG.md` — history; `docs/AUDIT_REPORT.md` — current audit status.
 - `release-notes/` — per-release `RELEASE_NOTES-<version>.md` files (see its README).
-- `docs/screenshots/` — README screenshots (regenerate with `scripts/capture-screenshots.mjs`).
-- `docs/GITHUB_PROJECT_COPY.md` — About description, topics, social preview and discoverability copy.
-- `docs/PROMOTION.md` — external launch kit (channels, ready-to-post copy, 30-day plan, metrics).
-- `docs/LICENSING.md` — 分层许可：应用 GPL、可复用层 MIT OR Apache-2.0 的边界与规则。
+- `docs/assets/screenshots/` — README screenshots (regenerate with `scripts/dev/capture-screenshots.mjs`).
+- `docs/marketing/GITHUB_PROJECT_COPY.md` — About description, topics, social preview and discoverability copy.
+- `docs/marketing/PROMOTION.md` — external launch kit (channels, ready-to-post copy, 30-day plan, metrics).
+- `docs/LICENSING.md` — 分层许可：应用 GPL、可复用层 MIT OR Apache-2.0 的边界与规则；
+  全文在 `LICENSES/`（`MIT.txt`、`Apache-2.0.txt`）。
+- `docs/assets/` — README 截图、demo.gif、社交预览与对比海报（含可再生成源文件）。
+- `docs/marketing/` — GitHub About 文案与对外推广手册。
 - `packaging/` — winget / Scoop / AUR / Homebrew manifests (see `packaging/README.md`).
 - `CONTRIBUTING.md` — contribution workflow and PR checklist.
-- `LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.
+- `docs/LINUX_BUILD.md` — Linux dependency/build/packaging guide and headless smoke test.

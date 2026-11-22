@@ -4,7 +4,7 @@
   "version": "1.11.1",
   "identifier": "com.river.rustmd",
   "build": {
-    "beforeDevCommand": "node scripts/dev-server.mjs",
+    "beforeDevCommand": "node scripts/dev/dev-server.mjs",
     "devUrl": "http://127.0.0.1:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "frontend/dist"

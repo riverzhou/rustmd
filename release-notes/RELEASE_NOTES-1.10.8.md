@@ -46,7 +46,7 @@
 
 - 与 1.10.7 一致：在 **Ubuntu 26.04** 上构建，运行基线为 **Ubuntu 24.04+ /
   glibc 2.39**，需要 GTK 3 与 WebKitGTK 4.1 运行库。
-- Ubuntu 22.04 用户请继续使用 1.10.4，或按 `LINUX_BUILD.md` 从源码构建。
+- Ubuntu 22.04 用户请继续使用 1.10.4，或按 `docs/LINUX_BUILD.md` 从源码构建。
 
 ## 下载
 

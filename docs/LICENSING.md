@@ -13,7 +13,7 @@ rustmd 采用**分层许可**：应用本体是 GPL，抽出来的两个可复�
 | 应用：`src/`（Tauri 层）、`frontend/src/*.js`（桌面 UI）、`tauri.conf.json` | **GPL-3.0-or-later** | 与历史版本一致，不改变 |
 | `crates/rustmd-core/`（平台无关引擎） | **MIT OR Apache-2.0** | Rust 生态惯例的双许可 |
 | `frontend/src/shared/`（渲染栈 + host 桥） | **MIT OR Apache-2.0** | 无 Tauri 依赖，可独立复用 |
-| `licenses/` | 上述双许可的全文 | — |
+| `LICENSES/` | 上述双许可的全文（`MIT.txt`、`Apache-2.0.txt`，REUSE 命名） | — |
 
 ## 2. 为什么这样分
 

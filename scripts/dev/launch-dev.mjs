@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Tauri dev flow with a dynamic dev-server port:
 //   1. Prefer 5173; if it is taken, find a random free port on 127.0.0.1.
-//   2. Pass the port to the Vite dev server (scripts/dev-server.mjs) via
+//   2. Pass the port to the Vite dev server (scripts/dev/dev-server.mjs) via
 //      the RUSTMD_VITE_PORT environment variable.
 //   3. Override `build.devUrl` with `tauri dev --config`, because the Tauri
 //      v2 CLI has no TAURI_DEV_URL environment variable to do this directly.
@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PREFERRED_PORT = 5173;
 
 function findFreePort(preferred) {
@@ -58,7 +58,7 @@ process.on('exit', cleanup);
 // examples vault, a PNG exported into the repo, even `npm run build`) killed
 // and restarted the app — experienced by users as a crash. Cost: Rust code
 // or tauri.conf.json changes are not picked up automatically; restart
-// scripts\run-dev.bat after editing Rust. Vite HMR for the frontend is
+// scripts\dev\run-dev.bat after editing Rust. Vite HMR for the frontend is
 // unaffected.
 const isWin = process.platform === 'win32';
 // On Windows, run a single quoted command through the shell (the old

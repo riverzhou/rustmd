@@ -2,7 +2,7 @@
 
 > 目标：让第一次看到 rustmd 的人在 **10 秒内**明白它是什么、在 **60 秒内**装上它；让每个月都有**稳定的新入口**，而不是只靠一次发帖。
 >
-> 本文件负责“对外推广”；[GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 只负责 GitHub 仓库资料（About / topics / 社交预览 / Release 文案），[../packaging/README.md](../packaging/README.md) 负责包管理器清单。
+> 本文件负责“对外推广”；[GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 只负责 GitHub 仓库资料（About / topics / 社交预览 / Release 文案），[../../packaging/README.md](../../packaging/README.md) 负责包管理器清单。
 
 ## 0. 先说现状（2026-11-14）
 
@@ -88,14 +88,14 @@
 
 **第 0 天（今天，30 分钟）**
 
-- 上传 `docs/social-preview.png` 到 GitHub Settings → Social preview（见 [GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 第 4 节）；
+- 上传 `docs/assets/social-preview.png` 到 GitHub Settings → Social preview（见 [GITHUB_PROJECT_COPY.md](GITHUB_PROJECT_COPY.md) 第 4 节）；
 - 在个人主页把 `rustmd` 设为 pinned repository；
 - 在 repo 的 About 里确认描述与 topics 已生效；
 - 发一条简短的 Release / Discussion 欢迎帖（可选）。
 
 **第 1 周：建立长期入口**
 
-1. winget 需要先签 Microsoft CLA 再提 PR（步骤见 [../packaging/README.md](../packaging/README.md)）；
+1. winget 需要先签 Microsoft CLA 再提 PR（步骤见 [../../packaging/README.md](../../packaging/README.md)）；
 2. 已给 3 个 awesome list 提 PR（见 5.11 的实际链接）；
 3. 向小众软件投稿（文案见 5.7）；
 4. V2EX「分享创造」发帖（文案见 5.6）。
@@ -112,7 +112,7 @@
 1. 少数派 Matrix / 知乎文章（见 5.7 / 5.8）；
 2. AlternativeTo 收录（见 5.12）；
 3. Product Hunt 发布（见 5.13）；
-4. AUR 提交（需 AUR 账号）；Scoop / Homebrew 已完成（见 [../packaging/README.md](../packaging/README.md)）。
+4. AUR 提交（需 AUR 账号）；Scoop / Homebrew 已完成（见 [../../packaging/README.md](../../packaging/README.md)）。
 
 **第 4 周：复盘与复利**
 
@@ -266,7 +266,7 @@ rustmd 的取舍：
 内置 WebView 整页预览，不需要外部浏览器。
 亮点：纯文件、无账号、离线；HTML 笔记整页渲染；CSV/TXT 智能表格；JSON 检查器；
 UTF-8/GBK/GB18030；HTML/PNG/PDF 导出；Windows 绿色版。
-截图：附上仓库 docs/screenshots/ 里的 overview / html-note / csv-note / json-note 四张
+截图：附上仓库 docs/assets/screenshots/ 里的 overview / html-note / csv-note / json-note 四张
 作者说明：我是作者，项目开源，欢迎反馈。
 ```
 
@@ -386,7 +386,7 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 - 名称：`rustmd`；主页：GitHub；许可：GPL-3.0；平台：Windows / Linux / macOS；
 - 分类：`Note-taking`、`Markdown Editors`、`Text Editors`；
 - “Alternatives to”：Obsidian、Typora、Notepad++、VS Code、Zettlr、Joplin；
-- 描述用第 1 节的英文一句话 + 3 个亮点；截图用 `docs/social-preview.png` 与 `docs/screenshots/`。
+- 描述用第 1 节的英文一句话 + 3 个亮点；截图用 `docs/assets/social-preview.png` 与 `docs/assets/screenshots/`。
 
 ### 5.13 Product Hunt
 
@@ -405,7 +405,7 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 
 ## 6. 包管理器提交（长期入口）
 
-详细清单与校验命令在 [../packaging/README.md](../packaging/README.md)。提交顺序建议：
+详细清单与校验命令在 [../../packaging/README.md](../../packaging/README.md)。提交顺序建议：
 
 1. **winget**：PR [#486380](https://github.com/microsoft/winget-pkgs/pull/486380)（1.11.1）已提交，
    等待 moderator 合并（1.11.0 的 #486332 已通过校验但被取代）；
@@ -473,7 +473,7 @@ gh release view v1.11.1 -R riverzhou/rustmd --json assets \
 ## 9. 可选：建一个 GitHub Pages 落地页
 
 当前 About 的 homepage 为空。如果你希望有一个可分享的短链接（`riverzhou.github.io/rustmd`），
-可以把 `docs/` 作为 Pages 源，复用 `docs/social-preview.html` 的视觉做一页
+可以把 `docs/` 作为 Pages 源，复用 `docs/assets/social-preview.html` 的视觉做一页
 “截图 + 下载 + 三个亮点 + GitHub 链接”。注意：落地页要把主要 CTA 指回 GitHub，避免分走 star。
 如果暂时不做，保持 homepage 为空即可，不要填一个无关链接。
 
@@ -484,4 +484,4 @@ gh release view v1.11.1 -R riverzhou/rustmd --json assets \
 - Issues：<https://github.com/riverzhou/rustmd/issues>
 - Discussions：<https://github.com/riverzhou/rustmd/discussions>
 - GitLab 镜像：<http://gitlab.riverzhou.cn/river/rustmd>
-- 素材：`docs/demo.gif`、`docs/social-preview.png`、`docs/screenshots/`
+- 素材：`docs/assets/demo.gif`、`docs/assets/social-preview.png`、`docs/assets/screenshots/`

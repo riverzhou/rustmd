@@ -98,6 +98,6 @@ rustmd 打开的是用户本地文件夹，但笔记内容、图片 URL、front 
 
 ## 审计与验证
 
-- `AUDIT_REPORT.md` 记录当前审计状态与已修复项。
+- `docs/AUDIT_REPORT.md` 记录当前审计状态与已修复项。
 - `npm run check` 覆盖路径、保存、编码、SSRF 单测；`npm run selftest` 覆盖真实 WebView 渲染与导出（HTML 条目要求 iframe ready + PNG/PDF 产出，数据条目要求表格/JSON 结构、对齐与转义；CI 传 `--require-html --require-data` 防止静默丢失格式覆盖）。
 - 发布前跑 `npm run check` + `npm run selftest`，并检查 CI 三端编译。

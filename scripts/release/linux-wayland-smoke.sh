@@ -9,11 +9,11 @@
 # This is a smoke test, not a replacement for the Xvfb E2E suite: CI runs it
 # with continue-on-error, so a headless-Wayland quirk never blocks a release.
 #
-# Usage: scripts/linux-wayland-smoke.sh
+# Usage: scripts/release/linux-wayland-smoke.sh
 # Requires: bash, sway, grim, ImageMagick (magick or convert).
 set -euo pipefail
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 BIN="${RUSTMD_BIN:-$ROOT/target/release/rustmd}"
 OUT="${RUSTMD_WAYLAND_SMOKE_OUT:-$ROOT/target/wayland-smoke}"
 

@@ -10,7 +10,7 @@
 # ASCII only: Windows PowerShell 5.1 reads UTF-8 without BOM as ANSI.
 $ErrorActionPreference = 'Stop'
 
-$root = Split-Path $PSScriptRoot -Parent
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
 $version = (node -p "require('./package.json').version").Trim()
 $release = Join-Path $root "release/$version"

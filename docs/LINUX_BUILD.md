@@ -194,11 +194,11 @@ Tauri 2 / wry 的 GTK4 + WebKitGTK 6.0 迁移仍在进行中（wry issue #1474�
 
 ## 10. 无头冒烟测试
 
-`scripts/linux-headless-smoke.sh` 在隔离的 Xvfb display 上启动 release 二进制，
+`scripts/release/linux-headless-smoke.sh` 在隔离的 Xvfb display 上启动 release 二进制，
 不会弹到当前桌面，也不会调用桌面图片查看器：
 
 ```bash
-scripts/linux-headless-smoke.sh
+scripts/release/linux-headless-smoke.sh
 ```
 
 脚本行为：
@@ -222,7 +222,7 @@ scripts/linux-headless-smoke.sh
 以 `GDK_BACKEND=wayland` 启动 release 二进制，用 grim 截图并校验首帧非空白：
 
 ```bash
-scripts/linux-wayland-smoke.sh
+scripts/release/linux-wayland-smoke.sh
 ```
 
 它使用临时 `XDG_RUNTIME_DIR` / `HOME`，不会影响当前桌面；产物写入

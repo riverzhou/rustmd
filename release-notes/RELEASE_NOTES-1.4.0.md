@@ -29,7 +29,7 @@
 - 快速切换笔记时，旧 HTML 预览的异步 iframe 不会覆盖新笔记；切回 Markdown 会清理
   监听器与定时器。
 - `F11` 忽略按键重复，窗口重新聚焦时同步全屏状态。
-- 依赖、文档与发布流程全面审计；`AUDIT_REPORT.md`、`AGENTS.md`、中英文 README、架构/安全/
+- 依赖、文档与发布流程全面审计；`docs/AUDIT_REPORT.md`、`AGENTS.md`、中英文 README、架构/安全/
   测试/发布文档同步到 1.4.0。
 
 ## 下载

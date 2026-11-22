@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const errors = [];
 const notes = [];
 
@@ -51,7 +51,7 @@ const REQUIRED = [
   'README.en.md',
   'AGENTS.md',
   'CHANGELOG.md',
-  'AUDIT_REPORT.md',
+  'docs/AUDIT_REPORT.md',
   'frontend/index.html',
   'frontend/src/main.js',
   'frontend/src/api.js',
@@ -75,14 +75,22 @@ const REQUIRED = [
   'CONTRIBUTING.md',
   'packaging/README.md',
   'crates/rustmd-core/Cargo.toml',
-  'LINUX_BUILD.md',
+  'docs/AUDIT_REPORT.md',
+  'docs/CONVENTIONS.md',
+  'docs/LINUX_BUILD.md',
+  'docs/assets/screenshots/overview.png',
+  'docs/marketing/PROMOTION.md',
+  'LICENSES/MIT.txt',
+  'LICENSES/Apache-2.0.txt',
+  'release-notes/README.md',
+  'scripts/README.md',
   'frontend/shims/katex.js',
-  'scripts/linux-headless-smoke.sh',
+  'scripts/release/linux-headless-smoke.sh',
   'docs/ARCHITECTURE.md',
   'docs/TESTING.md',
   'docs/RELEASING.md',
   'docs/SECURITY.md',
-  'docs/GITHUB_PROJECT_COPY.md',
+  'docs/marketing/GITHUB_PROJECT_COPY.md',
   'icons/icon.ico',
   'icons/icon.icns',
   'icons/icon.png',
@@ -91,15 +99,15 @@ const REQUIRED = [
   'examples/数据表格示例-GBK.csv',
   'examples/数据文本示例.txt',
   'examples/数据配置示例.json',
-  'scripts/launch-dev.mjs',
-  'scripts/run-selftest.mjs',
-  'scripts/check-selftest-report.mjs',
-  'scripts/check-packaging.mjs',
-  'scripts/release-notes.mjs',
-  'scripts/sign-win.ps1',
-  'scripts/build-win-zip.ps1',
-  'scripts/dev-server.mjs',
-  'scripts/cargo.mjs',
+  'scripts/dev/launch-dev.mjs',
+  'scripts/dev/run-selftest.mjs',
+  'scripts/checks/check-selftest-report.mjs',
+  'scripts/checks/check-packaging.mjs',
+  'scripts/release/release-notes.mjs',
+  'scripts/release/sign-win.ps1',
+  'scripts/release/build-win-zip.ps1',
+  'scripts/dev/dev-server.mjs',
+  'scripts/lib/cargo.mjs',
   '.gitignore',
   '.gitattributes',
 ];
@@ -311,9 +319,9 @@ const SCAN_FILES = [
   'README.md',
   'README.en.md',
   'AGENTS.md',
-  'LINUX_BUILD.md',
+  'docs/LINUX_BUILD.md',
   'CHANGELOG.md',
-  'AUDIT_REPORT.md',
+  'docs/AUDIT_REPORT.md',
   'package.json',
   'tauri.conf.json',
   'capabilities/default.json',
@@ -373,12 +381,14 @@ function markdownFiles(dir = 'docs') {
 // tidy; check their relative links together with the docs.
 const releaseNotes = markdownFiles('release-notes');
 const docs = [
+  // Root entry documents; everything under docs/ (including the moved
+  // AUDIT_REPORT/LINUX_BUILD and docs/marketing) is collected recursively.
   'README.md',
   'README.en.md',
   'AGENTS.md',
-  'LINUX_BUILD.md',
   'CHANGELOG.md',
-  'AUDIT_REPORT.md',
+  'CONTRIBUTING.md',
+  'CODE_OF_CONDUCT.md',
   ...releaseNotes,
   ...markdownFiles(),
 ];

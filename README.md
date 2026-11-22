@@ -18,7 +18,7 @@
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
 [![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 
-<img src="docs/demo.gif" alt="rustmd 十秒巡览：Markdown 公式与 Mermaid、HTML 笔记整页渲染、CSV/TXT 智能表格、JSON 检查器和深浅色主题" width="880">
+<img src="docs/assets/demo.gif" alt="rustmd 十秒巡览：Markdown 公式与 Mermaid、HTML 笔记整页渲染、CSV/TXT 智能表格、JSON 检查器和深浅色主题" width="880">
 
 <sub>10 秒巡览：Markdown 公式与 Mermaid → HTML 笔记整页渲染 → CSV/TXT 智能表格 → JSON 检查器 → 深浅色主题。</sub>
 
@@ -92,41 +92,41 @@ rustmd 不打包 Chromium：它复用系统 WebView（Windows WebView2、macOS W
 
 主界面：文件夹树、当前文件夹范围与多库开关、文件名卡片、排序方向、**MD / HTML / CSV / TXT / JSON 格式徽标**、MathJax 公式与 Mermaid 图表。
 
-<img src="docs/screenshots/overview.png" alt="rustmd 主界面：左侧当前文件夹范围与多库开关、文件夹树与带格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
+<img src="docs/assets/screenshots/overview.png" alt="rustmd 主界面：左侧当前文件夹范围与多库开关、文件夹树与带格式徽标的文件名卡片，右侧 CodeMirror 编辑器和实时预览（MathJax 公式 + Mermaid 图表）" width="880">
 
 深色主题与侧栏细节：
 
-<img src="docs/screenshots/dark.png" alt="rustmd 深色主题：全格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
+<img src="docs/assets/screenshots/dark.png" alt="rustmd 深色主题：全格式徽标、MathJax 公式、Mermaid 图表和实时预览" width="880">
 
-<img src="docs/screenshots/sidebar.png" alt="rustmd 侧栏：搜索框、包含子文件夹与多库开关、可拖动分隔条、左栏宽度手柄、全部/文件夹树、排序按钮、带格式徽标的文件名和标签" width="336">
+<img src="docs/assets/screenshots/sidebar.png" alt="rustmd 侧栏：搜索框、包含子文件夹与多库开关、可拖动分隔条、左栏宽度手柄、全部/文件夹树、排序按钮、带格式徽标的文件名和标签" width="336">
 
 多库同开（置顶库与当前库汇总，文件夹树按库分组）：
 
-<img src="docs/screenshots/multi-vault.png" alt="rustmd 多库同开：侧栏按笔记库分组显示文件夹树，笔记列表汇总两个库的文件并带库名徽标，侧栏多库按钮显示已打开 2 个库" width="880">
+<img src="docs/assets/screenshots/multi-vault.png" alt="rustmd 多库同开：侧栏按笔记库分组显示文件夹树，笔记列表汇总两个库的文件并带库名徽标，侧栏多库按钮显示已打开 2 个库" width="880">
 
 最近笔记库一键切换：
 
-<img src="docs/screenshots/vault-switcher.png" alt="rustmd 最近笔记库切换：置顶库显示在最上方，当前目录标记为“当前”，每个目录都有置顶和移除按钮" width="560">
+<img src="docs/assets/screenshots/vault-switcher.png" alt="rustmd 最近笔记库切换：置顶库显示在最上方，当前目录标记为“当前”，每个目录都有置顶和移除按钮" width="560">
 
 ## 不同格式的渲染
 
 HTML 笔记由内置 WebView 整页渲染，支持页面自带的样式、脚本、本地相对资源和图表：
 
-<img src="docs/screenshots/html-note.png" alt="rustmd 内置 WebView 渲染 HTML 笔记：左侧 HTML 源码，右侧完整页面效果" width="880">
+<img src="docs/assets/screenshots/html-note.png" alt="rustmd 内置 WebView 渲染 HTML 笔记：左侧 HTML 源码，右侧完整页面效果" width="880">
 
 CSV 表格：短列和数字列按内容收紧，长文本列按内容放宽到 64 字符上限；数字右对齐、表头与内容一致、隔行底色 + 按列文字色：
 
-<img src="docs/screenshots/csv-note.png" alt="rustmd CSV 表格预览：智能列宽、数字右对齐、表头与数据同列对齐、隔行底色和按列文字色" width="880">
+<img src="docs/assets/screenshots/csv-note.png" alt="rustmd CSV 表格预览：智能列宽、数字右对齐、表头与数据同列对齐、隔行底色和按列文字色" width="880">
 
 TXT：制表符分列对齐，保留空格，区分数据行与整行说明文字：
 
-<img src="docs/screenshots/txt-note.png" alt="rustmd TXT 制表符对齐预览：列对齐、行底色和按列文字色" width="880">
+<img src="docs/assets/screenshots/txt-note.png" alt="rustmd TXT 制表符对齐预览：列对齐、行底色和按列文字色" width="880">
 
 JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标签与类型圆点、可折叠；左侧始终保留原始 JSON：
 
-<img src="docs/screenshots/json-note.png" alt="rustmd JSON 检查器浅色：键值列、对象/数组分组、类型标签和可折叠视图" width="880">
+<img src="docs/assets/screenshots/json-note.png" alt="rustmd JSON 检查器浅色：键值列、对象/数组分组、类型标签和可折叠视图" width="880">
 
-<img src="docs/screenshots/json-note-dark.png" alt="rustmd JSON 检查器深色：语义色、类型标签和可折叠分组" width="880">
+<img src="docs/assets/screenshots/json-note-dark.png" alt="rustmd JSON 检查器深色：语义色、类型标签和可折叠分组" width="880">
 
 ## 多语言界面
 
@@ -134,7 +134,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 
 英文界面示例：
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with language selector and markdown preview" width="880">
+<img src="docs/assets/screenshots/overview.en.png" alt="rustmd English interface with language selector and markdown preview" width="880">
 
 ## 功能
 
@@ -257,7 +257,7 @@ AppImage 需要 FUSE；没有 FUSE 时使用 `--appimage-extract-and-run`。
 
 1.10.5 起 Linux 发布包在 **Ubuntu 26.04** 上构建，运行基线为 Ubuntu 24.04+ /
 glibc 2.39，并需要 GTK 3 与 WebKitGTK 4.1 运行库。仍在使用 Ubuntu 22.04 的用户
-请保留 1.10.4，或按 [LINUX_BUILD.md](LINUX_BUILD.md) 从源码构建。
+请保留 1.10.4，或按 [docs/LINUX_BUILD.md](docs/LINUX_BUILD.md) 从源码构建。
 
 应用使用 GTK 3，启动时自动适配 Wayland 与 X11/XWayland，无需手动设置
 `GDK_BACKEND`；CI 另有非阻塞的 Wayland headless smoke。
@@ -334,20 +334,20 @@ npm run dev          # http://127.0.0.1:5173，使用内存 mock 数据
 
 前置：Node.js `^20.19.0 || >=22.12.0`（Vite 8 要求）、Rust stable（含 `rustfmt`、`clippy`）以及对应平台的 Tauri 系统依赖（Linux 见 [docs/TESTING.md](docs/TESTING.md)）。
 
-Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底见 [LINUX_BUILD.md](LINUX_BUILD.md)；构建后可运行 `scripts/linux-headless-smoke.sh` 在隔离 Xvfb 中冒烟测试 release 二进制。
+Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底见 [docs/LINUX_BUILD.md](docs/LINUX_BUILD.md)；构建后可运行 `scripts/release/linux-headless-smoke.sh` 在隔离 Xvfb 中冒烟测试 release 二进制。
 
 | 任务 | 命令 |
 | --- | --- |
 | 全部检查 | `npm run check` |
-| Tauri 开发窗口 | `node scripts/launch-dev.mjs`（Windows 可用 `scripts\run-dev.bat`） |
+| Tauri 开发窗口 | `node scripts/dev/launch-dev.mjs`（Windows 可用 `scripts\dev\run-dev.bat`） |
 | 仅前端（mock） | `npm run dev` |
-| 发布 exe（不打包安装器） | `npx tauri build --no-bundle`（Windows 可用 `scripts\run-build.bat`） |
+| 发布 exe（不打包安装器） | `npx tauri build --no-bundle`（Windows 可用 `scripts\release\run-build.bat`） |
 | 前端纯函数单测 | `npm run test:unit`（69 个） |
 | Rust 单测 | `npm run test:rust`（`cargo test --workspace`；99 个 Windows / 100 个 Linux、macOS，1 个网络测试默认忽略） |
 | 端到端自测 | `npm run selftest` / `npm run selftest:check` |
 | 重新生成图标 | `npm run icons` |
 
-`scripts/cargo.mjs` 会依次尝试 `$CARGO`、`~/.cargo/bin/cargo`、PATH 中的 `cargo`；Windows git-bash 不需要手动补 PATH。
+`scripts/lib/cargo.mjs` 会依次尝试 `$CARGO`、`~/.cargo/bin/cargo`、PATH 中的 `cargo`；Windows git-bash 不需要手动补 PATH。
 
 ### 自动化检查
 
@@ -376,23 +376,18 @@ dev 窗口会渲染 `examples/` 下全部 10 篇示例笔记（含 Markdown、HT
 
 ```
 ├── src/main.rs               # Tauri 层（GPL-3.0-or-later）：23 个 IPC 命令、打印、窗口、自测
-├── crates/rustmd-core/
-│   └── src/lib.rs            # 平台无关引擎（MIT OR Apache-2.0）：路径、front matter、编码、扫描
-├── frontend/
-│   ├── index.html
-│   ├── public/               # 图标、highlight.js 主题
-│   └── src/
-│       ├── main.js / api.js / export.js / selftest.js   # 桌面 UI、Tauri 桥、导出、E2E
-│       ├── shared/           # 可复用渲染器（MIT OR Apache-2.0）：preview/dataview/editor/i18n/host
-│       ├── style.css
-│       └── notelist.js / layout.js / vaultlist.js / pdfgeom.js / exportgeom.js
-├── scripts/                  # 开发服务器、检查、自测、签名与 Windows 绿色包
+├── crates/rustmd-core/       # 平台无关引擎（MIT OR Apache-2.0）：路径、front matter、编码、扫描
+├── frontend/                 # Vite 前端：index/mathlab/vite.config + src（main/api/export/selftest/shared）
+├── scripts/                  # checks/ 校验、dev/ 开发自测截图、lib/ 工具、release/ 打包签名
 ├── packaging/                # winget / Scoop / AUR / Homebrew 清单
 ├── examples/                 # 10 篇示例笔记（含 CSV/TXT/JSON/GBK），同时是自测夹具
-├── capabilities/             # Tauri 权限
-├── icons/                    # 应用图标（npm run icons 生成，含 .icns）
-├── docs/                     # 架构、测试、发布、安全、许可文档
-├── .github/workflows/        # CI 与三端发布
+├── docs/                     # 架构、测试、发布、安全、许可、目录规范
+│   ├── assets/               # README 截图、demo.gif、社交预览与对比海报
+│   └── marketing/            # GitHub About 文案与推广手册
+├── release-notes/            # 每个版本一份 RELEASE_NOTES-<version>.md
+├── LICENSES/                 # MIT.txt / Apache-2.0.txt（可复用层双许可全文）
+├── capabilities/ gen/ icons/ # Tauri 权限、代码生成、应用图标
+├── .github/                  # CI、三端发布、issue/PR 模板
 ├── tauri.conf.json
 ├── Cargo.toml
 └── package.json
@@ -444,10 +439,12 @@ Windows 使用自签名证书、macOS 使用 ad-hoc 签名，只保证完整性�
 - [Security / 安全](docs/SECURITY.md)
 - [Licensing / 分层许可](docs/LICENSING.md)
 - [Changelog / 更新日志](CHANGELOG.md)
-- [Audit Report / 审计报告](AUDIT_REPORT.md)
+- [Audit Report / 审计报告](docs/AUDIT_REPORT.md)
 - [Developer & Agent Guide / 开发指南](AGENTS.md)
-- [GitHub 项目文案与 topics](docs/GITHUB_PROJECT_COPY.md)
-- [推广与增长手册](docs/PROMOTION.md)
+- [Repository layout & conventions / 目录结构与命名规范](docs/CONVENTIONS.md)
+- [Scripts index / 脚本索引](scripts/README.md)
+- [GitHub 项目文案与 topics](docs/marketing/GITHUB_PROJECT_COPY.md)
+- [推广与增长手册](docs/marketing/PROMOTION.md)
 - [包管理器清单（winget / Scoop / AUR / Homebrew）](packaging/README.md)
 - [贡献指南](CONTRIBUTING.md)
 

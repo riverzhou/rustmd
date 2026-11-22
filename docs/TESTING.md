@@ -16,11 +16,11 @@ npm run check
 | 许可边界 | `npm run check:license` | `crates/rustmd-core` 保持 MIT OR Apache-2.0、无 Tauri 依赖；`frontend/src/shared/` 无 Tauri 引用；两层源文件均有 SPDX 头 |
 | 打包清单 | `npm run check:packaging` | winget / Scoop / Homebrew / AUR 的版本、资产名、URL、SHA256 互相一致（静态检查，不联网） |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `crates/rustmd-core/Cargo.toml` / `tauri.conf.json` 及 `package-lock.json` / `Cargo.lock` 的 8 个版本值一致 |
-| Rust 静态检查 | `node scripts/cargo.mjs fmt --all --check`、`clippy --workspace --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
-| Rust 单测 | `node scripts/cargo.mjs test --workspace` | 99 个测试（Windows；98 运行 + 1 个网络测试默认 ignored）/ 100 个（Linux、macOS；99 运行 + 1 ignored，额外 1 个 Unix 反斜杠路径测试），含 `crates/rustmd-core` 的 19 个公开 API 集成测试。覆盖 GBK/GB18030/BOM 往返、CSV/TXT/JSON 识别、数据保存/冲突/重命名、笔记命令拒绝非笔记扩展名、原子创建/重命名碰撞、PDF 页码戳记、多库根包含性、`read_local_image`/`read_local_asset` 类型限制、64 MB 上限、HTML 注入跳过 script/注释正文 |
+| Rust 静态检查 | `node scripts/lib/cargo.mjs fmt --all --check`、`clippy --workspace --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
+| Rust 单测 | `node scripts/lib/cargo.mjs test --workspace` | 99 个测试（Windows；98 运行 + 1 个网络测试默认 ignored）/ 100 个（Linux、macOS；99 运行 + 1 ignored，额外 1 个 Unix 反斜杠路径测试），含 `crates/rustmd-core` 的 19 个公开 API 集成测试。覆盖 GBK/GB18030/BOM 往返、CSV/TXT/JSON 识别、数据保存/冲突/重命名、笔记命令拒绝非笔记扩展名、原子创建/重命名碰撞、PDF 页码戳记、多库根包含性、`read_local_image`/`read_local_asset` 类型限制、64 MB 上限、HTML 注入跳过 script/注释正文 |
 | 前端构建 | `npm run build` | Vite 生产构建 |
 
-`scripts/cargo.mjs` 会找 `$CARGO`、`~/.cargo/bin/cargo`、PATH。CI 里直接使用 rustup 安装的 stable。`cargo test --workspace` 才会同时运行根 crate 与 `crates/rustmd-core` 的测试；直接 `cargo test` 不会运行 core 的测试（包括公开 API 集成测试）。网络测试默认 `#[ignore]`，需要时显式运行 `cargo test --workspace -- --ignored`。
+`scripts/lib/cargo.mjs` 会找 `$CARGO`、`~/.cargo/bin/cargo`、PATH。CI 里直接使用 rustup 安装的 stable。`cargo test --workspace` 才会同时运行根 crate 与 `crates/rustmd-core` 的测试；直接 `cargo test` 不会运行 core 的测试（包括公开 API 集成测试）。网络测试默认 `#[ignore]`，需要时显式运行 `cargo test --workspace -- --ignored`。
 
 ## Rust 单测
 
@@ -65,7 +65,7 @@ npm run dev
 
 回归时至少覆盖：普通行内/块级、矩阵/align/cases、`\label`+`\eqref`、`\tag`、`\text` 中文、`\textcolor`/`\boxed`、`\mathbb`/`\mathcal`/`\mathfrak`/`\mathscr`、`\ce`、`\cancel`、`\bbox`、`\braket{a|b}`、`\dv`/`\pdv`、`\mathbbm`/`\mathds`、`\degree`/`\textcelsius`/`\upalpha`、引用块与列表中的多行公式、`\$` 货币。每个公式都应有 `mjx-container`，且 `mjx-container g[data-mml-node="mtext"][fill="red"]` 为空（红色 = 未定义宏）。
 
-已内置到真实应用的验证：`npm run selftest`（实际启动 `scripts/run-selftest.mjs`）会导出 `examples/` 全部笔记的 PNG/PDF，并断言预览无残留 `$…$`、无 MathJax/Mermaid 错误；安装版（CSP 生效）还需人工/脚本打开 `数学公式全面测试.md` 确认 `mjx-container` 数量为 34。
+已内置到真实应用的验证：`npm run selftest`（实际启动 `scripts/dev/run-selftest.mjs`）会导出 `examples/` 全部笔记的 PNG/PDF，并断言预览无残留 `$…$`、无 MathJax/Mermaid 错误；安装版（CSP 生效）还需人工/脚本打开 `数学公式全面测试.md` 确认 `mjx-container` 数量为 34。
 
 ## 端到端自测
 
@@ -73,7 +73,7 @@ npm run dev
 npm run selftest
 ```
 
-等价于 `scripts/run-selftest.mjs` 设置 `RUSTMD_SELFTEST=1`、删除旧的 `report.json`/`progress.log` 后启动 `scripts/launch-dev.mjs`，dev 窗口会：
+等价于 `scripts/dev/run-selftest.mjs` 设置 `RUSTMD_SELFTEST=1`、删除旧的 `report.json`/`progress.log` 后启动 `scripts/dev/launch-dev.mjs`，dev 窗口会：
 
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
 2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；CSV/TXT/JSON 检查表格/检查器结构、智能表头对齐、笔记文本不注入 DOM，并断言 GBK 示例的编码识别；另外用合成 CSV/TXT 表格独立验证数字右对齐、布尔居中与 `scope=col`。导出前本地图片必须被内联为 data URL；
@@ -84,14 +84,14 @@ npm run selftest
 
 新增断言：Markdown 预览不得残留未渲染公式、Mermaid/MathJax 错误数为 0、每篇导出的 PNG 不能是空白；HTML 示例还会断言 `<html lang>`/`<body class>` 在资源内联后保留、`defer` 头部脚本在 `<body>` 存在后才执行、内联脚本执行、本地图片内联数不少于引用数、CSS `url()` 背景图被内联且不残留相对 URL；Markdown 导出的独立 HTML 必须包含 highlight.js 颜色规则；PNG 的内联 SVG 回归必须保留红/蓝两色。
 
-`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML/数据覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、HTML 导出 charset、24 小时新鲜度检查。校验器现在会：要求 `report.config.examplesDir` 存在且（设置了 `RUSTMD_SELFTEST_EXAMPLES` 时）与本次运行一致，核对**每个条目的 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、真实存在且字节数与报告完全一致**，并要求示例目录里的每篇笔记都有条目（目录为空也算失败）；`scripts/run-selftest.mjs` 启动前会删除旧的 `report.json`/`progress.log`，失败的重跑不会复用上一次的绿色报告。报告校验：
+`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML/数据覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、HTML 导出 charset、24 小时新鲜度检查。校验器现在会：要求 `report.config.examplesDir` 存在且（设置了 `RUSTMD_SELFTEST_EXAMPLES` 时）与本次运行一致，核对**每个条目的 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、真实存在且字节数与报告完全一致**，并要求示例目录里的每篇笔记都有条目（目录为空也算失败）；`scripts/dev/run-selftest.mjs` 启动前会删除旧的 `report.json`/`progress.log`，失败的重跑不会复用上一次的绿色报告。报告校验：
 
 ```bash
 RUSTMD_SELFTEST_OUT=/path/to/rustmd-selftest npm run selftest:check
 # CI 要求至少一个 HTML + CSV/TXT/JSON 条目；报告默认拒绝 24h 前的旧结果
-node scripts/check-selftest-report.mjs "<out>/report.json" --require-html --require-data
+node scripts/checks/check-selftest-report.mjs "<out>/report.json" --require-html --require-data
 # 需要检查旧报告时显式放宽：
-RUSTMD_SELFTEST_MAX_AGE_HOURS=168 node scripts/check-selftest-report.mjs "<out>/report.json"
+RUSTMD_SELFTEST_MAX_AGE_HOURS=168 node scripts/checks/check-selftest-report.mjs "<out>/report.json"
 ```
 
 远程图片探测失败会记为 `report.warnings` 并跳过该图的导出断言，不会阻塞发布；报告校验脚本会打印这些警告。本地图片、HTML iframe/本地脚本、数据结构和矢量 PDF 断言仍然严格。CSV/TXT/JSON 不再有显示上限；示例只覆盖小表，真实 GBK 股票信号样本（24 行×18 列）已用应用自身读取并导出验证。发布前额外用 300 行长 CSV 验证了矢量 PDF 分页（13 页）与导出列宽，测试夹具不进入仓库。HTML 笔记的 CDN 图表脚本需要网络，离线时相关 HTML 示例可能无法通过渲染断言。
@@ -117,12 +117,12 @@ RUSTMD_SELFTEST_EXAMPLES="<你的报告库>" npm run selftest
 Linux 上构建 release 二进制后，可用：
 
 ```bash
-scripts/linux-headless-smoke.sh
+scripts/release/linux-headless-smoke.sh
 ```
 
 它在隔离的 Xvfb display 中启动 `target/release/rustmd`，用 `xwd` 截图并校验窗口
 尺寸、颜色数与边缘密度；不需要 root，不会弹到当前桌面。产物写入
-`target/headless-smoke/`。依赖与打包细节见 [../LINUX_BUILD.md](../LINUX_BUILD.md)。
+`target/headless-smoke/`。依赖与打包细节见 [../LINUX_BUILD.md](LINUX_BUILD.md)。
 
 ## 浏览器 mock 手工回归
 
@@ -151,13 +151,13 @@ localStorage 迁移：
 | --- | --- |
 | `quality` | Ubuntu 22.04：安装 Tauri 依赖，`npm ci`，`npm run check`（含 lint/单测/仓库检查/许可边界/打包清单/版本/Rust 测试/构建） |
 | `build` | Windows / Ubuntu 22.04 编译（Windows 额外跑 `cargo test --workspace`，并执行签名 + 绿色 zip 的打包 dry run）；Ubuntu 26.04 执行 deb/AppImage 打包 dry run；macOS 构建 `aarch64-apple-darwin --bundles app` 并 ad-hoc 签名验证（Apple Silicon only） |
-| `selftest` | Ubuntu 22.04 + Xvfb：安装 WebKitGTK 与中文字体，用 `node scripts/run-selftest.mjs` 跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
+| `selftest` | Ubuntu 22.04 + Xvfb：安装 WebKitGTK 与中文字体，用 `node scripts/dev/run-selftest.mjs` 跑真实 WebView 自测（10 篇示例，步骤上限 1200 秒），用 `--require-html --require-data` 校验 report，上传产物 |
 | `wayland-smoke` | Ubuntu 26.04 + sway headless：`GDK_BACKEND=wayland` 启动 release 二进制，用 grim 截图并校验非空白；`continue-on-error`，只报告不阻塞 |
 
 Wayland smoke 是前向兼容检查，不是发布门禁。本地（有 release 二进制时）可运行：
 
 ```bash
-scripts/linux-wayland-smoke.sh
+scripts/release/linux-wayland-smoke.sh
 ```
 
 脚本使用临时 `XDG_RUNTIME_DIR` 和临时 `HOME`，不会连接当前桌面；需要
@@ -176,7 +176,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libss
   librsvg2-dev patchelf libxdo-dev libfuse2t64 build-essential curl file xdg-utils
 ```
 
-发布 workflow 的 `verify` job 在 Ubuntu 26.04 + Xvfb 用 `node scripts/run-selftest.mjs` 跑自测（先清理旧报告），并用
+发布 workflow 的 `verify` job 在 Ubuntu 26.04 + Xvfb 用 `node scripts/dev/run-selftest.mjs` 跑自测（先清理旧报告），并用
 `--require-html --require-data` 校验报告；Linux deb/AppImage 也在 26.04 构建。
 详见 [RELEASING.md](RELEASING.md)。
 

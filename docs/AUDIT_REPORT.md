@@ -4,6 +4,22 @@
 **审计对象**：`rustmd` v1.11.1（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）；下方 v1.11.1 之前的小节为历史记录
 **审计方式**：六路并行全量代码审计（`crates/rustmd-core`、`src/main.rs`、前端外壳、共享渲染层、脚本/CI/打包、全部文档）+ 静态检查（ESLint、fmt、clippy `-D warnings`、repo/license/packaging/version）+ 69 个前端单测 + 99 个 Rust 测试（Windows；Linux/macOS 100 个，1 个需网络的测试默认忽略）+ Vite 构建 + 真实 WebView2 E2E 自测（`examples/` 10 篇、HTML/PNG/PDF）+ 安装版 CSP 下渲染复核；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
+## 仓库结构重组（2026-11-22，非功能性）
+
+按“根目录只放入口文档/构建清单/目录”的规则重整仓库，并新增
+[CONVENTIONS.md](CONVENTIONS.md) 作为目录与命名的唯一规范：
+
+- 根文档收敛：`AUDIT_REPORT.md`、`LINUX_BUILD.md` 移入 `docs/`；根目录只保留
+  README、CHANGELOG、AGENTS、CONTRIBUTING、CODE_OF_CONDUCT、LICENSE。
+- 文档分层：截图/海报/demo 移到 `docs/assets/`（含可再生成的 HTML 源），对外文案
+  移到 `docs/marketing/`；`release-notes/` 保持独立版本目录。
+- 许可文本改为 REUSE 命名：`LICENSES/MIT.txt`、`LICENSES/Apache-2.0.txt`。
+- 脚本按用途分组：`scripts/checks|dev|lib|release/`，全部从自身位置计算仓库根；
+  `package.json`、CI、文档与绿色包脚本同步更新；新增 `scripts/README.md` 索引。
+- 修复 `CHANGELOG.md` 中误写入的 NUL 字节（此前 grep 将整个文件视为二进制）。
+- 验证：`npm run check` 全绿、E2E 自测 10 篇 0 错误、Windows 绿色包重建通过、
+  `npm run icons` 无差异；文档相对链接由 `check:repo` 校验。
+
 ## v1.11.1 全量审计（当前版本）
 
 本轮从六个方向并行审计并逐条复核，修复后再次审计到没有新发现。没有文件格式
@@ -60,7 +76,7 @@
 - 自测报告校验：`examplesDir` 缺失不再跳过覆盖检查；产物必须在输出目录内且不早于
   本次运行；新增 highlight.js / 内联 SVG / CSS `url()` 三项断言；数据 HTML 导出
   阈值与产物检查统一。
-- CI/release 的自测改用 `scripts/run-selftest.mjs`（先清理旧报告）；Windows Rust
+- CI/release 的自测改用 `scripts/dev/run-selftest.mjs`（先清理旧报告）；Windows Rust
   测试补上 `--workspace`；Windows 绿色包补 `CONTRIBUTING.md`，macOS DMG 补
   `packaging/README.md`，离线文档不再死链。
 - 文档全面校订：README（中英）、AGENTS、ARCHITECTURE、TESTING、SECURITY、
@@ -178,7 +194,7 @@ lopdf 两个 PR 的 CI 检查为红，合并后的 master push CI 也失败：�
 `N / M` 页脚正确；单测新增“原有字体不得被替换”的断言。`npm audit --omit=dev`
 报告 0 个漏洞。未发现新的安全或数据风险；功能与文件格式未变。
 
-发布链路同步调整：Linux 发布构建固定 `ubuntu-26.04`（与 `LINUX_BUILD.md` 的
+发布链路同步调整：Linux 发布构建固定 `ubuntu-26.04`（与 `docs/LINUX_BUILD.md` 的
 26.04 基线一致，运行基线 Ubuntu 24.04+ / glibc 2.39），`ci.yml` 增加 Ubuntu
 26.04 的 deb/AppImage 打包 dry run，同时保留 Ubuntu 22.04 编译与 Xvfb E2E；
 `publish` 固定 `ubuntu-24.04`，不再跟随 `ubuntu-latest` 标签迁移。普通 CI 另加
@@ -517,7 +533,7 @@ lopdf 两个 PR 的 CI 检查为红，合并后的 master push CI 也失败：�
   `vaultlist.js` 新增 6 个 Node 单测（路径规范化、Windows 去重、MRU 上限、
   移除、损坏存储容错）；浏览器 mock 覆盖切换、移除、ESC/焦点、语言切换和
   900×560 最小窗口布局。
-- `scripts/capture-screenshots.mjs` 新增中英文 `vault-switcher` 截图；README、
+- `scripts/dev/capture-screenshots.mjs` 新增中英文 `vault-switcher` 截图；README、
   AGENTS、架构、测试、发布、安全与 GitHub 文案同步更新。
 
 ### v1.6.0 格式徽标（UI 补丁）

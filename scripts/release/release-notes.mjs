@@ -6,11 +6,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const raw = process.argv[2] || process.env.GITHUB_REF_NAME || '';
 const version = raw.replace(/^refs\/tags\//, '').replace(/^v/, '');
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-  console.error(`usage: node scripts/release-notes.mjs <version|vversion>`);
+  console.error(`usage: node scripts/release/release-notes.mjs <version|vversion>`);
   process.exit(1);
 }
 

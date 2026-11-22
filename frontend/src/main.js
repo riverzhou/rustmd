@@ -3317,7 +3317,7 @@ await boot();
 // the examples/ vault through the real app and verifies the exports.
 // Dev builds only — vite compiles import.meta.env.DEV to false in release
 // builds, so the module is never bundled into shipped binaries.
-// Launch: `npm run selftest` (or RUSTMD_SELFTEST=1 scripts/run-dev.bat).
+// Launch: `npm run selftest` (or RUSTMD_SELFTEST=1 scripts/dev/run-dev.bat).
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has('selftest')) {
   const { runSelfTest } = await import('./selftest.js');

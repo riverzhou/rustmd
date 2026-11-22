@@ -6,11 +6,11 @@
 # rendered content (window size, colour variety, edge density).
 # It never opens a window on the user's desktop and never displays the image.
 #
-# Usage: scripts/linux-headless-smoke.sh
+# Usage: scripts/release/linux-headless-smoke.sh
 # Requires: bash, python3, xwininfo; apt-get/dpkg-deb only if Xvfb/xwd missing.
 set -euo pipefail
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 BIN="${RUSTMD_BIN:-$ROOT/target/release/rustmd}"
 OUT="$ROOT/target/headless-smoke"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/rustmd-headless"

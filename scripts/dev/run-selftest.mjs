@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const outDir =
   process.env.RUSTMD_SELFTEST_OUT || path.join(os.tmpdir(), 'rustmd-selftest');
 process.env.RUSTMD_SELFTEST = '1';
@@ -27,7 +27,7 @@ console.log(`[selftest] fresh output directory: ${outDir}`);
 
 const child = spawn(
   process.execPath,
-  [path.join(root, 'scripts', 'launch-dev.mjs'), ...process.argv.slice(2)],
+  [path.join(root, 'scripts', 'dev', 'launch-dev.mjs'), ...process.argv.slice(2)],
   {
     cwd: root,
     stdio: 'inherit',

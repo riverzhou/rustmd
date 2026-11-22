@@ -26,15 +26,15 @@
 
 **Release 正文是必需产物**：新增 `release-notes/RELEASE_NOTES-<version>.md`（发布说明统一
 放在 `release-notes/` 目录，不要散落在仓库根目录），并在
-`CHANGELOG.md` 中补对应小节（项目实践两者都写；`scripts/release-notes.mjs`
+`CHANGELOG.md` 中补对应小节（项目实践两者都写；`scripts/release/release-notes.mjs`
 接受任一，找不到才失败）。如果本版改动了 UI 或 mock 笔记库，先用
-`node scripts/capture-screenshots.mjs` 重新生成 `docs/screenshots/`（含 HTML/CSV/TXT/JSON 格式截图与中英文/深色变体），并把
+`node scripts/dev/capture-screenshots.mjs` 重新生成 `docs/assets/screenshots/`（含 HTML/CSV/TXT/JSON 格式截图与中英文/深色变体），并把
 README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对
-（`scripts/check-repo.mjs` 会校验当前版本的 `release-notes/RELEASE_NOTES-<version>.md` 存在）。发布前先跑：
+（`scripts/checks/check-repo.mjs` 会校验当前版本的 `release-notes/RELEASE_NOTES-<version>.md` 存在）。发布前先跑：
 
 ```bash
-node scripts/check-version.mjs v1.11.1
-node scripts/release-notes.mjs v1.11.1 >/dev/null
+node scripts/checks/check-version.mjs v1.11.1
+node scripts/release/release-notes.mjs v1.11.1 >/dev/null
 ```
 
 ```bash
@@ -68,7 +68,7 @@ verify (Ubuntu 26.04, npm run check + Xvfb E2E + tag/version/release notes)
 publish (下载全部 artifacts → 合并 SHA256SUMS.txt → GitHub Release)
 ```
 
-Linux 发布构建固定使用 `ubuntu-26.04`（最新 Ubuntu，与 `LINUX_BUILD.md` 的
+Linux 发布构建固定使用 `ubuntu-26.04`（最新 Ubuntu，与 `docs/LINUX_BUILD.md` 的
 构建基线一致），产物的运行基线是 Ubuntu 24.04+ / glibc 2.39；普通 CI 仍保留
 Ubuntu 22.04 的编译与 Xvfb E2E，覆盖旧发行版。`publish` 不构建，固定
 `ubuntu-24.04`，不跟随 `ubuntu-latest` 标签迁移。普通 CI 另有一个
@@ -76,7 +76,7 @@ Ubuntu 22.04 的编译与 Xvfb E2E，覆盖旧发行版。`publish` 不构建，
 Wayland 前向兼容提示，不进入发布门禁。
 
 只有 `publish` 需要 `contents: write`；build job 都是只读。`verify` 在 Ubuntu 上还会用
-`node scripts/run-selftest.mjs` 跑自测（先删除旧 `report.json`/`progress.log`）并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、字节数一致，并要求报告里的 `examplesDir` 存在，避免复用/伪造绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
+`node scripts/dev/run-selftest.mjs` 跑自测（先删除旧 `report.json`/`progress.log`）并用 `--require-html --require-data` 校验报告；HTML/隐藏 WebView 与 CSV/TXT/JSON 数据视图回归会阻止发布。校验器会核对报告里每个 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、字节数一致，并要求报告里的 `examplesDir` 存在，避免复用/伪造绿色结果。完整自测在离线环境可能因远程图片超时变慢，步骤上限为 1200 秒。
 
 Windows 的 `Stage flat release assets` 步骤在缺少 zip 或 `.sha256` 时直接失败；`.cer` 是可选项，缺少时打印 `No self-signed certificate (real PFX build); skipping` 并继续（真实证书构建不应附带自签名 `.cer`）。`publish` 在发布前逐一断言三端资产（zip、DMG、deb、AppImage、各校验文件、LICENSE）都存在，避免只带证书的残缺 Release。
 
@@ -90,9 +90,9 @@ Windows 的 `Stage flat release assets` 步骤在缺少 zip 或 `.sha256` 时直
 | macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |
 | 全部 | `SHA256SUMS.txt`；Windows/macOS 另有同名 `.sha256`，Linux 另有 `SHA256SUMS-linux.txt` | 完整性校验 |
 
-DMG 在卷根目录附加 `LICENSE`、README/CHANGELOG、AGENTS/AUDIT/LINUX_BUILD/
-`CONTRIBUTING.md`、`packaging/README.md`、`docs/`（含截图）和 `.github/workflows/`
-（并带 `/Applications` 快捷方式）；
+DMG 在卷根目录附加 `LICENSE`、README/CHANGELOG、`AGENTS.md`、
+`CONTRIBUTING.md`、`packaging/README.md`、`docs/`（含审计报告、Linux 构建指南、
+截图与营销文案）和 `.github/workflows/`（并带 `/Applications` 快捷方式）；
 Windows 绿色 zip 由脚本复制 `LICENSE`、`SECURITY.md`、
 README/CHANGELOG、`CONTRIBUTING.md`、`packaging/README.md`、`docs/`（含截图）
 和 `.github/workflows/`，保证离线 README
@@ -106,7 +106,7 @@ Windows zip 的目录结构（zip 根就是绿色目录，没有 `rustmd-<versio
 rustmd.exe
 README.md / README.en.md
 CHANGELOG.md
-AUDIT_REPORT.md / AGENTS.md / LINUX_BUILD.md
+AGENTS.md
 CONTRIBUTING.md
 SECURITY.md
 LICENSE
@@ -114,8 +114,10 @@ rustmd-selfsigned.cer      # 仅自签名构建；真实 PFX 构建不含
 packaging/README.md
 .github/workflows/*.yml
 docs/
-├── ARCHITECTURE.md / TESTING.md / RELEASING.md / SECURITY.md / ...
-└── screenshots/*.png
+├── ARCHITECTURE.md / AUDIT_REPORT.md / CONVENTIONS.md / LICENSING.md
+├── LINUX_BUILD.md / RELEASING.md / SECURITY.md / TESTING.md
+├── assets/screenshots/*.png + demo.gif
+└── marketing/{GITHUB_PROJECT_COPY,PROMOTION}.md
 ```
 
 GitHub Release 资产就绪后，再从资产 URL + SHA256 更新
@@ -125,7 +127,7 @@ GitHub Release 资产就绪后，再从资产 URL + SHA256 更新
 
 ## 4. Windows 签名
 
-`scripts/sign-win.ps1`：
+`scripts/release/sign-win.ps1`：
 
 1. 前提：先运行 `npx tauri build --no-bundle` 生成 `target/release/rustmd.exe`（脚本只签名，不构建）；
 2. 如果设置了 `RUSTMD_WIN_CERT_BASE64` / `RUSTMD_WIN_CERT_PASSWORD`，导入真实 PFX 并带时间戳签名；
@@ -133,7 +135,7 @@ GitHub Release 资产就绪后，再从资产 URL + SHA256 更新
 4. `Set-AuthenticodeSignature`，拒绝 `HashMismatch` / `NotSigned`；
 5. 再次 `Get-AuthenticodeSignature` 校验。
 
-`scripts/build-win-zip.ps1` 复制签名后的 exe、README/CHANGELOG、`CONTRIBUTING.md`、`packaging/README.md`、SECURITY.md、LICENSE、`docs/`（含截图）、workflow 文件和证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
+`scripts/release/build-win-zip.ps1` 复制签名后的 exe、README/CHANGELOG、`CONTRIBUTING.md`、`packaging/README.md`、SECURITY.md、LICENSE、`docs/`（含截图）、workflow 文件和证书并压缩，检查 zip 内确实有 `rustmd.exe` 且没有临时文件，最后生成 `.zip.sha256`。
 
 ### 边界
 
@@ -228,8 +230,8 @@ Windows 绿色包：
 
 ```powershell
 npx tauri build --no-bundle
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-win.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-zip.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/sign-win.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-win-zip.ps1
 ```
 
 ## 9. 回滚

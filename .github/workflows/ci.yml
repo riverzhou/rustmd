@@ -133,7 +133,7 @@ jobs:
 
       - name: Rust tests (Windows-specific path rules)
         if: matrix.os == 'windows-latest'
-        run: node scripts/cargo.mjs test --workspace
+        run: node scripts/lib/cargo.mjs test --workspace
 
       - name: Compile desktop binary
         if: matrix.os == 'windows-latest' || matrix.os == 'ubuntu-22.04'
@@ -161,8 +161,8 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-win.ps1
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-zip.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/sign-win.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-win-zip.ps1
           Get-ChildItem release -Recurse -File | Select-Object FullName, Length
 
   selftest:
@@ -218,10 +218,10 @@ jobs:
         # stops a wedged WebKit/tauri-dev process. The report below is the
         # authoritative verdict.
         continue-on-error: true
-        run: timeout 1200 xvfb-run -a node scripts/run-selftest.mjs
+        run: timeout 1200 xvfb-run -a node scripts/dev/run-selftest.mjs
 
       - name: Verify self-test report
-        run: node scripts/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html --require-data
+        run: node scripts/checks/check-selftest-report.mjs "$RUSTMD_SELFTEST_OUT/report.json" --require-html --require-data
 
       - name: Upload self-test artifacts
         if: always()
@@ -279,7 +279,7 @@ jobs:
         run: npx tauri build --no-bundle
 
       - name: Run the headless Wayland smoke
-        run: scripts/linux-wayland-smoke.sh
+        run: scripts/release/linux-wayland-smoke.sh
 
       - name: Upload Wayland smoke artifacts
         if: always()

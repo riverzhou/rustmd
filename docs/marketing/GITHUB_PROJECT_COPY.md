@@ -3,8 +3,8 @@
 本文件给出可直接粘贴到 GitHub 仓库设置里的文案，以及提升搜索/点击率的建议。仓库 slug：`riverzhou/rustmd`。
 
 > **2026-11-14（v1.10.4）**：About 描述与 20 个 topics 已通过 `gh repo edit` 应用；Discussions
-> 已开启；README 首屏换成“下载按钮 + 10 秒动图 + 对比表”；新增 `docs/social-preview.png`
-> （1280×640，需手动上传到 GitHub）与 `docs/PROMOTION.md`（对外发布手册）。
+> 已开启；README 首屏换成“下载按钮 + 10 秒动图 + 对比表”；新增 `docs/assets/social-preview.png`
+> （1280×640，需手动上传到 GitHub）与 `docs/marketing/PROMOTION.md`（对外发布手册）。
 > GitHub Topics 上限 20 个：这一轮用 `note-taking` 替换了覆盖度较低的 `desktop-app`。
 >
 > **2026-11-22（v1.11.1）**：About / topics 无需改动；README 与对比海报的体积数字更新为
@@ -120,7 +120,7 @@ README 已包含自然出现的英文/中文关键词，不要为了 SEO 堆砌�
 
 ## 4. Social preview（社交预览图）
 
-已生成 **`docs/social-preview.png`（1280×640）**：深色背景 + 品牌图标 + “Markdown & HTML notes
+已生成 **`docs/assets/social-preview.png`（1280×640）**：深色背景 + 品牌图标 + “Markdown & HTML notes
 that stay plain files.” + 应用截图 + 平台/技术栈信息。这是链接在 Twitter/X、Reddit、Discord、
 Slack 里被分享时显示的卡片图，直接影响点击率。
 
@@ -128,7 +128,7 @@ Slack 里被分享时显示的卡片图，直接影响点击率。
 
 1. 打开 `https://github.com/riverzhou/rustmd/settings`；
 2. 找到 **Social preview** → **Edit** → **Upload an image**；
-3. 选择 `docs/social-preview.png`（1280×640，约 370 KB），保存。
+3. 选择 `docs/assets/social-preview.png`（1280×640，约 370 KB），保存。
 
 改版后重新生成（Windows，已安装 Edge；在仓库根目录执行）：
 
@@ -136,21 +136,21 @@ Slack 里被分享时显示的卡片图，直接影响点击率。
 "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
   --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
   --window-size=1280,640 \
-  --screenshot="docs/social-preview.png" \
-  "file:///<repo>/docs/social-preview.html"
+  --screenshot="docs/assets/social-preview.png" \
+  "file:///<repo>/docs/assets/social-preview.html"
 ```
 
-`docs/social-preview.html` 是排版的唯一来源：改文案、换截图、调颜色都在这里改。
+`docs/assets/social-preview.html` 是排版的唯一来源：改文案、换截图、调颜色都在这里改。
 需要 1280×640 的整图，不要用 1440×900 的原始截图直接上传（GitHub 会裁切）。
 
-README 首屏另有一张 **`docs/demo.gif`（880×550，约 1.3 MB）**，由 `docs/screenshots/` 里的
+README 首屏另有一张 **`docs/assets/demo.gif`（880×550，约 1.3 MB）**，由 `docs/assets/screenshots/` 里的
 5 张截图加标题条后交叉淡入生成（10 fps，约 10 秒），不需要单独录制屏幕。
 
 ### 微信对比海报
 
-- **`docs/compare-wechat.png`（2880×3600，源自 1440×1800 的 2× 渲染）**：可直接发微信 /
+- **`docs/assets/compare-wechat.png`（2880×3600，源自 1440×1800 的 2× 渲染）**：可直接发微信 /
   群聊的对比海报，突出「五种格式 × 三种导出」和 17 MB 体积。
-- 源文件：`docs/compare-wechat.html`；修改后用 headless Edge 重新截图，命令见文件头注释。
+- 源文件：`docs/assets/compare-wechat.html`；修改后用 headless Edge 重新截图，命令见文件头注释。
 - 数据与 README 的对比表同步，体积为 2026-11 官方 Windows 包量级；发图时可直接配一句
   “完整对比见 GitHub”。
 
@@ -179,7 +179,7 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 > 自动解码、文件夹树、全文搜索、最近笔记库置顶、多库同开、HTML/PNG/PDF 导出。纯文件存储，
 > 无需账号。
 
-`scripts/release-notes.mjs` 会直接输出 `release-notes/RELEASE_NOTES-<version>.md` 作为
+`scripts/release/release-notes.mjs` 会直接输出 `release-notes/RELEASE_NOTES-<version>.md` 作为
 Release 正文，因此把上面的口径写进该文件即可；workflow 的 Release 标题在
 `.github/workflows/release.yml` 的 `publish` job 中维护。
 
@@ -191,14 +191,14 @@ Release 正文，因此把上面的口径写进该文件即可；workflow 的 Re
 - [x] 20 个 topics 覆盖 HTML、数据格式、技术栈、平台与受众；
 - [x] README 首屏有下载按钮、10 秒动图、对比表和“为什么是 rustmd”；
 - [x] PR/Issue 模板、CODE_OF_CONDUCT 与 Discussions 让外部反馈有地方落地；
-- [x] `docs/social-preview.png` 已生成（**待手动上传**）；
+- [x] `docs/assets/social-preview.png` 已生成（**待手动上传**）；
 - [ ] 在个人主页把 `rustmd` 设为 **pinned repository**；
 - [ ] 首个 Discussion 欢迎帖（模板见 [PROMOTION.md](PROMOTION.md) 第 5.10 节）；
 - [ ] 每个 Release 附三端资产、SHA256 与一段“这版解决了什么”；
 - [ ] 有外部用户后，在 README 加 “Used by / 用户反馈” 区块（不要编造）。
 
 更完整的对外发布渠道、现成文案与 30 天节奏见 **[PROMOTION.md](PROMOTION.md)**；
-包管理器清单见 **[../packaging/README.md](../packaging/README.md)**。
+包管理器清单见 **[../../packaging/README.md](../../packaging/README.md)**。
 
 ## 7. 当前仓库信息
 
@@ -212,5 +212,5 @@ Release 正文，因此把上面的口径写进该文件即可；workflow 的 Re
 - 镜像：GitLab `http://gitlab.riverzhou.cn/river/rustmd`（镜像仓库，不跑 CI）
 - 英文说明：`README.en.md`；中文说明：`README.md`
 - About homepage：暂为空（可选 GitHub Pages 落地页，见 PROMOTION.md 第 9 节）
-- 社交预览：`docs/social-preview.png`（待上传）
+- 社交预览：`docs/assets/social-preview.png`（待上传）
 - 最近一次核对（v1.11.1）：About 为第 1 节的 256 字符文案，20 个 topics 为第 2 节列表。

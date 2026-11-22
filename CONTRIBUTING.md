@@ -20,7 +20,7 @@ only covers the contribution workflow.
 
 Requirements: Node.js `^20.19.0 || >=22.12.0` (see `package.json` `engines`), Rust stable (`rustfmt` +
 `clippy`), and the Tauri system dependencies for your platform. Linux notes live in
-[`LINUX_BUILD.md`](LINUX_BUILD.md).
+[`docs/LINUX_BUILD.md`](docs/LINUX_BUILD.md).
 
 ```bash
 npm install
@@ -28,7 +28,7 @@ npm run dev        # browser mock at http://127.0.0.1:5173 (no Rust needed)
 npm run check      # the full local gate before a PR
 ```
 
-For the real desktop window use `node scripts/launch-dev.mjs` (or `scripts\run-dev.bat`
+For the real desktop window use `node scripts/dev/launch-dev.mjs` (or `scripts\dev\run-dev.bat`
 on Windows). For rendering/export work:
 
 ```bash

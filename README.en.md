@@ -18,7 +18,7 @@ Current version **1.11.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
 [![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 
-<img src="docs/demo.gif" alt="rustmd 10-second tour: Markdown math and Mermaid, HTML notes rendered as full pages, CSV/TXT smart tables, JSON inspector and light/dark themes" width="880">
+<img src="docs/assets/demo.gif" alt="rustmd 10-second tour: Markdown math and Mermaid, HTML notes rendered as full pages, CSV/TXT smart tables, JSON inspector and light/dark themes" width="880">
 
 <sub>10-second tour: Markdown math & Mermaid → HTML notes rendered as full pages → CSV/TXT smart tables → JSON inspector → light and dark themes.</sub>
 
@@ -92,41 +92,41 @@ No mobile app, no plugin marketplace, no built-in cloud sync, no database. When 
 
 Folder tree, current-folder scope and multi-vault switches, filename cards, sort direction, **format badges for every supported type**, MathJax math and Mermaid diagrams:
 
-<img src="docs/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope and multi-vault switches, folder tree, format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
+<img src="docs/assets/screenshots/overview.en.png" alt="rustmd English interface with current-folder scope and multi-vault switches, folder tree, format badges, editor and live preview (MathJax math + Mermaid diagram)" width="880">
 
 Dark theme and sidebar details:
 
-<img src="docs/screenshots/dark.en.png" alt="rustmd English dark theme with format badges, MathJax math and Mermaid preview" width="880">
+<img src="docs/assets/screenshots/dark.en.png" alt="rustmd English dark theme with format badges, MathJax math and Mermaid preview" width="880">
 
-<img src="docs/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, width handle, folders, sort buttons, format badges, filenames and tags" width="336">
+<img src="docs/assets/screenshots/sidebar.en.png" alt="rustmd English sidebar with search, the Include subfolders and Multi-vault switches, draggable splitter, width handle, folders, sort buttons, format badges, filenames and tags" width="336">
 
 Multi-vault (pinned vaults + the current one, folder tree grouped per vault):
 
-<img src="docs/screenshots/multi-vault.en.png" alt="rustmd multi-vault view: the sidebar groups the folder tree per vault, the note list aggregates notes from both vaults with vault badges, and the Multi-vault button shows two open vaults" width="880">
+<img src="docs/assets/screenshots/multi-vault.en.png" alt="rustmd multi-vault view: the sidebar groups the folder tree per vault, the note list aggregates notes from both vaults with vault badges, and the Multi-vault button shows two open vaults" width="880">
 
 One-click recent-vault switching:
 
-<img src="docs/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher with pinned vaults on top, the current one marked, and pin/remove controls on every row" width="560">
+<img src="docs/assets/screenshots/vault-switcher.en.png" alt="rustmd recent-vault switcher with pinned vaults on top, the current one marked, and pin/remove controls on every row" width="560">
 
 ## Rendering by format
 
 HTML notes render through the built-in WebView, including page styles, scripts, local relative assets and charts:
 
-<img src="docs/screenshots/html-note.en.png" alt="HTML note rendered in rustmd: HTML source on the left, full WebView page on the right" width="880">
+<img src="docs/assets/screenshots/html-note.en.png" alt="HTML note rendered in rustmd: HTML source on the left, full WebView page on the right" width="880">
 
 CSV tables: short and numeric columns shrink to content, while long text columns widen up to a 64-character cap; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable:
 
-<img src="docs/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints" width="880">
+<img src="docs/assets/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints" width="880">
 
 TXT: tab-aligned columns preserve spaces and distinguish tabular rows from full-width prose:
 
-<img src="docs/screenshots/txt-note.en.png" alt="TXT tab-aligned preview in rustmd with tabular columns, row bands and column ink tints" width="880">
+<img src="docs/assets/screenshots/txt-note.en.png" alt="TXT tab-aligned preview in rustmd with tabular columns, row bands and column ink tints" width="880">
 
 JSON inspector (light / dark): key-value columns, semantic group headers and rails, type pills and type dots, collapsible groups — with the raw JSON kept in the editor:
 
-<img src="docs/screenshots/json-note.en.png" alt="JSON inspector in rustmd light theme with semantic group colors, type pills and collapsible groups" width="880">
+<img src="docs/assets/screenshots/json-note.en.png" alt="JSON inspector in rustmd light theme with semantic group colors, type pills and collapsible groups" width="880">
 
-<img src="docs/screenshots/json-note-dark.en.png" alt="JSON inspector in rustmd dark theme with semantic group colors, type pills and collapsible groups" width="880">
+<img src="docs/assets/screenshots/json-note-dark.en.png" alt="JSON inspector in rustmd dark theme with semantic group colors, type pills and collapsible groups" width="880">
 
 ## Multilingual UI
 
@@ -134,7 +134,7 @@ The first launch **follows the system language**: Chinese systems start in Simpl
 
 Chinese interface example:
 
-<img src="docs/screenshots/overview.png" alt="rustmd Simplified Chinese interface" width="880">
+<img src="docs/assets/screenshots/overview.png" alt="rustmd Simplified Chinese interface" width="880">
 
 ## Features
 
@@ -262,7 +262,7 @@ AppImage needs FUSE; without it use `--appimage-extract-and-run`.
 Starting with 1.10.5, Linux packages are built on **Ubuntu 26.04** and target
 Ubuntu 24.04+ / glibc 2.39, with GTK 3 and WebKitGTK 4.1 runtime libraries.
 Ubuntu 22.04 users should stay on 1.10.4 or build from source following
-[LINUX_BUILD.md](LINUX_BUILD.md).
+[docs/LINUX_BUILD.md](docs/LINUX_BUILD.md).
 
 The app uses GTK 3 and selects Wayland or X11/XWayland automatically at
 startup; no `GDK_BACKEND` override is needed. CI also runs a non-blocking
@@ -339,12 +339,12 @@ npm run dev          # http://127.0.0.1:5173, in-memory mock data
 
 ## Development
 
-Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)). Linux source builds, packaging and the no-root sysroot fallback are documented in [LINUX_BUILD.md](LINUX_BUILD.md); after building, `scripts/linux-headless-smoke.sh` smoke-tests the release binary on an isolated Xvfb display.
+Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfmt` and `clippy`, and the Tauri system dependencies for your platform (Linux: [docs/TESTING.md](docs/TESTING.md)). Linux source builds, packaging and the no-root sysroot fallback are documented in [docs/LINUX_BUILD.md](docs/LINUX_BUILD.md); after building, `scripts/release/linux-headless-smoke.sh` smoke-tests the release binary on an isolated Xvfb display.
 
 | Task | Command |
 | --- | --- |
 | All checks | `npm run check` |
-| Tauri dev window | `node scripts/launch-dev.mjs` (`scripts\run-dev.bat` on Windows) |
+| Tauri dev window | `node scripts/dev/launch-dev.mjs` (`scripts\dev\run-dev.bat` on Windows) |
 | Frontend only (mock) | `npm run dev` |
 | Release exe, no bundle | `npx tauri build --no-bundle` |
 | Frontend unit tests | `npm run test:unit` (69 tests) |
@@ -352,7 +352,7 @@ Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfm
 | End-to-end self-test | `npm run selftest` / `npm run selftest:check` |
 | Regenerate icons | `npm run icons` |
 
-`scripts/cargo.mjs` probes `$CARGO`, `~/.cargo/bin/cargo` and PATH, so the Windows git-bash shell does not need a manual PATH tweak.
+`scripts/lib/cargo.mjs` probes `$CARGO`, `~/.cargo/bin/cargo` and PATH, so the Windows git-bash shell does not need a manual PATH tweak.
 
 ### Automated checks
 
@@ -381,23 +381,18 @@ The dev window renders all 10 example notes (Markdown, HTML, CSV, TXT, JSON and 
 
 ```
 ├── src/main.rs               # Tauri layer (GPL-3.0-or-later): 23 IPC commands, printing, windows, self-test
-├── crates/rustmd-core/
-│   └── src/lib.rs            # platform-independent engine (MIT OR Apache-2.0): paths, front matter, encoding, scanning
-├── frontend/
-│   ├── index.html
-│   ├── public/               # icons, highlight.js themes
-│   └── src/
-│       ├── main.js / api.js / export.js / selftest.js   # desktop UI, Tauri bridge, export, E2E
-│       ├── shared/           # reusable renderer (MIT OR Apache-2.0): preview/dataview/editor/i18n/host
-│       ├── style.css
-│       └── notelist.js / layout.js / vaultlist.js / pdfgeom.js / exportgeom.js
-├── scripts/                  # dev server, checks, self-test, signing and the Windows portable zip
+├── crates/rustmd-core/       # platform-independent engine (MIT OR Apache-2.0): paths, front matter, encoding, scanning
+├── frontend/                 # Vite frontend: index/mathlab/vite.config + src (main/api/export/selftest/shared)
+├── scripts/                  # checks/, dev/, lib/, release/ (grouped by purpose)
 ├── packaging/                # winget / Scoop / AUR / Homebrew manifests
 ├── examples/                 # 10 example notes (CSV/TXT/JSON/GBK included); also the self-test fixture
-├── capabilities/             # Tauri permissions
-├── icons/                    # app icons (npm run icons, incl. .icns)
-├── docs/                     # architecture, testing, release, security and licensing docs
-├── .github/workflows/        # CI and the three-platform release
+├── docs/                     # architecture, testing, release, security, licensing and conventions
+│   ├── assets/               # README screenshots, demo.gif, social preview and comparison poster
+│   └── marketing/            # GitHub About copy and the launch/promotion kit
+├── release-notes/            # one RELEASE_NOTES-<version>.md per release
+├── LICENSES/                 # MIT.txt / Apache-2.0.txt (dual-license texts for the reusable layers)
+├── capabilities/ gen/ icons/ # Tauri permissions, generated schemas, app icons
+├── .github/                  # CI, three-platform release, issue/PR templates
 ├── tauri.conf.json
 ├── Cargo.toml
 └── package.json
@@ -448,10 +443,12 @@ Open an [issue](https://github.com/riverzhou/rustmd/issues) or PR. Run `npm run 
 - [Security](docs/SECURITY.md)
 - [Licensing](docs/LICENSING.md)
 - [Changelog](CHANGELOG.md)
-- [Audit report](AUDIT_REPORT.md)
+- [Audit report](docs/AUDIT_REPORT.md)
 - [Developer & agent guide](AGENTS.md)
-- [GitHub project copy & topics](docs/GITHUB_PROJECT_COPY.md)
-- [Promotion and launch kit](docs/PROMOTION.md)
+- [Repository layout & conventions](docs/CONVENTIONS.md)
+- [Scripts index](scripts/README.md)
+- [GitHub project copy & topics](docs/marketing/GITHUB_PROJECT_COPY.md)
+- [Promotion and launch kit](docs/marketing/PROMOTION.md)
 - [Package-manager manifests (winget / Scoop / AUR / Homebrew)](packaging/README.md)
 - [Contributing guide](CONTRIBUTING.md)
 
