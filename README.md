@@ -82,7 +82,7 @@
 
 ### 为什么能这么小
 
-rustmd 不打包 Chromium：它复用系统 WebView（Windows WebView2、macOS WKWebView、Linux WebKitGTK），只带应用本身。代价是需要系统运行时——Windows 的 WebView2 通常已自带，Linux 需要 GTK 3 + WebKitGTK 4.1；换来的是约 17 MB 的 Windows 绿色包（v1.11.0 资产 17,143,034 B）。Linux 的 deb 约 11.6 MB（11,653,310 B），macOS DMG 约 18 MB（17,906,152 B）；AppImage 因为自带 WebKitGTK 约 94.9 MB（94,943,736 B）。
+rustmd 不打包 Chromium：它复用系统 WebView（Windows WebView2、macOS WKWebView、Linux WebKitGTK），只带应用本身。代价是需要系统运行时——Windows 的 WebView2 通常已自带，Linux 需要 GTK 3 + WebKitGTK 4.1；换来的是约 17 MB 的 Windows 绿色包（v1.11.1 资产 17,259,851 B）。Linux 的 deb 约 11.7 MB（11,731,388 B），macOS DMG 约 18 MB（17,984,948 B）；AppImage 因为自带 WebKitGTK 约 95 MB（94,992,888 B）。
 
 ### rustmd 不做什么
 
@@ -233,7 +233,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 
 Windows / macOS 资产旁提供 `.sha256`；Linux 提供 `SHA256SUMS-linux.txt`；Release 里还有合并的 `SHA256SUMS.txt`（需要全部资产在同一目录才能校验）。只下载单平台时请用对应平台的校验文件。
 
-最近已发布的 v1.11.0 资产体积：Windows zip 17,143,034 B（约 16.3 MiB / 17 MB）；macOS DMG 17,906,152 B（约 17.1 MiB / 18 MB）；Linux deb 11,653,310 B（约 11.6 MB）；AppImage 94,943,736 B（约 94.9 MB）。解压后的 `rustmd.exe` 约 19 MB。
+最近已发布的 v1.11.1 资产体积：Windows zip 17,259,851 B（约 16.5 MiB / 17 MB）；macOS DMG 17,984,948 B（约 17.2 MiB / 18 MB）；Linux deb 11,731,388 B（约 11.7 MB）；AppImage 94,992,888 B（约 95 MB）。解压后的 `rustmd.exe` 约 19 MB。
 
 ### Windows
 
@@ -287,7 +287,7 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-winget 清单（1.11.0）已作为 PR 提交，仍在等待 moderator 审核（仓库内清单已修正），通过后会补上 `winget install` 一行；AUR 清单已就绪，待有 AUR 账号后提交。Scoop（自建 bucket）与 Homebrew（`riverzhou/tap`）已发布 1.11.0 清单，可直接安装。细节见 [packaging/](packaging/README.md)。
+winget 清单（1.11.1）已作为 PR [#486380](https://github.com/microsoft/winget-pkgs/pull/486380) 提交，等待 moderator 审核，通过后会补上 `winget install` 一行；AUR 清单已就绪，待有 AUR 账号后提交。Scoop（自建 bucket）与 Homebrew（`riverzhou/tap`）已发布 1.11.1 清单，可直接安装。细节见 [packaging/](packaging/README.md)。
 
 ### 校验下载
 

@@ -8,8 +8,9 @@
 > GitHub Topics 上限 20 个：这一轮用 `note-taking` 替换了覆盖度较低的 `desktop-app`。
 >
 > **2026-11-22（v1.11.1）**：About / topics 无需改动；README 与对比海报的体积数字更新为
-> 官方资产量级（Windows 绿色包约 17 MB、macOS DMG 约 18 MB）；Scoop 清单的版本/URL 不一致
-> 已修复；winget 1.11.0 清单已通过全部校验、等待 moderator，1.11.1 清单在发布后提交。
+> 1.11.1 官方资产量级（Windows 绿色包约 17 MB、macOS DMG 约 18 MB）；Scoop 清单的
+> 版本/URL 不一致已修复并同步到线上 1.11.1；winget 1.11.1 清单已作为 PR #486380 提交，
+> 等待 moderator（通过后补 `winget install` 一行）。
 
 ## 1. About 描述（英文，推荐）
 
@@ -205,7 +206,7 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 - 发布页：`https://github.com/riverzhou/rustmd/releases`
 - Issues：`https://github.com/riverzhou/rustmd/issues`
 - Discussions：`https://github.com/riverzhou/rustmd/discussions`（2026-11-14 开启，欢迎帖 #2）
-- 包管理器：Scoop / Homebrew 已发布并更新到 1.11.0（1.11.1 发布后同步）；winget PR [#486332](https://github.com/microsoft/winget-pkgs/pull/486332)（1.11.0）已通过全部校验，等待 moderator（1.10.8 的 #486201、1.10.7 的 #485545 均已关闭）；1.11.1 清单在发布后提交；AUR 待账号
+- 包管理器：Scoop / Homebrew 已发布并更新到 1.11.1；winget PR [#486380](https://github.com/microsoft/winget-pkgs/pull/486380)（1.11.1）已提交，等待 moderator（1.11.0 的 #486332、1.10.8 的 #486201、1.10.7 的 #485545 均已关闭）；AUR 待账号
 - 已提交的 awesome list PR：[awesome-local-first #66](https://github.com/schickling/awesome-local-first/pull/66)、[awesome-markdown-editors #316](https://github.com/mundimark/awesome-markdown-editors/pull/316)、[awesome-note-taking #190](https://github.com/tehtbl/awesome-note-taking/pull/190)
 - CI：`https://github.com/riverzhou/rustmd/actions/workflows/ci.yml`
 - 镜像：GitLab `http://gitlab.riverzhou.cn/river/rustmd`（镜像仓库，不跑 CI）

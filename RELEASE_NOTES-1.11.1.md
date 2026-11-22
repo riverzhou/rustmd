@@ -36,5 +36,7 @@
 ## 升级说明
 
 - 用户：直接覆盖安装；Scoop 用户执行 `scoop update; scoop update rustmd`。
+  winget 清单已作为 PR [#486380](https://github.com/microsoft/winget-pkgs/pull/486380) 提交，
+  Homebrew 与 Scoop 已发布 1.11.1。
 - 开发者：`npm run check` 现在多一步 `check:packaging`；Rust 测试为 99 个
   （Windows）/ 100 个（Linux、macOS），1 个需要网络的测试默认忽略。
