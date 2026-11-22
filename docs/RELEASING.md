@@ -24,11 +24,13 @@
 `tauri.conf.json`，再在 `cargo check` / `cargo build` 时确认 `Cargo.lock` 的两个包版本；提交前用
 `git diff` 复核。release workflow 会再校验 tag。
 
-**Release 正文是必需产物**：新增 `RELEASE_NOTES-<version>.md`，并在
+**Release 正文是必需产物**：新增 `release-notes/RELEASE_NOTES-<version>.md`（发布说明统一
+放在 `release-notes/` 目录，不要散落在仓库根目录），并在
 `CHANGELOG.md` 中补对应小节（项目实践两者都写；`scripts/release-notes.mjs`
 接受任一，找不到才失败）。如果本版改动了 UI 或 mock 笔记库，先用
 `node scripts/capture-screenshots.mjs` 重新生成 `docs/screenshots/`（含 HTML/CSV/TXT/JSON 格式截图与中英文/深色变体），并把
-README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对。发布前先跑：
+README/AGENTS/CHANGELOG/RELEASE_NOTES/AUDIT_REPORT 中的版本号、测试计数和截图描述一起核对
+（`scripts/check-repo.mjs` 会校验当前版本的 `release-notes/RELEASE_NOTES-<version>.md` 存在）。发布前先跑：
 
 ```bash
 node scripts/check-version.mjs v1.11.1

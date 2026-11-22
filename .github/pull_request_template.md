@@ -25,7 +25,7 @@ If a box does not apply, say so and explain what was run instead.
 - Security-sensitive areas touched (HTML preview/export, path containment, `rmd`
   protocol, CSP, remote images) and why the invariants in `AGENTS.md` still hold.
 - New user-visible strings were added to both `en` and `zh-CN` in `frontend/src/shared/i18n.js`.
-- Docs/versions updated where needed (`README*`, `CHANGELOG.md`, `RELEASE_NOTES-<version>.md`,
-  `docs/*`, `AGENTS.md`).
+- Docs/versions updated where needed (`README*`, `CHANGELOG.md`,
+  `release-notes/RELEASE_NOTES-<version>.md`, `docs/*`, `AGENTS.md`).
 - License: app changes are GPL-3.0-or-later; changes under `crates/rustmd-core` or
   `frontend/src/shared` are offered under MIT OR Apache-2.0 (see `docs/LICENSING.md`).

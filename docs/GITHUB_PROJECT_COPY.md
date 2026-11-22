@@ -179,8 +179,8 @@ rustmd v<version> — local-first Markdown, HTML & data notes
 > 自动解码、文件夹树、全文搜索、最近笔记库置顶、多库同开、HTML/PNG/PDF 导出。纯文件存储，
 > 无需账号。
 
-`scripts/release-notes.mjs` 会直接输出 `RELEASE_NOTES-<version>.md` 作为 Release 正文，
-因此把上面的口径写进该文件即可；workflow 的 Release 标题在
+`scripts/release-notes.mjs` 会直接输出 `release-notes/RELEASE_NOTES-<version>.md` 作为
+Release 正文，因此把上面的口径写进该文件即可；workflow 的 Release 标题在
 `.github/workflows/release.yml` 的 `publish` job 中维护。
 
 ## 6. GitHub 原生优化清单

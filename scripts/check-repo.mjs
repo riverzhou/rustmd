@@ -168,8 +168,10 @@ if (version) {
   if (!new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm').test(read('CHANGELOG.md'))) {
     errors.push(`CHANGELOG.md: missing "## [${version}]" section`);
   }
-  if (!exists(`RELEASE_NOTES-${version}.md`)) {
-    errors.push(`missing RELEASE_NOTES-${version}.md for the current version`);
+  if (!exists(`release-notes/RELEASE_NOTES-${version}.md`)) {
+    errors.push(
+      `missing release-notes/RELEASE_NOTES-${version}.md for the current version`
+    );
   }
 }
 
@@ -367,7 +369,9 @@ function markdownFiles(dir = 'docs') {
   return out;
 }
 
-const releaseNotes = readdirSync(root).filter((name) => /^RELEASE_NOTES-.*\.md$/.test(name));
+// Release notes live in their own directory so the repository root stays
+// tidy; check their relative links together with the docs.
+const releaseNotes = markdownFiles('release-notes');
 const docs = [
   'README.md',
   'README.en.md',

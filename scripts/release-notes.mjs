@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Print the release body for a version: prefer RELEASE_NOTES-<version>.md,
-// otherwise extract the matching CHANGELOG section.
+// Print the release body for a version: prefer
+// release-notes/RELEASE_NOTES-<version>.md, otherwise extract the matching
+// CHANGELOG section.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,11 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
   process.exit(1);
 }
 
-const notesFile = path.join(root, `RELEASE_NOTES-${version}.md`);
+const notesFile = path.join(
+  root,
+  'release-notes',
+  `RELEASE_NOTES-${version}.md`
+);
 if (existsSync(notesFile)) {
   // No explicit process.exit(): an async stdout pipe write can be truncated
   // on Windows; a file redirect (the CI/workflow path) is synchronous anyway.
@@ -23,7 +28,9 @@ if (existsSync(notesFile)) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const start = changelog.search(new RegExp(`^## \\[${escaped}\\]`, 'm'));
   if (start < 0) {
-    console.error(`no RELEASE_NOTES-${version}.md and no CHANGELOG section for ${version}`);
+    console.error(
+      `no release-notes/RELEASE_NOTES-${version}.md and no CHANGELOG section for ${version}`
+    );
     process.exit(1);
   }
   const rest = changelog.slice(start);

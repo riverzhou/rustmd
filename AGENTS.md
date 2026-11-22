@@ -593,13 +593,14 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   `crates/rustmd-core/Cargo.toml`, `tauri.conf.json`, and the lockfile entries
   (`Cargo.lock` for `rustmd` + `rustmd-core`, `package-lock.json` root/top
   level) — `npm run check:version` checks all 8 values; update README version
-  banners; add a `CHANGELOG` section **and** `RELEASE_NOTES-<version>.md` (the
-  preflight accepts either, but ship both); regenerate README screenshots when
+  banners; add a `CHANGELOG` section **and**
+  `release-notes/RELEASE_NOTES-<version>.md` (the preflight accepts either, but
+  ship both); regenerate README screenshots when
   the UI or mock vault changed; run `npm run check` (includes
   `check:license`/`check:packaging` and `cargo test --workspace`) plus a clean
   `npm run selftest`; audit version/test-count/screenshot references across
-  `AGENTS.md`, READMEs, `CHANGELOG.md`, `RELEASE_NOTES-<version>.md`, docs and
-  `AUDIT_REPORT.md`; commit, tag `v<version>`, and push the commit + tag to
+  `AGENTS.md`, READMEs, `CHANGELOG.md`,
+  `release-notes/RELEASE_NOTES-<version>.md`, docs and `AUDIT_REPORT.md`; commit, tag `v<version>`, and push the commit + tag to
   **both** remotes (`github` and `origin`/GitLab). GitHub tag triggers the
   three-platform release; GitLab is a mirror with no CI. After the GitHub
   release assets exist, refresh the winget/Scoop/Homebrew/AUR manifests from
@@ -704,6 +705,7 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
 - `docs/RELEASING.md` — versioning, signing, three-platform release.
 - `docs/SECURITY.md` — threat model and residual risks.
 - `CHANGELOG.md` — history; `AUDIT_REPORT.md` — current audit status.
+- `release-notes/` — per-release `RELEASE_NOTES-<version>.md` files (see its README).
 - `docs/screenshots/` — README screenshots (regenerate with `scripts/capture-screenshots.mjs`).
 - `docs/GITHUB_PROJECT_COPY.md` — About description, topics, social preview and discoverability copy.
 - `docs/PROMOTION.md` — external launch kit (channels, ready-to-post copy, 30-day plan, metrics).
