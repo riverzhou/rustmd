@@ -591,6 +591,12 @@
   .data-view .data-table {
     width: max-content;
     break-inside: auto;
+    /* Deterministic print type. The on-screen size is `clamp(13px, 0.72vw,
+       14.5px)`; `vw` resolves against the *page* width when printing, so the
+       columns (sized in `em`) would grow past the sheet the exporter sized for
+       the table and clip the last column. 13px matches the on-screen value at
+       ordinary window widths, which is what the sheet width is measured from. */
+    font-size: 13px;
   }
 
   .data-view .data-table thead {

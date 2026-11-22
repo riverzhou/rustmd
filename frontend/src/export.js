@@ -230,7 +230,7 @@ function waitImageLoad(img, timeoutMs = 20000) {
 
 // ---------------- Rasterization ----------------
 
-async function renderToCanvas(source, kind = 'markdown') {
+async function renderToCanvas(source, kind = 'markdown', { allowChunking = true } = {}) {
   const { default: html2canvas } = await import('html2canvas');
   const { stage, ready } = buildStage(source, kind);
   try {
@@ -275,6 +275,11 @@ async function renderToCanvas(source, kind = 'markdown') {
     const cssHeight = stage.offsetHeight;
     // Keep the canvas bounded for very long notes (scale may drop below 3).
     const scale = exportScale(cssHeight, cssWidth);
+    if (allowChunking && scale < 1 && stage.querySelector('.data-table')) {
+      // The whole-table canvas would be illegible; chunk it by rows instead.
+      const pages = await renderDataTablePages(stage, html2canvas);
+      if (pages) return { pages, cssWidth, cssHeight, scale: SCALE };
+    }
     const canvas = await html2canvas(stage, {
       scale,
       backgroundColor: getComputedStyle(stage).backgroundColor,
@@ -293,6 +298,60 @@ async function renderToCanvas(source, kind = 'markdown') {
   }
 }
 
+
+/// Tall tables cannot be captured as one canvas: the device-pixel caps in
+/// `exportgeom.js` would shrink the whole table (a 10k-row CSV lands at a few
+/// DPI). Render page-sized row chunks instead, so every page keeps the normal
+/// 3x raster scale. Returns null when the single-canvas path is fine.
+async function renderDataTablePages(stage, html2canvas) {
+  const card = stage.querySelector('.data-view');
+  const table = stage.querySelector('.data-table');
+  const tbody = table && table.tBodies[0];
+  if (!card || !tbody || tbody.rows.length < 40) return null;
+
+  const rows = [...tbody.rows];
+  const head = card.querySelector('.data-view-head');
+  const headHeight = head ? head.getBoundingClientRect().height : 0;
+  const theadHeight = table.tHead ? table.tHead.getBoundingClientRect().height : 0;
+  const rowHeight = rows[0].getBoundingClientRect().height || 28;
+  const room = PDF_PAGE_HEIGHT - headHeight - theadHeight - 24;
+  const perPage = Math.max(1, Math.floor(room / rowHeight));
+  if (rows.length <= perPage) return null;
+
+  const cssWidth = stage.offsetWidth;
+  const colgroup = table.querySelector('colgroup');
+  const pages = [];
+  for (let start = 0; start < rows.length; start += perPage) {
+    const chunk = document.createElement('div');
+    chunk.className = stage.className;
+    chunk.style.cssText =
+      'position:fixed;left:-100000px;top:0;' +
+      `width:${cssWidth}px;background:${getComputedStyle(stage).backgroundColor};`;
+    const cardClone = card.cloneNode(false);
+    if (head) cardClone.appendChild(head.cloneNode(true));
+    const tableClone = table.cloneNode(false);
+    if (colgroup) tableClone.appendChild(colgroup.cloneNode(true));
+    if (table.tHead) tableClone.appendChild(table.tHead.cloneNode(true));
+    const body = document.createElement('tbody');
+    for (const row of rows.slice(start, start + perPage)) body.appendChild(row.cloneNode(true));
+    tableClone.appendChild(body);
+    cardClone.appendChild(tableClone);
+    chunk.appendChild(cardClone);
+    document.body.appendChild(chunk);
+    const height = chunk.offsetHeight;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const canvas = await html2canvas(chunk, {
+      scale: SCALE,
+      backgroundColor: getComputedStyle(chunk).backgroundColor,
+      useCORS: true,
+      logging: false,
+    });
+    chunk.remove();
+    pages.push({ canvas, cssWidth, cssHeight: height });
+  }
+  return pages;
+}
+
 /// Page-break positions for PDF export, measured from the live stage and
 /// passed to the pure geometry in exportgeom.js.
 function pageCutsOf(stage) {
@@ -309,7 +368,7 @@ function pageCutsOf(stage) {
 
 /** @returns {Promise<{data: Uint8Array, ext: 'png', mime: string}>} */
 export async function exportPng(source, kind = 'markdown') {
-  const { canvas } = await renderToCanvas(source, kind);
+  const { canvas } = await renderToCanvas(source, kind, { allowChunking: false });
   const blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), 'image/png')
   );
@@ -347,6 +406,12 @@ async function settleImages(stage) {
 /// Rejects when the platform/runtime cannot print, so the caller can fall
 /// back to `exportPdf`.
 /** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
+/// A4 in inches, matching `PdfPrintOptions` in Rust.
+const A4_WIDTH_IN = 8.27;
+const A4_HEIGHT_IN = 11.69;
+/// Upper bound accepted by the Rust command (it clamps at 60 in).
+const MAX_PAGE_WIDTH_IN = 55;
+
 export async function exportPdfVector(source, kind = 'markdown', title = '') {
   // HTML notes use the hidden-WebView pipeline (`print_html_note`); every
   // in-document rendering (Markdown, CSV, TXT, JSON) can use this print stage.
@@ -357,12 +422,26 @@ export async function exportPdfVector(source, kind = 'markdown', title = '') {
   try {
     await ready;
     normalizeTaskCheckboxes(stage);
+    // A wide data table gets a page as wide as the table itself, so the print
+    // engine lays it out as real text instead of clipping columns at the A4
+    // margin. A4 is kept for anything that already fits.
     const dataTable = stage.querySelector('.data-table');
-    if (dataTable && dataTable.getBoundingClientRect().width > 640) {
-      // A4 portrait cannot hold a 10–18 column data table without clipping.
-      // Let exportNote fall back to the raster PDF, whose stage can widen to
-      // the table instead of cutting columns off.
-      throw new Error('wide data table uses the raster PDF path');
+    let page = null;
+    if (dataTable) {
+      const tableWidth = dataTable.getBoundingClientRect().width;
+      // The sheet must hold the table PLUS the page margins (1.3 in) and the
+      // export body's own padding/borders (64 px + 8 px), or the last column
+      // is clipped at the right edge. 8% of headroom covers the print media's
+      // own rounding (font metrics, sub-pixel column widths): clipping a
+      // column is far worse than a slightly wider sheet.
+      const neededIn = (tableWidth * 1.08 + 64 + 8 + 130 + 24) / 96;
+      if (neededIn > MAX_PAGE_WIDTH_IN) {
+        // Wider than any sane PDF sheet: the raster path can widen freely.
+        throw new Error('wide data table uses the raster PDF path');
+      }
+      if (neededIn > A4_WIDTH_IN) {
+        page = { widthIn: neededIn, heightIn: A4_HEIGHT_IN };
+      }
     }
     // Vault/remote images become data URLs (same-origin, already decoded), so
     // the print snapshot never races the network or the `rmd` protocol.
@@ -373,7 +452,7 @@ export async function exportPdfVector(source, kind = 'markdown', title = '') {
     // The print engine re-lays out the page for print media; nothing below may
     // depend on the on-screen (948 px) geometry.
     await nextPaint();
-    const data = await api.printNotePdf(title);
+    const data = await api.printNotePdf(title, page);
     return { data, ext: 'pdf', mime: 'application/pdf' };
   } finally {
     document.body.classList.remove('rmd-printing');
@@ -383,8 +462,23 @@ export async function exportPdfVector(source, kind = 'markdown', title = '') {
 
 /** @returns {Promise<{data: Uint8Array, ext: 'pdf', mime: string}>} */
 export async function exportPdf(source, kind = 'markdown') {
-  const { canvas, cssWidth, pageCuts } = await renderToCanvas(source, kind);
+  const rendered = await renderToCanvas(source, kind);
   const { jsPDF } = await import('jspdf');
+  if (rendered.pages) {
+    // Chunked tall table: one PDF page per rendered chunk, no slicing needed.
+    let pdf = null;
+    for (const page of rendered.pages) {
+      const wPt = page.cssWidth * 0.75;
+      const hPt = page.cssHeight * 0.75;
+      const orientation = pdfPageOrientation(wPt, hPt);
+      if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [wPt, hPt], orientation });
+      else pdf.addPage([wPt, hPt], orientation);
+      pdf.addImage(page.canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, wPt, hPt);
+    }
+    const data = new Uint8Array(pdf.output('arraybuffer'));
+    return { data, ext: 'pdf', mime: 'application/pdf' };
+  }
+  const { canvas, cssWidth, pageCuts } = rendered;
   // CSS px -> PDF points (96 px/in, 72 pt/in).
   const wPt = cssWidth * 0.75;
   const pxPerCss = canvas.width / cssWidth; // ≈ scale (guard against rounding)

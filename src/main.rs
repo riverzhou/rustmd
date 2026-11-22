@@ -516,7 +516,12 @@ async fn save_export(
 /// return an `unsupported:` error and the frontend falls back to the
 /// html2canvas/jsPDF exporter.
 #[tauri::command]
-async fn print_note_pdf(window: tauri::WebviewWindow, title: String) -> Result<Vec<u8>, String> {
+async fn print_note_pdf(
+    window: tauri::WebviewWindow,
+    title: String,
+    page_width_in: Option<f64>,
+    page_height_in: Option<f64>,
+) -> Result<Vec<u8>, String> {
     require_main(&window)?;
     print_webview_pdf(
         window,
@@ -524,9 +529,22 @@ async fn print_note_pdf(window: tauri::WebviewWindow, title: String) -> Result<V
             header_title: Some(pdf_header_title(&title)),
             scale: 1.0,
             margins_in: [0.55, 0.6, 0.65, 0.65],
+            page_in: page_size_or_a4(page_width_in, page_height_in)?,
         },
     )
     .await
+}
+
+/// Clamp a caller-supplied page size (the data-table path asks for a page as
+/// wide as the table); anything missing or absurd falls back to A4.
+fn page_size_or_a4(width: Option<f64>, height: Option<f64>) -> Result<[f64; 2], String> {
+    match (width, height) {
+        (Some(w), Some(h)) if w.is_finite() && h.is_finite() => Ok([
+            w.clamp(PAGE_MIN_IN, PAGE_MAX_IN),
+            h.clamp(PAGE_MIN_IN, PAGE_MAX_IN),
+        ]),
+        _ => Ok(A4_PAGE_IN),
+    }
 }
 
 /// Header title for the platform print engines that can draw page furniture
@@ -560,12 +578,17 @@ struct PdfPrintOptions {
     scale: f64,
     /// Top, bottom, left, right in inches.
     margins_in: [f64; 4],
+    /// Page width, height in inches. A4 by default; a wide data table asks for
+    /// a page as wide as the table so the print engine lays it out as real
+    /// text instead of falling back to a raster image.
+    page_in: [f64; 2],
 }
 
-#[cfg(windows)]
-const PDF_PAGE_WIDTH_IN: f64 = 8.27; // A4 portrait
-#[cfg(windows)]
-const PDF_PAGE_HEIGHT_IN: f64 = 11.69;
+/// A4 portrait, used whenever the caller does not ask for another size.
+const A4_PAGE_IN: [f64; 2] = [8.27, 11.69];
+/// Sanity bounds for a caller-supplied page size (inches).
+const PAGE_MIN_IN: f64 = 3.0;
+const PAGE_MAX_IN: f64 = 60.0;
 
 /// Print one webview's current document to PDF bytes on the current platform.
 async fn print_webview_pdf(
@@ -742,8 +765,9 @@ fn macos_print_webview(
     unsafe {
         let webview: &WKWebView = &*view.cast::<WKWebView>();
         let info = NSPrintInfo::new();
-        // A4 in PostScript points.
-        info.setPaperSize(NSSize::new(595.28, 841.89));
+        // PostScript points; A4 unless the caller asked for a wider sheet.
+        let [page_width, page_height] = options.page_in;
+        info.setPaperSize(NSSize::new(page_width * 72.0, page_height * 72.0));
         info.setTopMargin(margins[0] * 72.0);
         info.setBottomMargin(margins[1] * 72.0);
         info.setLeftMargin(margins[2] * 72.0);
@@ -817,6 +841,13 @@ fn linux_print_webview(
     type SettingsSetPrinter = unsafe extern "C" fn(*mut std::ffi::c_void, *const std::ffi::c_char);
     type SetupNew = unsafe extern "C" fn() -> *mut std::ffi::c_void;
     type PaperNew = unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void;
+    type PaperNewCustom = unsafe extern "C" fn(
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        f64,
+        f64,
+        i32,
+    ) -> *mut std::ffi::c_void;
     type SetupSetPaper = unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void);
     type SetupMargin = unsafe extern "C" fn(*mut std::ffi::c_void, f64, i32);
     type Unref = unsafe extern "C" fn(*mut std::ffi::c_void);
@@ -881,6 +912,10 @@ fn linux_print_webview(
         let paper_new: libloading::Symbol<PaperNew> = gtk
             .get(b"gtk_paper_size_new\0")
             .map_err(|e| e.to_string())?;
+        // Only needed when the caller asks for a sheet that is not A4; older
+        // GTK builds without it fall back to A4.
+        let paper_new_custom: Option<libloading::Symbol<PaperNewCustom>> =
+            gtk.get(b"gtk_paper_size_new_custom ").ok();
         let paper_free: libloading::Symbol<Unref> = gtk
             .get(b"gtk_paper_size_free\0")
             .map_err(|e| e.to_string())?;
@@ -926,7 +961,23 @@ fn linux_print_webview(
         if settings.is_null() || setup.is_null() {
             return Err("GTK print objects are unavailable".into());
         }
-        let paper = paper_new(c"iso_a4".as_ptr());
+        let [page_width_in, page_height_in] = options.page_in;
+        let is_a4 = (page_width_in - A4_PAGE_IN[0]).abs() < 0.01
+            && (page_height_in - A4_PAGE_IN[1]).abs() < 0.01;
+        let paper = if is_a4 {
+            paper_new(c"iso_a4".as_ptr())
+        } else if let Some(new_custom) = paper_new_custom.as_ref() {
+            // GTK_UNIT_POINTS == 1; the name must stay stable per size.
+            new_custom(
+                c"rustmd-custom".as_ptr(),
+                c"rustmd custom page".as_ptr(),
+                page_width_in * 72.0,
+                page_height_in * 72.0,
+                1,
+            )
+        } else {
+            std::ptr::null_mut()
+        };
         if !paper.is_null() {
             setup_set_paper(setup, paper);
             paper_free(paper);
@@ -1005,15 +1056,17 @@ fn start_pdf_print(
         // A4 portrait; margins come from the caller (Markdown leaves room
         // for the header/footer, HTML notes keep tighter page margins).
         let [top, bottom, left, right] = options.margins_in;
+        let [page_width, page_height] = options.page_in;
         unsafe {
-            settings.SetPageWidth(PDF_PAGE_WIDTH_IN).map_err(err_text)?;
-            settings
-                .SetPageHeight(PDF_PAGE_HEIGHT_IN)
-                .map_err(err_text)?;
+            settings.SetPageWidth(page_width).map_err(err_text)?;
+            settings.SetPageHeight(page_height).map_err(err_text)?;
             settings.SetMarginTop(top).map_err(err_text)?;
             settings.SetMarginBottom(bottom).map_err(err_text)?;
             settings.SetMarginLeft(left).map_err(err_text)?;
             settings.SetMarginRight(right).map_err(err_text)?;
+            // Always PORTRAIT: WebView2 treats PageWidth/PageHeight as the
+            // sheet itself, so LANDSCAPE would rotate a deliberately wide
+            // data-table sheet and clip the columns it was built for.
             settings
                 .SetOrientation(COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT)
                 .map_err(err_text)?;
@@ -2914,6 +2967,7 @@ async fn print_html_note_webview2(
             header_title: Some(pdf_header_title(&title)),
             scale,
             margins_in: [0.55, 0.6, 0.65, 0.65],
+            page_in: A4_PAGE_IN,
         },
     )
     .await;

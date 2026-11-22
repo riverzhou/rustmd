@@ -1447,21 +1447,46 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
  /* Data cards keep their content width (narrow tables stay narrow); a wide
     table's max-width:100% makes the card consume the full viewport instead of
     the 820px reading column used by Markdown.
-    A standalone export is read in a browser, not captured: bound the table to
-    the viewport so it scrolls inside the card. That is what makes the sticky
-    header stick and keeps the horizontal scrollbar reachable without scrolling
-    to the last row. The @media print block (dataview.css) restores flow, so
-    printing the file still spans every page. */
+    A standalone export is read in a browser, not captured: the page becomes a
+    single viewport-height column (card + footer) and the table takes whatever
+    height is left. No magic number, no blank strip under the card, and the
+    sticky header and horizontal scrollbar stay on screen at any window size.
+    The @media print block (dataview.css) restores flow so printing the file
+    still spans every page. */
  @media screen {
+   body.data-export {
+     /* A definite height is what lets the card shrink and hand its overflow to
+        the table's scroll box; min-height alone leaves the page scrolling. */
+     height: 100vh;
+     overflow: hidden;
+     display: flex;
+     flex-direction: column;
+     box-sizing: border-box;
+     padding-bottom: 16px;
+   }
+   body.data-export .data-view {
+     flex: 0 1 auto;
+     min-height: 0;
+     align-self: flex-start;
+     display: flex;
+     flex-direction: column;
+   }
+   body.data-export .data-view .data-view-head {
+     flex: 0 0 auto;
+   }
    body.data-export .data-view .data-table-scroll {
-     max-height: calc(100vh - 222px);
+     flex: 0 1 auto;
+     min-height: 0;
+     max-height: none;
      overflow: auto;
    }
-   /* Mobile browsers: size against the dynamic viewport so the address bar
-      does not hide the table's horizontal scrollbar. */
+   body.data-export > footer {
+     flex: 0 0 auto;
+     margin-top: auto;
+   }
    @supports (height: 100dvh) {
-     body.data-export .data-view .data-table-scroll {
-       max-height: calc(100dvh - 222px);
+     body.data-export {
+       height: 100dvh;
      }
    }
  }

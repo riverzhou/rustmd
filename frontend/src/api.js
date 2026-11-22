@@ -122,8 +122,16 @@ export const api = {
   /// Print the CURRENT document (the hidden print stage export.js prepared)
   /// to a vector PDF through the platform print engine. Unsupported targets
   /// reject so the caller can fall back to the image exporter.
-  printNotePdf: async (title) =>
-    toUint8(await invoke('print_note_pdf', { title })),
+  /// `page` ({ widthIn, heightIn }) lets a wide data table print onto a sheet
+  /// as wide as the table, so it stays real text instead of a shrunk image.
+  printNotePdf: async (title, page = null) =>
+    toUint8(
+      await invoke('print_note_pdf', {
+        title,
+        pageWidthIn: page ? page.widthIn : null,
+        pageHeightIn: page ? page.heightIn : null,
+      })
+    ),
   /// Print an HTML note to a vector PDF in the hidden renderer window
   /// (same platform engines and fallback contract as `printNotePdf`).
   printHtmlNote: async (dir, path, html, title) =>
