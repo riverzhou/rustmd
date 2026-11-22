@@ -1,8 +1,8 @@
 # rustmd
 
-**Local-first, offline-capable notes for Markdown, HTML, CSV, TXT and JSON** — Windows, macOS (Apple Silicon) and Linux. A note is just a `.md` / `.html` / `.csv` / `.txt` / `.json` file in a folder: no import, no database, no sign-in. Edit HTML source and preview the fully rendered page in the app's **built-in WebView**, with no external browser.
+**Local-first, offline-capable notes for Markdown, HTML, CSV, TXT and JSON** — Windows, macOS (Apple Silicon) and Linux. A note is just a `.md` / `.html` / `.csv` / `.txt` / `.json` file in a folder: no import, no database, no sign-in. Edit HTML source and preview the fully rendered page in the app's **built-in WebView**, with no external browser — and export any note as a **PNG long image, vector PDF or standalone HTML**.
 
-<sub>**简体中文** · 本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用；HTML 源码编辑 + 内置 WebView 整页预览，无需外部浏览器。→ **[README.md](README.md)**</sub>
+<sub>**简体中文** · 本地优先、离线可用的 Markdown / HTML / CSV / TXT / JSON 笔记应用；HTML 源码编辑 + 内置 WebView 整页预览，PNG / PDF / HTML 导出。→ **[README.md](README.md)**</sub>
 
 [![CI](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml/badge.svg)](https://github.com/riverzhou/rustmd/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/riverzhou/rustmd?display_name=tag&sort=semver)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -26,29 +26,67 @@ Current version **1.10.8** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [
 
 If you want a tool that keeps notes as **plain files** instead of locking them in a database:
 
-- **HTML notes are first-class** — edit `.html` and see the full page on the right, rendered by the built-in WebView. Page styles, scripts, local images/CSS/JS and charts run natively; HTML/PNG/PDF exports keep the same layout. No Edge/Chrome, and no HTML stuffed into Markdown.
+- **One note, three deliverables** — export Markdown, HTML, CSV, TXT and JSON as **PNG, vector PDF and standalone HTML**; HTML notes export as full pages and wide tables never lose columns. No Edge/Chrome and no Pandoc required.
+- **HTML notes are first-class** — edit `.html` and see the full page on the right, rendered by the built-in WebView. Page styles, scripts, local images/CSS/JS and charts run natively; previews and exports stay in sync — no HTML stuffed into Markdown.
 - **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
 - **Plain files** — notes are ordinary files in a folder you own; use Git, Syncthing, iCloud, OneDrive or any sync tool. No database, account or proprietary format.
 - **Local-first + multi-vault** — editing, preview, search and export work offline; recent vaults, pinned vaults, a multi-vault view, current-folder scope and front-matter tags.
-- **Lightweight and cross-platform** — Rust + Tauri 2, with a portable Windows zip, Linux deb/AppImage and a macOS Apple Silicon DMG. No Electron runtime.
+- **Small and light** — the Windows portable zip is about **13 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
 - **Security-minded** — sanitized Markdown, HTML rendered in an isolated sandboxed iframe / hidden WebView, CSP, path containment, SSRF protection, and exports through the native save dialog.
 - **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save; UTF-8/GBK/GB18030 decoding is automatic.
 
 Good for personal knowledge bases, engineering notes, writing drafts, course notes, HTML reports and local documentation.
 
-### How it compares
+## Export: PNG / PDF / HTML
 
-| Capability | rustmd | Obsidian | Typora | VS Code | Notepad++ |
-| --- | --- | --- | --- | --- | --- |
-| Open any folder, no import | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Full-page HTML note preview | ✅ built-in WebView | ❌ | ❌ | ⚠️ extension | ❌ |
-| Native CSV / TXT / JSON views | ✅ | ❌ | ❌ | ⚠️ extension | ❌ |
-| Markdown math / Mermaid | ✅ | ✅ | ✅ | ⚠️ extension | ❌ |
-| Offline, no account | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Open source | ✅ GPL-3.0 | ❌ | ❌ | ✅ | ✅ |
-| Price | Free | Free (sync/publish paid) | Paid | Free | Free |
+Export is a first-class feature, not an afterthought: **every note format can become three deliverables**.
 
-> Based on public information as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official documentation.
+| Source | PNG | PDF | HTML |
+| --- | --- | --- | --- |
+| Markdown | ✅ 3× full-page image (~288 DPI) | ✅ vector text, A4, header/footer | ✅ standalone file with embedded CSS and local images |
+| HTML | ✅ full-page capture; tall pages stitched | ✅ hidden WebView prints on A4, page layout preserved | ✅ source written as UTF-8, legacy charset normalized |
+| CSV / TXT / JSON | ✅ stage widens to the table's natural width, auto-downscaled | ✅ vector for narrow tables; landscape raster for wide tables | ✅ complete data view at full browser width |
+
+- **PNG** — Markdown usually renders at 3× (~288 DPI); HTML notes adapt between 1× and 3× by page height, and very tall reports are captured in segments and stitched into one image; CSV/TXT/JSON widen the off-screen stage to the table's natural width and reduce the scale against width, height AND total canvas area, so right-hand columns are never clipped. Remote images are fetched by the Rust backend and inlined, so exports do not show blank images.
+- **PDF** — Markdown, HTML and narrow data tables go through the system WebView's print pipeline (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): **vector text** (selectable, searchable, sharp at any zoom) laid out on A4 and paginated by the engine's CSS rules; files are usually an order of magnitude smaller than the image version. Printing always uses the light palette, so a dark-theme PDF is dark text on white. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app. HTML notes keep their own layout, and fixed-width pages scale to fit the paper. Data tables wider than the ~640 CSS px printable area fall back to a landscape raster PDF so every column survives; platforms without native printing fall back to block-aware lossless PNG slices.
+- **HTML** — Markdown exports as a standalone page with embedded CSS, the current theme and inlined local images; CSV/TXT/JSON keep smart widths, row bands/column ink and the JSON-inspector styling at full browser width; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized (relative CSS/JS/images are not copied with them). Data HTML exports keep the complete content.
+- **No external dependencies** — no Edge/Chrome, no Pandoc/LaTeX; preview, capture and print all run in the built-in WebView. The destination comes from the native save dialog; the frontend cannot write arbitrary files.
+- **Same security boundary** — HTML-note preview runs in a sandboxed iframe; export runs in a hidden, label-guarded Tauri WebView that can only return a screenshot or a print-ready signal.
+
+## How it compares
+
+The table covers the usual local note-taking and editing alternatives: Obsidian, Typora, VS Code, Notepad++, Zettlr and Joplin. Joplin uses a local database rather than plain files, but it is a major local-first alternative, so it is included; pure cloud apps such as Notion and Evernote have no local folder and are out of scope.
+
+| Capability | **rustmd** | Obsidian | Typora | VS Code | Notepad++ | Zettlr | Joplin |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Storage | Files | Files | Files | Files | Files | Files | Database |
+| Windows package | **≈13 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
+| Open folder | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ import |
+| HTML note preview | ✅ built-in | ❌ | ❌ | ⚠️ extension | ❌ | ❌ | ❌ |
+| Data views | ✅ | ❌ | ❌ | ⚠️ partial | ❌ | ❌ | ❌ |
+| **PNG/PDF/HTML export** | **✅ all 5** | ⚠️ PDF | ✅ MD | ⚠️ extension | ❌ | ⚠️ PDF/HTML | ⚠️ PDF/HTML |
+| Math/Mermaid | ✅ | ✅ | ✅ | ⚠️ extension | ❌ | ✅ | ✅ |
+| Multi-vault | ✅ | ⚠️ | ❌ | ✅ | ⚠️ | ✅ | ❌ |
+| Offline, no account | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Open source | ✅ GPL-3.0 | ❌ | ❌ | ✅ MIT² | ✅ GPL | ✅ GPL-3.0 | ✅ AGPL-3.0 |
+| Price | Free | Free* | $14.99 | Free | Free | Free | Free* |
+| Platforms | 3 OS³ / ❌ | 3 OS / ✅ | 3 OS / ❌ | 3 OS + Web / ❌ | Windows only / ❌ | 3 OS / ❌ | 3 OS / ✅ |
+
+> Based on public information and official documentation as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official docs. `✅` native; `⚠️` extension/plugin, partial capability or an extra dependency; `❌` not supported.
+>
+> ¹ Official Windows x64 installer / portable package, in MB, order of magnitude only; rustmd is a 13 MB portable zip (the exe is ~19 MB). ² VS Code's source is MIT; Microsoft's distribution carries its own license. ³ 3 OS = Windows, macOS and Linux; rustmd's macOS build is Apple Silicon (arm64) only. * Obsidian Sync/Publish and Joplin Cloud are paid add-ons; Typora is a one-time $14.99 license. On the Multi-vault row, `⚠️` means multiple windows/instances rather than one aggregated list.
+>
+> Data views = native CSV/TXT/JSON tables or inspector; HTML notes = edit `.html` source and render the full page.
+
+**The differentiator is not "it can export" — it is "all five formats can export, and HTML notes export as full pages":** Typora's PNG/PDF/HTML export is Markdown-only; Obsidian has native PDF only; VS Code needs extensions; Zettlr depends on Pandoc/LaTeX; Joplin has PDF/HTML but no PNG.
+
+### Why so small
+
+rustmd does not bundle Chromium. It reuses the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and ships only the app. The trade-off is a platform runtime: WebView2 is usually already present on Windows 10/11, while Linux needs GTK 3 + WebKitGTK 4.1. In exchange, the Windows portable zip is about 13 MB; the Linux deb is about 11 MB, the macOS DMG about 14 MB, and the AppImage about 90 MB because it bundles WebKitGTK.
+
+### What rustmd deliberately does not do
+
+No mobile app, no plugin marketplace, no built-in cloud sync, no database. When you need those, Obsidian (plugins/mobile), VS Code (extensions) or Joplin (mobile/sync) are better fits; rustmd keeps the path from "open a folder" to "write" to "export" short.
 
 ## Screenshots
 
@@ -99,6 +137,8 @@ Chinese interface example:
 <img src="docs/screenshots/overview.png" alt="rustmd Simplified Chinese interface" width="880">
 
 ## Features
+
+> Export (PNG / PDF / HTML) is covered in its own section above; the sections below cover languages, navigation, search, editing, previews and security.
 
 ### Languages
 
@@ -160,11 +200,10 @@ Chinese interface example:
 
 - `.html` / `.htm` files appear alongside Markdown notes in the folder tree, note list, search results and folder counts. Every supported format carries the same prominent badge in the list and the topbar: **`MD` (green) / `HTML` (blue) / `CSV` (amber) / `TXT` (grey) / `JSON` (violet)**.
 - Edit the HTML source on the left and see a full-page native render on the right using the app's built-in WebView (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS). **No Edge, Chrome or other external browser is required.** The page's `<style>`, `<script>`, local relative CSS/JS/fonts/images and ECharts charts run natively; text stays sharp when scrolling/zooming. `<title>` (or the first `<h1>`) becomes the list title, while the filename stays visible.
-- The **New note** button offers **Markdown note**, **HTML page**, **CSV table**, **text file** and **JSON file**. Rename, move, delete, manual refresh and HTML / PNG / PDF export work the same for every format.
+- The **New note** button offers **Markdown note**, **HTML page**, **CSV table**, **text file** and **JSON file**. Rename, move, delete, manual refresh and PNG / PDF / HTML export work the same for every format.
 - HTML notes have no front matter, so the tag editor is hidden. Saving never injects `---` or `tags:` and preserves the file's BOM and CRLF/LF line endings.
 - Preview runs in a **sandboxed iframe** (no `allow-same-origin`; null origin), so note scripts cannot reach the parent DOM or Tauri IPC. Export runs in a hidden, separate Tauri WebView window; all vault commands are label-checked and the hidden window can only return a screenshot or signal print readiness. A sanitized static preview is used only if rendering fails.
-- Chart pages usually load CDN scripts, so the first render/export needs network access. **Export HTML** writes the note source as a UTF-8 file and normalizes a legacy `<meta charset="gbk">` (relative CSS/JS/images are not copied with it); PNG still uses a full-page capture from the built-in WebView (tall pages are captured in segments and stitched into one image), while PDF is printed on A4 inside the hidden WebView.
-- Markdown and HTML **PDF** is text-based: the system WebView's print pipeline re-lays out the note (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) instead of screenshotting it first, so text search, copy and zoom all work.
+- Chart pages usually load CDN scripts, so the first render/export needs network access. PNG / PDF / HTML export details live in the section above: HTML export writes the source as UTF-8, PNG captures the full page, and PDF prints on A4 as vector text.
 
 ### CSV / TXT / JSON previews
 
@@ -176,14 +215,6 @@ Chinese interface example:
 - **Automatic encoding detection** decodes BOM → UTF-8 → GBK → GB18030 and shows the detected encoding in the status bar. Valid UTF-8 always wins. A rare legacy GBK byte stream can itself be valid UTF-8 (roughly 1,920 common CJK pairs); such ambiguous short files are read as UTF-8, so convert them externally to UTF-8 if they look garbled. Saving keeps the original codec and BOM; a GBK file that gains a four-byte character (e.g. an emoji) is compatibly upgraded to GB18030 and the status bar updates. Repeated UTF-8 BOMs are normalized on read and never accumulate on save.
 - A single note is capped at **64 MB**: larger files stay listed by filename with a "too large" hint but their body is not loaded (an untrusted vault cannot freeze the UI with a huge file). Normal CSV/TXT/JSON notes still have no row/column display cap.
 - Data notes have no front matter and no tag editor. Rename keeps the extension, and the new-note menu offers all three data formats.
-
-### Export
-
-- **HTML** — Markdown notes export as a standalone page with embedded CSS, the current theme and inlined local images (remote images stay linked); CSV/TXT/JSON exports keep the same smart widths, row-band/column-ink and JSON-inspector styling and use the **full browser width** instead of the 820px reading column: data cards stay content-sized, while wide tables use the viewport and scroll horizontally; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized. Data HTML exports keep the complete content.
-- **PNG** — Markdown usually renders at 3× (~288 DPI); data notes widen the off-screen stage to the table’s natural width and reduce the scale against width, height AND total canvas area (normally 0.25–3×, lower only for extreme geometry) so right-hand columns are never clipped and the WebView canvas limit is not hit; HTML notes adapt between 1× and 3× by page height (3× for short pages; long reports target ~48k device px of height) so very long reports still export in one image.
-- **PDF** — Markdown, HTML and narrow data tables are printed by the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): the PDF is **vector text** (selectable, searchable, sharp at any zoom) laid out on A4, paginated by the engine's own CSS rules (no lines cut in half, no few-pixel last page) and usually an order of magnitude smaller than the image version. **Printing always uses the light palette**, so a dark-theme PDF is dark text on white on every platform (macOS/Linux print paths do not paint page backgrounds). Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app, with no browser URL banner. HTML notes keep their own layout, and fixed-width pages are scaled to fit the paper. **Data tables wider than the ~640 CSS px printable area automatically fall back to a landscape raster PDF on a widened stage**, preserving every column but not selectable text; platforms without native printing fall back to block-aware lossless PNG slices.
-- For PNG exports, remote images are fetched by the Rust backend and inlined, so exports no longer show blank images. HTML-note PNGs are full-page renders from the built-in WebView, so charts are preserved; very tall pages are captured in segments and stitched. PDFs go through the system print pipeline described above.
-- The destination path comes from the native save dialog; the frontend cannot write arbitrary files.
 
 ### Security
 
@@ -338,6 +369,9 @@ The app does not sync. Notes are a plain folder — use Syncthing, Git, iCloud, 
 **Can it open my Obsidian vault?**
 Yes for plain `.md` / `.html` / `.csv` / `.txt` / `.json` folders, folder hierarchy and Markdown front matter tags. HTML notes are recognized by extension and rendered in the app's built-in WebView; CSV/TXT/JSON get aligned tables, tab columns and a collapsible JSON inspector. Obsidian-specific `[[wikilinks]]`, plugins and canvas are not supported; other front matter fields are preserved on save for Markdown notes.
 
+**Do PNG / PDF / HTML exports need a browser or Pandoc?**
+No. PNG and PDF are produced by the app's built-in system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux), and PDF is vector text; HTML export is written directly by the app. CDN scripts/charts inside HTML notes still need network access, just like previewing them in the app.
+
 **Why the Windows/macOS warning?**
 Windows uses a self-signed certificate and macOS uses ad-hoc signing. They prove integrity, not a purchased identity. Verify SHA256 and allow the app in the OS prompt.
 
@@ -372,4 +406,4 @@ rustmd is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
 If rustmd is useful to you, a ⭐ helps others discover it; sharing it with someone who wants local Markdown notes is also appreciated.
 
-**Keywords:** local-first Markdown notes, HTML notes, HTML editor, HTML page preview, built-in WebView, HTML reports, CSV tables, TXT files, JSON viewer, GBK encoding, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PDF export, portable Windows, macOS, Linux.
+**Keywords:** local-first Markdown notes, HTML notes, HTML editor, HTML page preview, built-in WebView, HTML reports, CSV tables, TXT files, JSON viewer, GBK encoding, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view, offline notes, knowledge base, Obsidian alternative, Typora alternative, Joplin alternative, Zettlr alternative, Tauri, Rust, bilingual UI, English/Chinese, Mermaid, LaTeX, PNG export, PDF export, HTML export, vector PDF, lightweight, portable Windows, macOS, Linux.

@@ -38,7 +38,7 @@
 
 差异化排序（所有对外文案都按这个顺序）：
 
-1. **HTML 笔记是一等公民** —— 直接编辑 `.html`，整页渲染，导出 HTML/PNG/PDF；
+1. **HTML 笔记是一等公民** —— 直接编辑 `.html`，整页渲染，导出 PNG/PDF/HTML；
 2. **五种格式一个列表** —— MD / HTML / CSV / TXT / JSON，各有原生视图；
 3. **纯文件 + 离线 + 无账号** —— 笔记可以交给 Git / Syncthing / 网盘；
 4. **Rust + Tauri 2，小体积跨平台** —— Windows 绿色版、Linux deb/AppImage、macOS Apple Silicon。
@@ -384,7 +384,7 @@ PR 规范：一次只加一个项目；fork → 新建分支 → 只改目标文
 - 入口：`https://alternativeto.net/manage/add-software/`（需要账号）；
 - 名称：`rustmd`；主页：GitHub；许可：GPL-3.0；平台：Windows / Linux / macOS；
 - 分类：`Note-taking`、`Markdown Editors`、`Text Editors`；
-- “Alternatives to”：Obsidian、Typora、Notepad++、VS Code、Zettlr；
+- “Alternatives to”：Obsidian、Typora、Notepad++、VS Code、Zettlr、Joplin；
 - 描述用第 1 节的英文一句话 + 3 个亮点；截图用 `docs/social-preview.png` 与 `docs/screenshots/`。
 
 ### 5.13 Product Hunt

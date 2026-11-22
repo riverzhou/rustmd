@@ -103,15 +103,15 @@ README 已包含自然出现的英文/中文关键词，不要为了 SEO 堆砌�
   HTML reports**, CSV table, JSON inspector, tab-aligned text, CSV/TXT smart tables,
   UTF-8/GBK/GB18030, Markdown editor, recent-vault switcher, pinned vaults, multi-vault view,
   current-folder scope, offline notes, knowledge base, Obsidian alternative, Tauri, Rust,
-  Mermaid, LaTeX, PDF export, portable Windows, macOS (Apple Silicon), Linux。
+  Mermaid, LaTeX, PNG/PDF/HTML export, lightweight, portable Windows, macOS (Apple Silicon), Linux。
 - 中文：Markdown / HTML / CSV / TXT / JSON 笔记、**HTML 编辑器、HTML 网页预览、内置 WebView、
   HTML 报告**、CSV 表格、JSON 检查器、制表符对齐文本、数据查看器、UTF-8/GBK/GB18030、
   最近笔记库切换、置顶笔记库、多库同开、当前文件夹范围、本地笔记、离线笔记、知识库、
-  Obsidian 替代、Typora 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、PDF 导出、
-  Windows 绿色版、macOS Apple Silicon。
+  Obsidian 替代、Typora 替代、Joplin 替代、Tauri、Rust、Mermaid 图表、LaTeX 公式、
+  PNG/PDF/HTML 导出、小巧轻量、Windows 绿色版、macOS Apple Silicon。
 
 `README.md` 与 `README.en.md` 首段都包含仓库定位；GitHub 会索引 README 内容。
-首屏现在是“定位 → 徽章 → 三平台下载按钮 → 10 秒动图 → 对比表”，让访客先做决定再滚动。
+首屏现在是“定位 → 徽章 → 三平台下载按钮 → 10 秒动图 → 为什么/导出/对比表”，让访客先做决定再滚动。
 
 ## 4. Social preview（社交预览图）
 
