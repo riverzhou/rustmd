@@ -1,10 +1,38 @@
 # rustmd 代码审计报告
 
-**审计日期**：2026-11-21（v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；v1.10.3、v1.10.2、v1.10.1、v1.10.0、v1.9.0、v1.8.1 与 v1.8.0 为历史记录）
-**审计对象**：`rustmd` v1.10.7（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
-**审计方式**：对 CSV/TXT 列宽做真实字体测量与 10150 行真实数据回归；静态检查（fmt/clippy/ESLint/repo/version）+ 62 个前端单测 + 76 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（10 篇示例、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
+**审计日期**：2026-11-22（v1.10.8 数学离线渲染与公式保护复审；v1.10.7 数据预览列宽复审；v1.10.6 数据预览布局复审；v1.10.5 依赖复审；v1.10.4 全量审计；更早版本为历史记录）
+**审计对象**：`rustmd` v1.10.8（Rust + Tauri 2；Markdown / HTML / CSV / TXT / JSON 笔记）
+**审计方式**：安装版真实 WebView2 + CSP 下逐篇渲染 22 篇多格式笔记并截图复检；静态检查（fmt/clippy/ESLint/repo/version）+ 69 个前端单测 + 75 个 Rust 单测 + Vite build + Windows 真实 WebView2 E2E（22 篇、HTML/PNG/PDF）；macOS arm64 与 Linux 由 GitHub Actions 编译/打包验证。
 
-## v1.10.7 CSV/TXT 列宽实测（当前版本）
+## v1.10.8 数学公式离线渲染与保护（当前版本）
+
+安装版 CSP 为 `default-src 'self'`，而 MathJax v4 默认从 `cdn.jsdelivr.net`
+按需加载可选字体数据（calligraphic、double-struck、fraktur…）和未内置的 TeX
+扩展。请求被 CSP 拦截后 MathJax 拒绝整个排版批次，导致整篇笔记的公式停留在
+`$…$` 原文（`数学公式全面测试.md` 实测 0/34 渲染，而不是个别公式失败）。同一
+路径在浏览器 dev 模式不触发，因为 dev 页面不注入安装版 CSP。
+
+修复与复审结论：
+
+- `frontend/vite.config.js` 把 `@mathjax/mathjax-newcm-font` 的动态字体
+  （40 个）和 `mathjax/input/tex/extensions` 的 41 个模块镜像到应用同源；
+  `MATHJAX_CONFIG.loader.paths` 指向本地，并用 `loader.load` 显式加载
+  physics / bbm / dsfont / bboldx / textcomp / gensymb / upgreek / mathtools /
+  units / braket。断网 + CSP 下 34/34 与 132/132 公式全部渲染。
+- 显示公式保护新增引用块（`> $$`）与列表项（`- $$`）容器识别、CRLF 归一化，
+  并让 Markdown 转义的 `\$` 进入 `mathjax_ignore`；`\label`/`\eqref` 依赖的
+  公式编号启用 AMS tags，每次渲染前 `texReset()` 清除全局标签表。
+- Markdown 表格的 `align` 属性恢复左/中/右对齐；安全边界（DOMPurify、
+  sandbox iframe、CSP、路径/SSRF 约束）未改动。
+- 回归：22 篇多格式笔记（MD/HTML/CSV/TXT/JSON/GBK/BOM）预览 0 控制台错误、
+  0 残留公式、0 未定义宏；22 条 PNG+PDF 导出自测 0 错误/0 警告；
+  `npm run check` 全绿。
+
+已知上游限制：physics 与 braket 都定义 `raket`，当前按加载顺序采用 braket
+的 `raket{a|b}` 语法，physics 的双参数形式被遮蔽。
+
+## v1.10.7 CSV/TXT 列宽实测（历史）
+
 
 CSV/TXT 表格的列宽此前按"字符数 × `ch`"估算，而 `ch` 只是数字 `0` 的宽度：
 `TOP10` 分到 8ch，扣掉 20px 内边距后内容区约 35px，而它在 13px 字号下约 37px，

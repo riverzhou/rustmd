@@ -11,7 +11,7 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 60 个测试：排序（含大小写/变音符确定性 tie-break）、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探（TSV/引号内逗号/小数逗号）、数字列对齐/列宽提示、TXT 制表符列、JSON 统计/校验、侧栏/分屏宽度边界与持久化解析、PDF 页面方向（宽表 landscape）、栅格导出几何（面积上限/分页/尾页裁剪）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 69 个测试：排序（含大小写/变音符确定性 tie-break）、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探（TSV/引号内逗号/小数逗号）、数字列对齐/列宽提示、TXT 制表符列、JSON 统计/校验、侧栏/分屏宽度边界与持久化解析、PDF 页面方向（宽表 landscape）、栅格导出几何（面积上限/分页/尾页裁剪）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 与 CSV/TXT/JSON 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 版本检查 | `npm run check:version` | `package.json` / `Cargo.toml` / `tauri.conf.json` 及 `package-lock.json` / `Cargo.lock` 根包版本一致 |
 | Rust 静态检查 | `node scripts/cargo.mjs fmt --check`、`clippy --all-targets -- -D warnings` | 格式与 lint，warning 视为错误 |
