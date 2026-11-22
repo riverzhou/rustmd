@@ -1446,11 +1446,24 @@ export async function buildExportHtml(title, source, theme, kind = 'markdown') {
  }
  /* Data cards keep their content width (narrow tables stay narrow); a wide
     table's max-width:100% makes the card consume the full viewport instead of
-    the 820px reading column used by Markdown. */
- body.data-export .data-table-scroll {
-   max-height: none;
-   overflow-x: auto;
-   overflow-y: visible;
+    the 820px reading column used by Markdown.
+    A standalone export is read in a browser, not captured: bound the table to
+    the viewport so it scrolls inside the card. That is what makes the sticky
+    header stick and keeps the horizontal scrollbar reachable without scrolling
+    to the last row. The @media print block (dataview.css) restores flow, so
+    printing the file still spans every page. */
+ @media screen {
+   body.data-export .data-view .data-table-scroll {
+     max-height: calc(100vh - 222px);
+     overflow: auto;
+   }
+   /* Mobile browsers: size against the dynamic viewport so the address bar
+      does not hide the table's horizontal scrollbar. */
+   @supports (height: 100dvh) {
+     body.data-export .data-view .data-table-scroll {
+       max-height: calc(100dvh - 222px);
+     }
+   }
  }
  h1, h2, h3, h4 { font-weight: 700; line-height: 1.35; margin: 1.5em 0 0.6em; }
  h1 { font-size: 1.9em; padding-bottom: .3em; border-bottom: 1px solid ${isDark ? '#262a33' : '#e2e5ec'}; }

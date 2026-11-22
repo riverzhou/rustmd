@@ -541,8 +541,7 @@
 
 /* The off-screen export must not inherit preview scroll boxes: overflow
    creates monolithic boxes that the print engine cannot paginate. */
-.export-stage .data-view .data-table-scroll,
-.rmd-export .data-view .data-table-scroll {
+.export-stage .data-view .data-table-scroll {
   max-height: none;
 }
 
