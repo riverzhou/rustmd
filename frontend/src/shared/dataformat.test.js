@@ -16,8 +16,10 @@ import {
   jsonStats,
   looksLikeHeaderRow,
   parseDelimited,
+  serializeDelimited,
   sortRowOrder,
   sortTableRows,
+  sortedCsvSource,
 } from './dataformat.js';
 
 test('CSV parser handles quotes, doubled quotes and embedded newlines', () => {
@@ -351,4 +353,31 @@ test('CSV sorting falls back to natural text order for mixed or text columns', (
     sortTableRows(mixed, 0, 'asc', { locale: 'en-US' }).map((row) => row[0]),
     ['2', '10', 'alpha']
   );
+});
+
+test('CSV export source keeps the header and serializes the sorted rows safely', () => {
+  const source =
+    'name,note,qty\n"苹果, 红富士","line 1\nline 2",2\n香蕉,plain,10\n"葡萄 ""x""","带, 逗号",1\n';
+  const sorted = sortedCsvSource(source, 2, 'asc');
+  const parsed = parseDelimited(sorted, ',');
+  assert.deepEqual(parsed.rows.map((row) => row[0]), [
+    'name',
+    '葡萄 "x"',
+    '苹果, 红富士',
+    '香蕉',
+  ]);
+  assert.equal(parsed.rows[2][1], 'line 1\nline 2');
+  assert.equal(parsed.rows[1][1], '带, 逗号');
+  assert.match(sorted, /"苹果, 红富士"/);
+  assert.match(sorted, /"葡萄 ""x"""/);
+  assert.match(sorted, /\n$/);
+  // The caller's source is never mutated.
+  assert.equal(
+    parseDelimited(source, ',').rows[1][0],
+    '苹果, 红富士'
+  );
+  // A header-only (or unsortable) note falls back to the original source.
+  assert.equal(sortedCsvSource('a,b\n', 0, 'asc'), 'a,b\n');
+  assert.equal(sortedCsvSource(source, -1, 'asc'), source);
+  assert.equal(serializeDelimited([['a', 'b'], ['x,y', 'q"z']]), 'a,b\n"x,y","q""z"\n');
 });

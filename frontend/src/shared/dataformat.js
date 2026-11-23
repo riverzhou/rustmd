@@ -540,6 +540,50 @@ export function sortTableRows(rows, column, direction = 'asc', options = {}) {
   return sortRowOrder(list, column, direction, options).map((i) => list[i]);
 }
 
+/** Quote one CSV field only when the delimiter, quote or a newline requires it. */
+function csvField(value, delimiter) {
+  const text = String(value ?? '');
+  return text.includes('"') ||
+    text.includes('\n') ||
+    text.includes('\r') ||
+    text.includes(delimiter)
+    ? `"${text.replace(/"/g, '""')}"`
+    : text;
+}
+
+/** Serialize parsed rows back to delimiter-separated text (LF line endings). */
+export function serializeDelimited(rows, delimiter = ',') {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return '';
+  return (
+    list
+      .map((row) =>
+        (Array.isArray(row) ? row : [])
+          .map((cell) => csvField(cell, delimiter))
+          .join(delimiter)
+      )
+      .join('\n') + '\n'
+  );
+}
+
+/**
+ * A display-ready CSV source with its data rows in the same order the preview
+ * shows after clicking a header. The original note text is never modified;
+ * exports use this temporary source so PNG / PDF / standalone HTML match the
+ * sorted preview. Returns the original text when there is nothing to sort.
+ */
+export function sortedCsvSource(source, column, direction = 'asc') {
+  const text = String(source ?? '');
+  const delimiter = detectDelimiter(text);
+  const rows = parseDelimited(text, delimiter).rows;
+  if (rows.length < 2 || !Number.isInteger(column) || column < 0) return text;
+  const header = rows[0] || [];
+  return serializeDelimited(
+    [header, ...sortTableRows(rows.slice(1), column, direction)],
+    delimiter
+  );
+}
+
 /**
  * Cap and floor (in `ch`) for one column. Compact numeric/date/boolean columns
  * cap tighter than prose columns; both floor at roughly a header's width so a

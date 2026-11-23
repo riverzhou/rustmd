@@ -804,8 +804,9 @@ async function runSelfTestInner({ getState }) {
             bytes: htmlBytes.length,
             dataView: exportHtml.includes(`data-view-${kind}`),
             escapedMarkup: !/<(?:b|img|script)[\s>]/i.test(exportHtml),
-            // Sorting is a live-preview interaction only; the standalone file
-            // must keep the note's original row order and no dead controls.
+            // The standalone file must not ship dead sort controls. Exports do
+            // follow the preview's sort order, which main.js handles by passing
+            // a temporary sorted CSV source into buildExportHtml.
             staticSort: !/<button[^>]*data-sort-btn/.test(exportHtml),
           };
           entry.htmlExport = htmlExport;
@@ -1045,7 +1046,7 @@ async function runSelfTestInner({ getState }) {
       );
     }
 
-    // 4b) CSV header-click sorting is preview-only. Three clicks cycle
+    // 4b) CSV header-click sorting is a preview state. Three clicks cycle
     //     asc → desc → the note's original order; the visible reset button
     //     restores it too. TXT has no sortable header.
     const sortButtons = [

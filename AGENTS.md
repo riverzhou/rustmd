@@ -43,7 +43,7 @@ this file is the developer/agent contract.
   report checker enforces HTML + data coverage (`--require-html --require-data`),
   freshness (24 h default), and verifies every reported PNG/PDF/HTML artifact
   exists with the exact recorded byte length.
-- Current counts: 72 frontend unit tests; 99 Rust tests on Windows / 100 on
+- Current counts: 73 frontend unit tests; 99 Rust tests on Windows / 100 on
   Linux+macOS (1 network test `#[ignore]`d; run `cargo test --workspace -- --ignored`
   explicitly) with `cargo test --workspace` including the core integration
   tests; 10 example notes in `examples/`; 23 IPC commands (checked by
@@ -161,10 +161,11 @@ this file is the developer/agent contract.
   type dots) and collapsible groups (no raw braces/commas). CSV headers are
   click-to-sort in the live preview only: asc → desc → the note's original
   order, plus an “original order” reset button while sorted. Sorting reorders
-  the already-mounted `<tr>` nodes (never the note text, editor state or the
-  export stage) via `dataformat.sortRowOrder`, with missing cells last and a
-  stable tie-break; `renderPreview` passes `{ sortable: false }` for export
-  stages and `buildExportHtml` emits a static table. `main.js` imports the CSS; `preview.js`
+  the already-mounted `<tr>` nodes (never the note text or editor state) via
+  `dataformat.sortRowOrder`, with missing cells last and a stable tie-break.
+  Export stages pass `{ sortable: false }` (no interactive controls), while
+  `main.js` feeds a temporary `sortedCsvSource(...)` into HTML/PNG/PDF so all
+  three exports follow the current sort without touching the note. `main.js` imports the CSS; `preview.js`
   imports the raw string so exported files stay visually identical. `@media
   print` pins the table to `font-size: 13px` (the on-screen `clamp(13px, 0.72vw,
   14.5px)` floor): `vw` resolves against the *page* width when printing, so
@@ -501,9 +502,11 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
 - **Preview/export**: `renderPreview(source, container, kind, options)`
   dispatches to Markdown rendering, the sandboxed HTML preview iframe, the
   hidden WebView capture, or `renderDataView` for CSV/TXT/JSON. For data views,
-  `{ sortable: false }` disables the CSV header sort for export/capture stages;
-  note open/close pass `{ resetSort: true }` so the sort state stored on the
-  preview node never leaks to another file (same-note re-renders keep it). `renderMarkdownInto` must
+  `{ sortable: false }` disables the CSV header sort controls for export/capture
+  stages; note open/close pass `{ resetSort: true }` so the sort state stored on
+  the preview node never leaks to another file (same-note re-renders keep it).
+  CSV exports feed `sortedCsvSource(...)` into the export stage so HTML/PNG/PDF
+  match the visible sort. `renderMarkdownInto` must
   sanitize before mounting; the HTML preview must stay in the null-origin
   iframe; data renderers must keep using `textContent`/DOM APIs (never
   innerHTML with note text). HTML/PNG/PDF export all go through the same

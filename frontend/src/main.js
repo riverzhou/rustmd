@@ -18,6 +18,7 @@ import {
   pdfFromPngDataUrl,
 } from './export.js';
 import { bytesToDataUrl, dataUrlToBytes } from './shared/imgutil.js';
+import { sortedCsvSource } from './shared/dataformat.js';
 import {
   applyStaticTranslations,
   getLanguage,
@@ -3015,6 +3016,16 @@ function triggerDownload(blob, name) {
 /// unsupported platforms and old WebView2 runtimes fall back to the
 /// html2canvas image exporter so the export never fails because of the
 /// renderer. PNG always uses the raster path.
+/// Exports must match the visible preview. CSV sorting is a view state on the
+/// preview node; build a temporary sorted source for the export stage so
+/// HTML/PNG/PDF all show the same row order without touching the note.
+function currentExportSource(source, noteKind) {
+  if (noteKind !== 'csv') return source;
+  const sort = previewEl.__dataSort;
+  if (!sort || !sort.direction) return source;
+  return sortedCsvSource(source, sort.column, sort.direction);
+}
+
 async function exportNote(kind, body, noteKind, title) {
   if (kind === 'pdf' && api.canPrintPdf) {
     try {
@@ -3051,6 +3062,7 @@ async function runExportInner(kind) {
   const title = noteTitle.value.trim() || t('note.untitled');
   const body = editor.state.doc.toString();
   const currentKind = state.currentKind;
+  const exportBody = currentExportSource(body, currentKind);
   // Pin the image context to the exported note. Markdown stages are built
   // synchronously below; explicit contexts are passed to the HTML asset
   // inliner and hidden renderer so a note switch cannot mix two vaults.
@@ -3072,7 +3084,7 @@ async function runExportInner(kind) {
           extensions: ['html', 'htm'],
         };
       } else {
-        const html = await buildExportHtml(title, body, state.theme, currentKind);
+        const html = await buildExportHtml(title, exportBody, state.theme, currentKind);
         payload = {
           data: new TextEncoder().encode(html),
           ext: 'html',
@@ -3152,7 +3164,7 @@ async function runExportInner(kind) {
       }
     } else {
       toast(t(kind === 'png' ? 'toast.exportingPng' : 'toast.exportingPdf'));
-      const exported = await exportNote(kind, body, currentKind, title);
+      const exported = await exportNote(kind, exportBody, currentKind, title);
       payload = {
         ...exported,
         filterName: t(

@@ -1483,7 +1483,8 @@ export function renderPreview(
     // Narrow tables still shrink to content via `.data-view { width: fit-content }`.
     container.classList.add('data-mode');
     // Only the in-app preview gets header-click sorting; export/capture stages
-    // render a static table (the sorted order is a view state, not the note).
+    // render a control-free table. The caller may pass a sorted CSV source so
+    // all exports match the visible row order.
     renderDataView(container, kind, source, { sortable });
     return undefined;
   }
