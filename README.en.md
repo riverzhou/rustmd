@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.11.2** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.12.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -28,7 +28,7 @@ If you want a tool that keeps notes as **plain files** instead of locking them i
 
 - **One note, three deliverables** — export Markdown, HTML, CSV, TXT and JSON as **PNG, vector PDF and standalone HTML**; HTML notes export as full pages and wide tables never lose columns. No Edge/Chrome and no Pandoc required.
 - **HTML notes are first-class** — edit `.html` and see the full page on the right, rendered by the built-in WebView. Page styles, scripts, local images/CSS/JS and charts run natively; previews and exports stay in sync — no HTML stuffed into Markdown.
-- **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
+- **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands, and CSV headers sort by value on click; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
 - **Plain files** — notes are ordinary files in a folder you own; use Git, Syncthing, iCloud, OneDrive or any sync tool. No database, account or proprietary format.
 - **Local-first + multi-vault** — editing, preview, search and export work offline; recent vaults, pinned vaults, a multi-vault view, current-folder scope and front-matter tags.
 - **Small and light** — the Windows portable zip is about **17 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
@@ -114,9 +114,9 @@ HTML notes render through the built-in WebView, including page styles, scripts, 
 
 <img src="docs/assets/screenshots/html-note.en.png" alt="HTML note rendered in rustmd: HTML source on the left, full WebView page on the right" width="880">
 
-CSV tables: short and numeric columns shrink to content, while long text columns widen up to a 64-character cap; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable:
+CSV tables: short and numeric columns shrink to content, while long text columns widen up to a 64-character cap; numbers are right-aligned, headers share their column's alignment, and row bands plus per-column ink tints make wide tables scannable. The screenshot clicks the 数量 header for ascending order, showing the Original order reset button:
 
-<img src="docs/assets/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints" width="880">
+<img src="docs/assets/screenshots/csv-note.en.png" alt="CSV table preview in rustmd with smart column widths, right-aligned numbers, aligned headers, row bands and column ink tints, sorted by the quantity column with an original-order reset button" width="880">
 
 TXT: tab-aligned columns preserve spaces and distinguish tabular rows from full-width prose:
 
@@ -208,7 +208,7 @@ Chinese interface example:
 ### CSV / TXT / JSON previews
 
 - `.csv` / `.txt` / `.json` appear with Markdown and HTML notes in the folder tree, note list, search results and folder counts, with **CSV (amber) / TXT (grey) / JSON (violet)** badges.
-- **CSV tables** sniff comma, tab, semicolon or pipe delimiters and support quoted fields, embedded newlines and doubled quotes. The first row is the header. Column widths adapt to content: numeric, date, boolean and short-label columns stay compact while long text columns widen up to a 64-character cap (remaining width is not forcibly distributed). Alignment is inferred from the data (numbers, dates, currency and booleans; headers use the same alignment as their cells), with alternating row bands for horizontal scanning, subtle per-column ink tints for vertical tracking, thin separators and hover highlighting. Wide tables scroll horizontally.
+- **CSV tables** sniff comma, tab, semicolon or pipe delimiters and support quoted fields, embedded newlines and doubled quotes. The first row is the header. Column widths adapt to content: numeric, date, boolean and short-label columns stay compact while long text columns widen up to a 64-character cap (remaining width is not forcibly distributed). Alignment is inferred from the data (numbers, dates, currency and booleans; headers use the same alignment as their cells), with alternating row bands for horizontal scanning, subtle per-column ink tints for vertical tracking, thin separators and hover highlighting. Wide tables scroll horizontally. **Click a header to sort**: ascending → descending → the note’s original order, with numeric/date/boolean columns compared by value, text by localized natural order and missing cells always last. Sorting only reorders preview rows — it never rewrites the editor or the file. While sorted, an **Original order** button appears next to the sorted column and restores the CSV’s source row order in one click.
 - **TXT tab alignment** splits each line at tab stops into aligned columns while preserving spaces. Lines without tabs span the full row, and leading prose lines are skipped. The first multi-column row becomes a header only when every cell is text and a later row contains a number/date/boolean; a first row with numeric values (such as stock-signal logs) stays a data row instead of being bolded. Smart column widths, alternating row bands and per-column ink tints, a monospace font and right-aligned numeric columns make plain text comfortable to scan.
 - **JSON inspector** shows the root type, key/item counts and node count, with collapsible object/array groups (semantic header tints, rails and type pills), key-and-value columns, type/count labels, and a dedicated color plus type dot for strings, numbers, booleans and null. Invalid JSON shows the parse error plus the raw source.
 - **Complete data views**: CSV/TXT/JSON are no longer truncated. Data views use the full preview width; a 4K display at 200% scaling (about a 1920×1080 CSS viewport) can show many more columns, while narrow tables still shrink to content instead of forcing a full-width grid. Wide tables get synchronized horizontal scrollbars above and below the table; when there is spare height, tables with 18+ rows distribute it across row heights, while taller tables scroll inside the card with a sticky header.
@@ -347,7 +347,7 @@ Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfm
 | Tauri dev window | `node scripts/dev/launch-dev.mjs` (`scripts\dev\run-dev.bat` on Windows) |
 | Frontend only (mock) | `npm run dev` |
 | Release exe, no bundle | `npx tauri build --no-bundle` |
-| Frontend unit tests | `npm run test:unit` (69 tests) |
+| Frontend unit tests | `npm run test:unit` (72 tests) |
 | Rust tests | `npm run test:rust` (`cargo test --workspace`; 99 tests on Windows / 100 on Linux and macOS, 1 network test ignored by default) |
 | End-to-end self-test | `npm run selftest` / `npm run selftest:check` |
 | Regenerate icons | `npm run icons` |
@@ -359,7 +359,7 @@ Requirements: Node.js `^20.19.0 || >=22.12.0` (Vite 8), Rust stable with `rustfm
 `npm run check` runs:
 
 1. ESLint 10
-2. Node tests (69: sorting, folder tree, folder scope and scoped tags, recent vaults, CSV/TXT/JSON parsing, delimiter sniffing, type alignment and column-width hints, math protection, code segments and i18n)
+2. Node tests (72: sorting, folder tree, folder scope and scoped tags, recent vaults, CSV/TXT/JSON parsing, delimiter sniffing, type alignment and column-width hints, CSV header sorting, math protection, code segments and i18n)
 3. Repository checks (`npm run check:repo`: doc links, version banner, CSP, plugin permissions, icons, machine-specific paths, untracked `dist`)
 4. License boundary (`npm run check:license`: the reusable layers are Tauri-free and every source file carries its SPDX header)
 5. Packaging manifests (`npm run check:packaging`: winget / Scoop / Homebrew / AUR versions, asset names, URLs and SHA256 agree)
@@ -375,7 +375,7 @@ CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the quality gate
 npm run selftest
 ```
 
-The dev window renders all 10 example notes (Markdown, HTML, CSV, TXT, JSON and a GBK CSV), exports PNG/PDF and HTML, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); HTML verifies that the built-in WebView iframe becomes ready, local relative CSS/JS/images and inline scripts; data notes verify table/JSON structure, smart header alignment, HTML-text safety, data HTML export and charset; the GBK fixture asserts encoding detection. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); `npm run selftest:check` requires HTML, CSV, TXT and JSON coverage (the npm script passes `--require-html --require-data`). The app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
+The dev window renders all 10 example notes (Markdown, HTML, CSV, TXT, JSON and a GBK CSV), exports PNG/PDF and HTML, and verifies Markdown residual raw math, multi-line math geometry and image presence (2D NCC); HTML verifies that the built-in WebView iframe becomes ready, local relative CSS/JS/images and inline scripts; data notes verify table/JSON structure, smart header alignment, the three-state CSV header sort and static export table, HTML-text safety, data HTML export and charset; the GBK fixture asserts encoding detection. Artifacts and `report.json` go to the system temp directory under `rustmd-selftest/` (override with `RUSTMD_SELFTEST_OUT`); `npm run selftest:check` requires HTML, CSV, TXT and JSON coverage (the npm script passes `--require-html --require-data`). The app exits 0/1. The code lives in `frontend/src/selftest.js` and is never bundled into release builds.
 
 ## Project structure
 

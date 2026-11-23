@@ -11,7 +11,7 @@ npm run check
 | 步骤 | 命令 | 覆盖 |
 | --- | --- | --- |
 | ESLint | `npm run lint` | `frontend/src`、`scripts`、配置文件；未使用变量、未定义变量、`==`、`var` 等 |
-| 前端单测 | `npm run test:unit` | 69 个测试（8 个文件）：排序（含大小写/变音符确定性 tie-break）、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探（TSV/引号内逗号/小数逗号）、数字列对齐/列宽提示、TXT 制表符列与表头检测、JSON 统计/校验、侧栏/分屏宽度边界、栅格 PDF 每页方向（短页转置回归）、栅格导出几何（面积上限/分页/尾页裁剪）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
+| 前端单测 | `npm run test:unit` | 72 个测试（8 个文件）：排序（含大小写/变音符确定性 tie-break）、文件夹树、当前目录/子树过滤、多库同路径过滤、范围标签计数、全部笔记格式识别、CSV 解析/分隔符嗅探（TSV/引号内逗号/小数逗号）、数字/日期/布尔数值排序与稳定/缺失值规则、数字列对齐/列宽提示、TXT 制表符列与表头检测、JSON 统计/校验、侧栏/分屏宽度边界、栅格 PDF 每页方向（短页转置回归）、栅格导出几何（面积上限/分页/尾页裁剪）、最近笔记库路径去重/MRU(20)/置顶不淘汰、数学保护、代码段切分、i18n 词典/插值/系统语言 |
 | 仓库检查 | `npm run check:repo` | 必需文件（含 HTML 与 CSV/TXT/JSON 示例）、文档相对链接、CSP、插件权限、图标、机器相关路径、`dist` 未被跟踪 |
 | 许可边界 | `npm run check:license` | `crates/rustmd-core` 保持 MIT OR Apache-2.0、无 Tauri 依赖；`frontend/src/shared/` 无 Tauri 引用；两层源文件均有 SPDX 头 |
 | 打包清单 | `npm run check:packaging` | winget / Scoop / Homebrew / AUR 的版本、资产名、URL、SHA256 互相一致（静态检查，不联网） |
@@ -41,12 +41,12 @@ npm run check
 
 ## 前端单测
 
-`node --test` 直接 import 纯函数模块，不需要 DOM；共 69 个测试、8 个文件：
+`node --test` 直接 import 纯函数模块，不需要 DOM；共 72 个测试、8 个文件：
 
 - `frontend/src/shared/notelist.test.js`：文件名、`noteKindOf` / `noteStemOf`、排序（mtime / 数字感知文件名 / 多库同路径稳定排序）、当前目录直属/子树过滤、按库过滤、默认当前目录（启动时为库根目录）范围、范围标签计数、树计数、折叠扁平化、祖先；
 - `frontend/src/shared/markdown.test.js`：代码段切分、数学检测、多个 `$$` 块（g 标志回归）、句中 `$$` 不配对、行内公式与行内代码、引用块/列表中的块级公式（`\\` 行分隔符与 CRLF）、`\$` 转义与真公式共存、公式内 `\$`；
 - `frontend/src/shared/i18n.test.js`：中英词典键完全一致、插值/英文复数、系统语言选择；
-- `frontend/src/shared/dataformat.test.js`：CSV 引号/双引号/内嵌换行/参差行/尾行、分隔符嗅探（结构列数优先，逗号/制表符/分号竞争）、TXT 制表列与长列、列数上限、数字/日期/货币/缺失值/布尔对齐、列宽计划/上限/样本、TXT 表头检测（股票数据不误判）、JSON 统计与非法 JSON；
+- `frontend/src/shared/dataformat.test.js`：CSV 引号/双引号/内嵌换行/参差行/尾行、分隔符嗅探（结构列数优先，逗号/制表符/分号竞争）、TXT 制表列与长列、列数上限、数字/日期/货币/缺失值/布尔对齐、列宽计划/上限/样本、TXT 表头检测（股票数据不误判）、CSV 排序（数值/货币/百分比/日期/布尔、缺失值置底、稳定 tie-break、文本自然顺序、不修改源数组）、JSON 统计与非法 JSON；
 - `frontend/src/layout.test.js`：侧栏 220–680px + 视口 42% 上限、编辑/预览 20–80%、持久化百分比解析；
 - `frontend/src/pdfgeom.test.js`：栅格 PDF 每页按自身宽高选择 portrait/landscape，非法尺寸回退 portrait（仅栅格回退路径；宽表矢量 PDF 不再使用 landscape 纸张）；
 - `frontend/src/exportgeom.test.js`：常规 3×、宽/高/总画布面积上限、极端尺寸低于 0.25×、分页不超过页高、块底部切页、尾页小切片合并；
@@ -76,7 +76,7 @@ npm run selftest
 等价于 `scripts/dev/run-selftest.mjs` 设置 `RUSTMD_SELFTEST=1`、删除旧的 `report.json`/`progress.log` 后启动 `scripts/dev/launch-dev.mjs`，dev 窗口会：
 
 1. 读取 `selftest_config`（默认 `<repo>/examples`，输出到系统临时目录 `rustmd-selftest/`）；
-2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；CSV/TXT/JSON 检查表格/检查器结构、智能表头对齐、笔记文本不注入 DOM，并断言 GBK 示例的编码识别；另外用合成 CSV/TXT 表格独立验证数字右对齐、布尔居中与 `scope=col`。导出前本地图片必须被内联为 data URL；
+2. 对每篇示例笔记按 `kind` 走真实 `renderPreview`：Markdown 检查残留 `$…$`、Mermaid 错误、MathJax 错误、多行公式 viewBox 高度、远程/本地图片是否真实解码；`examples/html-page-demo.html` 走 sandbox iframe 路径，检查 iframe ready、本地相对 CSS/JS/图片和内联脚本是否加载；CSV/TXT/JSON 检查表格/检查器结构、智能表头对齐、笔记文本不注入 DOM，并断言 GBK 示例的编码识别；另外用合成 CSV/TXT 表格独立验证数字右对齐、布尔居中与 `scope=col`，以及 CSV 表头点击的「升序 → 降序 → 原始顺序」三态循环、重置按钮、预览可排序而数据 HTML 导出保持静态表格。导出前本地图片必须被内联为 data URL；
 3. 逐篇导出 PNG/PDF，写入输出目录；Markdown 远程图片经 `fetch_image_bytes`、本地图片经 `read_local_image`（仅图片类型）；本地 CSS/JS 经 `read_local_asset`（仅 `.css`/`.js`/`.mjs`）由父页面内联，`rmd` 只是字体等剩余资源的回退协议；PDF 优先走平台打印管线（Markdown 与数据表 `print_note_pdf`、HTML `print_html_note`，矢量文字；Markdown 为 A4，A4 放不下的数据表按实测宽度请求自定义宽纸张，Rust 夹取 3–60 in；Windows WebView2 / macOS WKWebView / Linux WebKitGTK）；只有超过前端 55 in 上限的表才回退扩宽舞台的图片 PDF（超长表按行以 3× 分页），不支持打印时也回退图片 PDF；HTML 笔记的 PNG 经内置隐藏 WebView 整页截图（相对资源先内联，字体等走 `rmd` base；超长页面分段拼接）；
 4. Markdown 笔记用 2D NCC 验证每张远程/本地图片确实出现在导出的 PNG 中（图床不可达时记为 `warnings` 并跳过该图，首次失败后跳过其余远程图，不阻塞发布；本地图片仍严格断言）；走矢量打印路径的 PDF 条目（含宽数据表）要求存在内嵌字体（`/Font`），证明输出的是文字而不是图片切片；只有回退图片 PDF 不要求；HTML 笔记检查 iframe ready、本地脚本执行、本地图片内联、PNG 尺寸/非空与 PDF magic（跨域 iframe 不可读取像素）；
 5. 额外导出一张带 viewBox-only 内嵌 SVG 的测试图，验证 PNG 中同时存在左右两色（html2canvas 把 drawImage 源矩形按 SVG 用户单位解释、导致裁剪的回归）；同时校验 HTML 导出会移除遗留的 GBK charset、保留 script 内文本、在 doctype 后写入 UTF-8 声明；
@@ -84,7 +84,7 @@ npm run selftest
 
 新增断言：Markdown 预览不得残留未渲染公式、Mermaid/MathJax 错误数为 0、每篇导出的 PNG 不能是空白；HTML 示例还会断言 `<html lang>`/`<body class>` 在资源内联后保留、`defer` 头部脚本在 `<body>` 存在后才执行、内联脚本执行、本地图片内联数不少于引用数、CSS `url()` 背景图被内联且不残留相对 URL；Markdown 导出的独立 HTML 必须包含 highlight.js 颜色规则；PNG 的内联 SVG 回归必须保留红/蓝两色。
 
-`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML/数据覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、HTML 导出 charset、24 小时新鲜度检查。校验器现在会：要求 `report.config.examplesDir` 存在且（设置了 `RUSTMD_SELFTEST_EXAMPLES` 时）与本次运行一致，核对**每个条目的 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、真实存在且字节数与报告完全一致**，并要求示例目录里的每篇笔记都有条目（目录为空也算失败）；`scripts/dev/run-selftest.mjs` 启动前会删除旧的 `report.json`/`progress.log`，失败的重跑不会复用上一次的绿色报告。报告校验：
+`report.ok === false` 或任何 `errors[]` 都表示失败。报告还有 HTML/数据覆盖、HTML PNG 尺寸、PNG/PDF magic 与文件大小、本地图片存在性、HTML 导出 charset、CSV 表头排序、24 小时新鲜度检查。校验器现在会：要求 `report.config.examplesDir` 存在且（设置了 `RUSTMD_SELFTEST_EXAMPLES` 时）与本次运行一致，核对**每个条目的 PNG/PDF/HTML 产物位于输出目录内、不早于本次运行、真实存在且字节数与报告完全一致**，并要求示例目录里的每篇笔记都有条目（目录为空也算失败）；`scripts/dev/run-selftest.mjs` 启动前会删除旧的 `report.json`/`progress.log`，失败的重跑不会复用上一次的绿色报告。报告校验：
 
 ```bash
 RUSTMD_SELFTEST_OUT=/path/to/rustmd-selftest npm run selftest:check

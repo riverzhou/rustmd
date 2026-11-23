@@ -16,6 +16,8 @@ import {
   jsonStats,
   looksLikeHeaderRow,
   parseDelimited,
+  sortRowOrder,
+  sortTableRows,
 } from './dataformat.js';
 
 test('CSV parser handles quotes, doubled quotes and embedded newlines', () => {
@@ -269,4 +271,84 @@ test('a tab inside a comma CSV cell does not flip the delimiter', () => {
   assert.equal(detectDelimiter('a,hello\tworld\nb,foo\tbar\n'), ',');
   assert.equal(detectDelimiter('name,desc\na,hello\tworld\nb,foo\tbar\n'), ',');
   assert.equal(detectDelimiter('a\tb\nx,y\tz\n'), '\t');
+});
+
+test('CSV sorting compares numbers, money, percent, dates and booleans by value', () => {
+  const rows = [
+    ['苹果', '12', '2026-02-03', 'true'],
+    ['香蕉', '-3.5', '2026-01-04', 'false'],
+    ['梨', '¥1,200.50', '2026-3-5', '是'],
+  ];
+  assert.deepEqual(
+    sortTableRows(rows, 1, 'asc').map((row) => row[0]),
+    ['香蕉', '苹果', '梨']
+  );
+  assert.deepEqual(
+    sortTableRows(rows, 1, 'desc').map((row) => row[0]),
+    ['梨', '苹果', '香蕉']
+  );
+  assert.deepEqual(
+    sortTableRows(rows, 2, 'asc').map((row) => row[0]),
+    ['香蕉', '苹果', '梨']
+  );
+  assert.deepEqual(
+    sortTableRows(rows, 3, 'asc').map((row) => row[0]),
+    ['香蕉', '苹果', '梨']
+  );
+  assert.deepEqual(
+    sortTableRows(rows, 3, 'desc').map((row) => row[0]),
+    ['苹果', '梨', '香蕉']
+  );
+  const percent = [['a', '15%'], ['b', '9%'], ['c', '120%']];
+  assert.deepEqual(
+    sortTableRows(percent, 1, 'asc').map((row) => row[0]),
+    ['b', 'a', 'c']
+  );
+});
+
+test('CSV sorting keeps missing cells last, stable and leaves the source alone', () => {
+  const rows = [
+    ['b', '2'],
+    ['a', '1'],
+    ['N/A', '1'],
+    ['-', '1'],
+    ['a2', '1'],
+  ];
+  const stored = rows.map((row) => [...row]);
+  const asc = sortTableRows(rows, 0, 'asc', { locale: 'en-US' });
+  assert.deepEqual(
+    asc.map((row) => row[0]),
+    ['a', 'a2', 'b', 'N/A', '-']
+  );
+  assert.deepEqual(
+    sortTableRows(rows, 0, 'desc', { locale: 'en-US' })
+      .slice(-2)
+      .map((row) => row[0]),
+    ['N/A', '-']
+  );
+  const ties = [['x', '2'], ['y', '1'], ['z', '2']];
+  assert.deepEqual(
+    sortTableRows(ties, 1, 'asc').map((row) => row[0]),
+    ['y', 'x', 'z']
+  );
+  assert.deepEqual(
+    sortTableRows(ties, 1, 'desc').map((row) => row[0]),
+    ['x', 'z', 'y']
+  );
+  assert.deepEqual(rows, stored);
+  assert.deepEqual(sortRowOrder(rows, 0, 'asc', { locale: 'en-US' }), [
+    1, 4, 0, 2, 3,
+  ]);
+});
+
+test('CSV sorting falls back to natural text order for mixed or text columns', () => {
+  const rows = [['item10'], ['item2'], ['Item2'], ['item1'], ['x']];
+  assert.deepEqual(sortRowOrder(rows, 0, 'asc', { locale: 'en-US' }), [
+    3, 1, 2, 0, 4,
+  ]);
+  const mixed = [['10'], ['2'], ['alpha']];
+  assert.deepEqual(
+    sortTableRows(mixed, 0, 'asc', { locale: 'en-US' }).map((row) => row[0]),
+    ['2', '10', 'alpha']
+  );
 });

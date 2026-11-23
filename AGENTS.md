@@ -26,8 +26,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/checks/check-version.mjs v1.11.2` |
-| Release notes preflight | `node scripts/release/release-notes.mjs v1.11.2 >/dev/null` |
+| Version/tag preflight | `node scripts/checks/check-version.mjs v1.12.0` |
+| Release notes preflight | `node scripts/release/release-notes.mjs v1.12.0 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/release/sign-win.ps1` and `scripts/release/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/dev/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -43,7 +43,7 @@ this file is the developer/agent contract.
   report checker enforces HTML + data coverage (`--require-html --require-data`),
   freshness (24 h default), and verifies every reported PNG/PDF/HTML artifact
   exists with the exact recorded byte length.
-- Current counts: 69 frontend unit tests; 99 Rust tests on Windows / 100 on
+- Current counts: 72 frontend unit tests; 99 Rust tests on Windows / 100 on
   Linux+macOS (1 network test `#[ignore]`d; run `cargo test --workspace -- --ignored`
   explicitly) with `cargo test --workspace` including the core integration
   tests; 10 example notes in `examples/`; 23 IPC commands (checked by
@@ -147,7 +147,8 @@ this file is the developer/agent contract.
 - `frontend/src/shared/dataformat.js` — pure CSV/TSV parser (quotes, embedded
   newlines, delimiter sniffing), tab-column builder, smart column alignment
   (numbers/dates right, booleans centered, missing markers ignored), per-column
-  width limits/samples and JSON stats/validation (covered by `node --test`).
+  width limits/samples, CSV sort keys/order and JSON stats/validation (covered
+  by `node --test`).
 - `frontend/src/shared/dataview.js` / `dataview.css` — DOM-only CSV/TXT/JSON preview
   renderers (all note text via `textContent`), plus the styles shared with
   standalone HTML exports. Tables use alternating ROW backgrounds plus a
@@ -157,7 +158,13 @@ this file is the developer/agent contract.
   included) so headers and short cells never wrap, while long prose keeps the
   plan's `ch` cap; the JSON view is an inspector with aligned keys,
   a semantic per-type palette (group tints/rails, type/count pills, leaf
-  type dots) and collapsible groups (no raw braces/commas). `main.js` imports the CSS; `preview.js`
+  type dots) and collapsible groups (no raw braces/commas). CSV headers are
+  click-to-sort in the live preview only: asc → desc → the note's original
+  order, plus an “original order” reset button while sorted. Sorting reorders
+  the already-mounted `<tr>` nodes (never the note text, editor state or the
+  export stage) via `dataformat.sortRowOrder`, with missing cells last and a
+  stable tie-break; `renderPreview` passes `{ sortable: false }` for export
+  stages and `buildExportHtml` emits a static table. `main.js` imports the CSS; `preview.js`
   imports the raw string so exported files stay visually identical. `@media
   print` pins the table to `font-size: 13px` (the on-screen `clamp(13px, 0.72vw,
   14.5px)` floor): `vw` resolves against the *page* width when printing, so
@@ -491,9 +498,12 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   40 characters before the match and query length + 60 after; Rust measures a
   UTF-8 byte window (then trims to char boundaries) while the mock uses
   UTF-16 code units, so a CJK excerpt can be shorter than the mock.
-- **Preview/export**: `renderPreview(source, container, kind)` dispatches to
-  Markdown rendering, the sandboxed HTML preview iframe, the hidden WebView
-  capture, or `renderDataView` for CSV/TXT/JSON. `renderMarkdownInto` must
+- **Preview/export**: `renderPreview(source, container, kind, options)`
+  dispatches to Markdown rendering, the sandboxed HTML preview iframe, the
+  hidden WebView capture, or `renderDataView` for CSV/TXT/JSON. For data views,
+  `{ sortable: false }` disables the CSV header sort for export/capture stages;
+  note open/close pass `{ resetSort: true }` so the sort state stored on the
+  preview node never leaks to another file (same-note re-renders keep it). `renderMarkdownInto` must
   sanitize before mounting; the HTML preview must stay in the null-origin
   iframe; data renderers must keep using `textContent`/DOM APIs (never
   innerHTML with note text). HTML/PNG/PDF export all go through the same

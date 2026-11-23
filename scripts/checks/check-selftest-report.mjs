@@ -194,6 +194,11 @@ for (const entry of Array.isArray(report.entries) ? report.entries : []) {
       if (entry.htmlExport.escapedMarkup !== true) {
         errors.push(`${entry.path}: note markup was not escaped in exported HTML`);
       }
+      if (entry.htmlExport.staticSort !== true) {
+        errors.push(
+          `${entry.path}: exported HTML contains interactive sort controls`
+        );
+      }
       checkArtifact(entry, 'html', entry.htmlExport.bytes);
     }
   }
@@ -307,6 +312,9 @@ if (report.cssAssets?.inlined !== true || report.cssAssets?.leaked === true) {
 }
 if (report.dataAlignment?.csv !== true || report.dataAlignment?.txt !== true) {
   errors.push('CSV/TXT header alignment or column scope did not pass');
+}
+if (report.dataSort?.ok !== true) {
+  errors.push('CSV header-click sorting did not pass');
 }
 if (requireHtml && htmlEntries === 0) {
   errors.push('no HTML note entry (--require-html)');

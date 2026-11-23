@@ -2458,7 +2458,8 @@ function applyNoteContent(
   );
   suppressChange = false;
   clearTimeout(state.previewTimer); // drop the previous note's pending update
-  renderPreview(content.body, previewEl, state.currentKind);
+  // A sort belongs to the note being replaced, not to the shared preview node.
+  renderPreview(content.body, previewEl, state.currentKind, { resetSort: true });
   noteTitle.value = stemOf(path);
   renderTagEditor();
   updateKindBadge(state.currentKind);
@@ -2494,7 +2495,7 @@ function clearCurrentNote() {
   suppressChange = true;
   editor.loadDocument('', 'markdown');
   suppressChange = false;
-  renderPreview('', previewEl, 'markdown');
+  renderPreview('', previewEl, 'markdown', { resetSort: true });
   noteTitle.value = '';
   renderTagEditor();
   updateKindBadge('markdown');

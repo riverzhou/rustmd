@@ -1453,7 +1453,14 @@ function disposeDataView(container) {
   }
 }
 
-export function renderPreview(source, container, kind = 'markdown') {
+export function renderPreview(
+  source,
+  container,
+  kind = 'markdown',
+  { sortable = true, resetSort = false } = {}
+) {
+  // A note switch must not inherit the previous CSV's header sort.
+  if (resetSort) delete container.__dataSort;
   disposeDataView(container);
   ensureMermaid();
   // Data notes use the whole preview pane (tighter padding, no card margin).
@@ -1475,7 +1482,9 @@ export function renderPreview(source, container, kind = 'markdown') {
     // on a 4K display an 18-column table otherwise wastes most of the window.
     // Narrow tables still shrink to content via `.data-view { width: fit-content }`.
     container.classList.add('data-mode');
-    renderDataView(container, kind, source);
+    // Only the in-app preview gets header-click sorting; export/capture stages
+    // render a static table (the sorted order is a view state, not the note).
+    renderDataView(container, kind, source, { sortable });
     return undefined;
   }
   container.classList.remove('data-mode');

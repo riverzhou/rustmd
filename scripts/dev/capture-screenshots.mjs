@@ -274,6 +274,17 @@ async function prepareHtmlShot() {
   })()`);
 }
 
+async function prepareCsvShot() {
+  // Show the CSV header sort in the README: sort the 数量 column ascending so
+  // the direction arrow, highlighted header and the reset control are visible.
+  await js(`(() => {
+    const button = document.querySelectorAll('.data-sort-btn')[1];
+    if (button) button.click();
+    return !!button;
+  })()`);
+  await sleep(400);
+}
+
 async function captureFormats(suffix) {
   await setTheme('light');
   await openNote('guides/html-page.html', 'html');
@@ -281,7 +292,7 @@ async function captureFormats(suffix) {
   // rendered page back to its top only after the editor has settled.
   await capture(`html-note${suffix}`, null, prepareHtmlShot);
   await openNote('data/示例数据.csv', 'csv');
-  await capture(`csv-note${suffix}`, null);
+  await capture(`csv-note${suffix}`, null, prepareCsvShot);
   await openNote('data/说明.txt', 'txt');
   await capture(`txt-note${suffix}`, null);
   await openNote('data/配置.json', 'json');

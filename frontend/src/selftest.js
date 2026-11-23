@@ -804,6 +804,9 @@ async function runSelfTestInner({ getState }) {
             bytes: htmlBytes.length,
             dataView: exportHtml.includes(`data-view-${kind}`),
             escapedMarkup: !/<(?:b|img|script)[\s>]/i.test(exportHtml),
+            // Sorting is a live-preview interaction only; the standalone file
+            // must keep the note's original row order and no dead controls.
+            staticSort: !/<button[^>]*data-sort-btn/.test(exportHtml),
           };
           entry.htmlExport = htmlExport;
           if (!htmlExport.dataView) {
@@ -812,6 +815,11 @@ async function runSelfTestInner({ getState }) {
           if (!htmlExport.escapedMarkup) {
             report.errors.push(
               `${meta.path}: note markup was not escaped in exported HTML`
+            );
+          }
+          if (!htmlExport.staticSort) {
+            report.errors.push(
+              `${meta.path}: exported HTML contains interactive sort controls`
             );
           }
           await api.selftestWrite(`${meta.path}.html`, htmlBytes);
@@ -1035,6 +1043,60 @@ async function runSelfTestInner({ getState }) {
       report.errors.push(
         'CSV/TXT smart header alignment or column scope is missing'
       );
+    }
+
+    // 4b) CSV header-click sorting is preview-only. Three clicks cycle
+    //     asc → desc → the note's original order; the visible reset button
+    //     restores it too. TXT has no sortable header.
+    const sortButtons = [
+      ...alignCsv.querySelectorAll('.data-table .data-sort-btn'),
+    ];
+    const sortBar = alignCsv.querySelector('.data-sort-bar');
+    const firstColumn = () =>
+      [...alignCsv.querySelectorAll('.data-table tbody tr td:first-child')].map(
+        (td) => td.textContent
+      );
+    const originalColumn = firstColumn();
+    let dataSort = { ok: false, headers: sortButtons.length };
+    if (sortButtons.length === 3 && sortBar) {
+      sortButtons[1].click();
+      const asc = firstColumn();
+      const ascState = alignCsv
+        .querySelectorAll('.data-table thead th')[1]
+        .getAttribute('aria-sort');
+      const ascVisible = !sortBar.hidden;
+      sortButtons[1].click();
+      const desc = firstColumn();
+      const descState = alignCsv
+        .querySelectorAll('.data-table thead th')[1]
+        .getAttribute('aria-sort');
+      sortButtons[1].click();
+      const thirdClick = firstColumn();
+      const thirdHidden = sortBar.hidden;
+      sortButtons[1].click();
+      alignCsv.querySelector('.data-sort-reset').click();
+      const resetClick = firstColumn();
+      dataSort = {
+        ok:
+          asc.join('|') === '香蕉|苹果' &&
+          ascState === 'ascending' &&
+          ascVisible &&
+          desc.join('|') === '苹果|香蕉' &&
+          descState === 'descending' &&
+          thirdClick.join('|') === originalColumn.join('|') &&
+          thirdHidden &&
+          resetClick.join('|') === originalColumn.join('|') &&
+          sortBar.hidden,
+        headers: sortButtons.length,
+        txtSortable: txtTh.some((th) => th.querySelector('.data-sort-btn')),
+      };
+    }
+    report.dataSort = dataSort;
+    if (!dataSort.ok) {
+      report.errors.push('CSV header-click sorting did not pass');
+    }
+    if (dataSort.txtSortable) {
+      report.errors.push('TXT table unexpectedly renders sort controls');
     }
 
     // 5) Standalone HTML export must declare UTF-8, even when the source

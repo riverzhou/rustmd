@@ -357,6 +357,190 @@ export function columnAlignments(rows, columns) {
 }
 
 /**
+ * Numeric face value of a cell for sorting. Accepts the same shapes as
+ * `isNumericCell` (thousands separators, currency, percent, accounting
+ * parentheses) and returns null when the cell is not numeric. Percentages keep
+ * their face value ("12%" → 12): within one column the scale is the same, so
+ * multiplying by 0.01 would only matter when percent and plain numbers are
+ * mixed.
+ */
+export function numericCellValue(value) {
+  const s = String(value ?? '').trim();
+  if (!s || !isNumericCell(s)) return null;
+  let text = s;
+  let sign = 1;
+  if (text.startsWith('(') && text.endsWith(')')) {
+    sign = -1;
+    text = text.slice(1, -1);
+  }
+  text = text.replace(/[$€£¥￥\s,]/g, '');
+  if (text.endsWith('%')) text = text.slice(0, -1);
+  const number = Number(text);
+  return Number.isFinite(number) ? sign * number : null;
+}
+
+const DATE_PARTS =
+  /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+const TIME_PARTS = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * Comparable timestamp for a date/time cell, or null when the text is not a
+ * date. Calendar dates are built in UTC so the result never shifts with the
+ * viewer's timezone; time-only cells (a schedule column) compare as seconds
+ * since midnight.
+ */
+export function dateCellValue(value) {
+  const s = String(value ?? '').trim();
+  if (!s || !isDateCell(s)) return null;
+  const date = DATE_PARTS.exec(s);
+  if (date) {
+    const year = Number(date[1]);
+    const month = Number(date[2]);
+    const day = Number(date[3]);
+    const hour = Number(date[4] ?? 0);
+    const minute = Number(date[5] ?? 0);
+    const second = Number(date[6] ?? 0);
+    if (
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31 ||
+      hour > 23 ||
+      minute > 59 ||
+      second > 59
+    ) {
+      return null;
+    }
+    const stamp = new Date(0);
+    stamp.setUTCFullYear(year, month - 1, day);
+    stamp.setUTCHours(hour, minute, second, 0);
+    // Reject impossible dates such as 2026-02-31 instead of letting them roll
+    // into March and silently reorder the table.
+    if (stamp.getUTCMonth() !== month - 1 || stamp.getUTCDate() !== day) {
+      return null;
+    }
+    return stamp.getTime();
+  }
+  const time = TIME_PARTS.exec(s);
+  if (!time) return null;
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  const second = Number(time[3] ?? 0);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  return hour * 3600 + minute * 60 + second;
+}
+
+const TRUE_CELL = /^(?:true|yes|on|是)$/i;
+const FALSE_CELL = /^(?:false|no|off|否)$/i;
+
+/** Boolean value for sorting, or null when the cell is not a known boolean. */
+export function booleanCellValue(value) {
+  const s = String(value ?? '').trim();
+  if (!s) return null;
+  if (TRUE_CELL.test(s)) return true;
+  if (FALSE_CELL.test(s)) return false;
+  return null;
+}
+
+/**
+ * How a column should be compared when its header is clicked. Numeric, date
+ * and boolean columns sort by value; anything mixed or textual falls back to a
+ * natural, case-insensitive text collation (so "item2" precedes "item10").
+ */
+export function columnSortKind(rows, column) {
+  let kind = null;
+  for (const row of rows) {
+    const raw = String(row?.[column] ?? '').trim();
+    if (!raw || isMissingCell(raw)) continue;
+    let next;
+    if (numericCellValue(raw) !== null) next = 'number';
+    else if (dateCellValue(raw) !== null) next = 'date';
+    else if (booleanCellValue(raw) !== null) next = 'boolean';
+    else return 'text';
+    if (kind && kind !== next) return 'text';
+    kind = next;
+  }
+  return kind || 'text';
+}
+
+const collators = new Map();
+
+function textCollator(locale) {
+  const key = locale ? String(locale) : '';
+  let collator = collators.get(key);
+  if (!collator) {
+    try {
+      collator = new Intl.Collator(locale || undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    } catch {
+      collator = null;
+    }
+    collators.set(key, collator);
+  }
+  return collator;
+}
+
+function sortKey(value, kind) {
+  if (kind === 'number') return numericCellValue(value);
+  if (kind === 'date') return dateCellValue(value);
+  if (kind === 'boolean') return booleanCellValue(value);
+  const s = String(value ?? '').trim();
+  return !s || isMissingCell(s) ? null : s;
+}
+
+function compareText(a, b, locale) {
+  const collator = textCollator(locale);
+  if (collator) return collator.compare(a, b);
+  return a.localeCompare(b, locale || undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+/**
+ * Original row indexes in display order for one column. The input array is
+ * never mutated, empty/missing cells always sink to the bottom (also in
+ * descending order), and ties keep the source order so a click cannot shuffle
+ * equal rows. `direction` is 'asc' (default) or 'desc'.
+ */
+export function sortRowOrder(rows, column, direction = 'asc', { locale = '' } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const index = Number.isInteger(column) ? column : -1;
+  const kind = columnSortKind(list, index);
+  const keys = list.map((row) => sortKey(row?.[index], kind));
+  const descending = direction === 'desc';
+  const order = list.map((_, i) => i);
+  order.sort((a, b) => {
+    const left = keys[a];
+    const right = keys[b];
+    // Missing cells stay at the end whichever way the column is sorted.
+    if (left === null || right === null) {
+      if (left === right) return a - b;
+      return left === null ? 1 : -1;
+    }
+    let cmp;
+    if (kind === 'number' || kind === 'date') {
+      cmp = left - right;
+    } else if (kind === 'boolean') {
+      cmp = Number(left) - Number(right);
+    } else {
+      cmp = compareText(String(left), String(right), locale);
+    }
+    if (cmp) return descending ? -cmp : cmp;
+    return a - b;
+  });
+  return order;
+}
+
+/** A sorted copy of `rows` (see `sortRowOrder`). */
+export function sortTableRows(rows, column, direction = 'asc', options = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  return sortRowOrder(list, column, direction, options).map((i) => list[i]);
+}
+
+/**
  * Cap and floor (in `ch`) for one column. Compact numeric/date/boolean columns
  * cap tighter than prose columns; both floor at roughly a header's width so a
  * sparse column does not collapse. Shared by the `ch` plan and the renderer's

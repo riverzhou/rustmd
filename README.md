@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.11.2** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.12.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -28,7 +28,7 @@
 
 - **一份笔记，三种成品**：Markdown、HTML、CSV、TXT、JSON 都能导出为 **PNG 长图、矢量 PDF、独立 HTML**；HTML 笔记整页导出，宽数据表不裁列。不需要 Edge/Chrome，也不需要 Pandoc。
 - **HTML 笔记是主角**：直接编辑 `.html`，右侧由内置 WebView 渲染整页；页面样式、脚本、本地图片/CSS/JS 和图表原生执行，预览与导出保持一致——不用把 HTML 塞进 Markdown。
-- **五种格式，一个列表**：Markdown（MathJax + Mermaid + 代码高亮）、HTML、CSV、TXT、JSON。CSV/TXT 有智能列宽、数字右对齐和隔行底色；JSON 是键值分列、可折叠的检查器；搜索同时覆盖标题、文件名、标签和正文。
+- **五种格式，一个列表**：Markdown（MathJax + Mermaid + 代码高亮）、HTML、CSV、TXT、JSON。CSV/TXT 有智能列宽、数字右对齐和隔行底色，CSV 还能点击表头按数值/日期/文本排序；JSON 是键值分列、可折叠的检查器；搜索同时覆盖标题、文件名、标签和正文。
 - **纯文件存储**：笔记就是文件夹里的普通文件，可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理；没有数据库、账号或专有格式。
 - **本地优先 + 多库**：核心编辑、预览、搜索、导出全部离线可用；最近笔记库、置顶、多库同开、当前文件夹范围、front matter 标签。
 - **小巧轻便**：Windows 绿色包约 **17 MB**，解压即用；Rust + Tauri 2，没有 Electron 运行时。Windows / Linux / macOS（Apple Silicon）都有原生构建。
@@ -114,9 +114,9 @@ HTML 笔记由内置 WebView 整页渲染，支持页面自带的样式、脚本
 
 <img src="docs/assets/screenshots/html-note.png" alt="rustmd 内置 WebView 渲染 HTML 笔记：左侧 HTML 源码，右侧完整页面效果" width="880">
 
-CSV 表格：短列和数字列按内容收紧，长文本列按内容放宽到 64 字符上限；数字右对齐、表头与内容一致、隔行底色 + 按列文字色：
+CSV 表格：短列和数字列按内容收紧，长文本列按内容放宽到 64 字符上限；数字右对齐、表头与内容一致、隔行底色 + 按列文字色。截图里已点表头按「数量」升序，右侧出现「原始顺序」复位按钮：
 
-<img src="docs/assets/screenshots/csv-note.png" alt="rustmd CSV 表格预览：智能列宽、数字右对齐、表头与数据同列对齐、隔行底色和按列文字色" width="880">
+<img src="docs/assets/screenshots/csv-note.png" alt="rustmd CSV 表格预览：智能列宽、数字右对齐、表头与数据同列对齐、隔行底色和按列文字色；已按数量升序排序并显示原始顺序复位按钮" width="880">
 
 TXT：制表符分列对齐，保留空格，区分数据行与整行说明文字：
 
@@ -202,7 +202,7 @@ JSON 检查器（浅色 / 深色）：键值分列、分组语义色、类型标
 ### CSV / TXT / JSON 数据预览
 
 - `.csv` / `.txt` / `.json` 与 Markdown、HTML 一起出现在文件夹树、笔记列表、搜索结果和文件夹计数中，并带 **CSV（橙）/ TXT（灰）/ JSON（紫）** 徽标。
-- **CSV 表格**：识别逗号 / 制表符 / 分号 / 竖线分隔符，支持带引号字段、字段内换行和双引号转义；首行作为表头。列宽按内容智能分配：数字、日期、布尔和短文本列收紧，长文本列按内容放宽到 64 字符上限（不强制分配剩余宽度）；对齐算法识别数字、日期、货币和布尔值，表头与数据格使用同一对齐方式。外观上用隔行底色负责横向扫读、按列文字色负责纵向定位，再加细分隔线和悬停高亮；列多时横向滚动。
+- **CSV 表格**：识别逗号 / 制表符 / 分号 / 竖线分隔符，支持带引号字段、字段内换行和双引号转义；首行作为表头。列宽按内容智能分配：数字、日期、布尔和短文本列收紧，长文本列按内容放宽到 64 字符上限（不强制分配剩余宽度）；对齐算法识别数字、日期、货币和布尔值，表头与数据格使用同一对齐方式。外观上用隔行底色负责横向扫读、按列文字色负责纵向定位，再加细分隔线和悬停高亮；列多时横向滚动。**点击表头即可排序**：升序 → 降序 → 恢复原文顺序三态循环，数值/日期/布尔列按值比较、文字列按本地化自然顺序，空值始终排在最后；排序只重排预览里的行，不会改写编辑器或磁盘上的原文。排序期间表头旁会出现「原始顺序」按钮，一键回到 CSV 的原始行顺序。
 - **TXT 制表符对齐**：按制表符拆成对齐的列，保留行内空格；无制表符的行按整行显示，自动跳过前置说明行。仅当第一行多列全是文本、且后续行含数字/日期/布尔时才作为表头；含数值的首行（如股票信号）按数据行处理，不会误加粗。等宽字体、数字列右对齐，配合智能列宽、隔行底色和按列文字色让纯文本也容易阅读。
 - **JSON 检查器**：展示根类型、键/项数量、节点数，可折叠的对象/数组分组，键与值分列对齐，对象/数组分组带语义色浅底、侧边轨和同色系类型标签，字符串/数字/布尔/null 各有独立色彩与类型圆点；非法 JSON 显示错误与原文，便于继续编辑。
 - **完整数据视图**：CSV/TXT/JSON 不再截断行、列或节点。数据视图自动使用预览区宽度（4K 在 200% 缩放下 CSS 视口约为 1920×1080），能展开更多列；窄表仍按内容收缩、不强制铺满；宽表在表格上方和下方各有一条同步横向滚动条；空间充足时 18 行以上的表格会把多余高度均分给行高，长表在卡片内滚动并保持表头可见。
@@ -342,7 +342,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 | Tauri 开发窗口 | `node scripts/dev/launch-dev.mjs`（Windows 可用 `scripts\dev\run-dev.bat`） |
 | 仅前端（mock） | `npm run dev` |
 | 发布 exe（不打包安装器） | `npx tauri build --no-bundle`（Windows 可用 `scripts\release\run-build.bat`） |
-| 前端纯函数单测 | `npm run test:unit`（69 个） |
+| 前端纯函数单测 | `npm run test:unit`（72 个） |
 | Rust 单测 | `npm run test:rust`（`cargo test --workspace`；99 个 Windows / 100 个 Linux、macOS，1 个网络测试默认忽略） |
 | 端到端自测 | `npm run selftest` / `npm run selftest:check` |
 | 重新生成图标 | `npm run icons` |
@@ -354,7 +354,7 @@ Linux 从源码构建、依赖安装、绿色版打包与无 root sysroot 兜底
 `npm run check` 依次执行：
 
 1. ESLint 10
-2. Node 前端单测（69 个：排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、CSV/TXT/JSON 解析与对齐、数学保护、代码段、多语言）
+2. Node 前端单测（72 个：排序、文件夹树、当前目录/子树范围、范围标签计数、最近笔记库、CSV/TXT/JSON 解析与对齐、CSV 表头排序、数学保护、代码段、多语言）
 3. 仓库检查（`npm run check:repo`：文档链接、版本横幅、CSP、插件权限、图标、机器相关路径、`dist` 未跟踪）
 4. 许可边界（`npm run check:license`：可复用层不含 Tauri 依赖/引用，且每个源文件都有 SPDX 头）
 5. 打包清单检查（`npm run check:packaging`：winget / Scoop / Homebrew / AUR 的版本、资产名、URL 与 SHA256 互相一致）
@@ -370,7 +370,7 @@ CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 Ubuntu 跑完整
 npm run selftest
 ```
 
-dev 窗口会渲染 `examples/` 下全部 10 篇示例笔记（含 Markdown、HTML、CSV、TXT、JSON 与 GBK CSV），逐一导出 PNG/PDF 和 HTML。Markdown 校验残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）；HTML 校验内置 WebView 的 iframe 是否 ready、本地相对 CSS/JS/图片与内联脚本；数据笔记校验表格/JSON 检查器结构、智能表头对齐、HTML 文本不注入 DOM、数据 HTML 导出及 charset；GBK 示例断言编码识别。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；`npm run selftest:check` 默认要求 HTML、CSV、TXT、JSON 全覆盖（脚本已带 `--require-html --require-data`）。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
+dev 窗口会渲染 `examples/` 下全部 10 篇示例笔记（含 Markdown、HTML、CSV、TXT、JSON 与 GBK CSV），逐一导出 PNG/PDF 和 HTML。Markdown 校验残留未渲染公式、多行公式几何、远程图片与笔记库本地图片是否真的出现在导出的 PNG 中（2D NCC）；HTML 校验内置 WebView 的 iframe 是否 ready、本地相对 CSS/JS/图片与内联脚本；数据笔记校验表格/JSON 检查器结构、智能表头对齐、CSV 表头排序三态循环与导出静态表、HTML 文本不注入 DOM、数据 HTML 导出及 charset；GBK 示例断言编码识别。产物与 `report.json` 写入系统临时目录的 `rustmd-selftest/`，可用 `RUSTMD_SELFTEST_OUT` 覆盖；`npm run selftest:check` 默认要求 HTML、CSV、TXT、JSON 全覆盖（脚本已带 `--require-html --require-data`）。代码位于 `frontend/src/selftest.js`，release 构建不包含它。
 
 ## 目录结构
 

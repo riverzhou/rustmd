@@ -35,7 +35,8 @@ function buildStage(source, kind) {
   document.body.appendChild(stage);
   // renderPreview is async (mermaid diagrams render in the background);
   // awaiting it before rasterizing guarantees the SVGs are in the DOM.
-  const ready = renderPreview(source, article, kind);
+  // Export stages render the static table: sorting is preview-only state.
+  const ready = renderPreview(source, article, kind, { sortable: false });
   return { stage, ready };
 }
 

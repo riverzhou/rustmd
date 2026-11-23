@@ -16,6 +16,7 @@ import {
   jsonTypeOf,
   looksLikeHeaderRow,
   parseDelimited,
+  sortRowOrder,
 } from './dataformat.js';
 
 export { DATA_VIEW_CSS };
@@ -89,7 +90,15 @@ function tableCell(tag, text, align = 'left') {
  * Runs while only the header row is mounted, so the table's single layout pass
  * already uses the final widths.
  */
-function applyMeasuredWidths(table, cols, header, samples, alignments, columns) {
+function applyMeasuredWidths(
+  table,
+  cols,
+  header,
+  samples,
+  alignments,
+  columns,
+  sortable = false
+) {
   const canvas =
     applyMeasuredWidths.canvas ||
     (applyMeasuredWidths.canvas = document.createElement('canvas'));
@@ -138,6 +147,8 @@ function applyMeasuredWidths(table, cols, header, samples, alignments, columns) 
     for (let i = 0; i < columns; i += 1) {
       const limit = columnWidthLimit(alignments[i]);
       let need = header ? measure(header[i], headFont) : 0;
+      // A sortable header also carries the ↕/↑/↓ indicator and its gap.
+      if (header && sortable) need += measure('↕', headFont) + 6;
       for (const text of samples[i]) {
         const width = measure(text, bodyFont);
         if (width > need) need = width;
@@ -165,7 +176,7 @@ function applyMeasuredWidths(table, cols, header, samples, alignments, columns) 
 function renderTable(
   container,
   kind,
-  { header, body, columns, stats, prose = [], notices = [] }
+  { header, body, columns, stats, prose = [], notices = [], sortable = false }
 ) {
   // TXT prose/blank rows are rendered as full-width cells (colspan), not as a
   // huge first column. Keep them out of width/alignment inference; otherwise
@@ -178,6 +189,27 @@ function renderTable(
   );
   const widths = columnWidthPlan(header || [], measureRows, columns, align);
   const samples = columnWidthSamples(measureRows, columns);
+  // Header-click sorting is a view-only feature: rows are reordered in the
+  // DOM and the parsed source arrays are never touched. CSV always has a
+  // header; TXT is not sortable (its rows may contain prose separators).
+  const canSort = Boolean(sortable && header && body.length > 1);
+  // Keep the clicked column/direction across live re-renders (typing, theme or
+  // language switch) of the SAME note. Note switches explicitly reset this via
+  // `renderPreview(..., { resetSort: true })`, so a sort never leaks into a
+  // different file.
+  const saved = container.__dataSort;
+  const savedSort =
+    canSort &&
+    saved &&
+    Number.isInteger(saved.column) &&
+    saved.column >= 0 &&
+    saved.column < columns &&
+    (saved.direction === 'asc' || saved.direction === 'desc')
+      ? saved
+      : null;
+  // A shrunk source (fewer columns) invalidates the old column; do not let it
+  // reappear if the columns grow again.
+  if (canSort && saved && !savedSort) delete container.__dataSort;
   const view = createView(container, kind, stats);
   for (const line of prose) {
     view.appendChild(make('div', 'data-txt-prose', line));
@@ -199,6 +231,7 @@ function renderTable(
     topScroll.appendChild(topSpacer);
     view.appendChild(topScroll);
     const table = make('table', 'data-table');
+    if (canSort) table.classList.add('is-sortable');
     table.style.setProperty('--data-cols', String(columns));
     const colgroup = make('colgroup');
     const cols = [];
@@ -209,12 +242,33 @@ function renderTable(
       cols.push(col);
     }
     table.appendChild(colgroup);
+    const sortState = { column: -1, direction: null };
+    const sortCells = [];
+    const columnName = (index) =>
+      String(header?.[index] ?? '').trim() ||
+      t('data.sortColumnN', { n: index + 1 });
     if (header) {
       const thead = make('thead');
       const tr = make('tr');
       for (let c = 0; c < columns; c += 1) {
-        const cell = tableCell('th', String(header[c] ?? ''), align[c]);
+        const text = String(header[c] ?? '');
+        const cell = make('th', alignmentClass(align[c]));
         cell.scope = 'col';
+        if (canSort) {
+          cell.setAttribute('aria-sort', 'none');
+          const btn = make('button', 'data-sort-btn');
+          btn.type = 'button';
+          btn.dataset.column = String(c);
+          const label = make('span', 'data-sort-label', text === '' ? '\u00a0' : text);
+          const arrow = make('span', 'data-sort-arrow', '↕');
+          arrow.setAttribute('aria-hidden', 'true');
+          btn.append(label, arrow);
+          btn.addEventListener('click', () => cycleSort(c));
+          cell.appendChild(btn);
+          sortCells.push({ cell, btn, arrow });
+        } else {
+          cell.textContent = text === '' ? '\u00a0' : text;
+        }
         tr.appendChild(cell);
       }
       thead.appendChild(tr);
@@ -222,8 +276,9 @@ function renderTable(
     }
     scroll.appendChild(table);
     view.appendChild(scroll);
-    applyMeasuredWidths(table, cols, header, samples, align, columns);
+    applyMeasuredWidths(table, cols, header, samples, align, columns, canSort);
     const tbody = make('tbody');
+    const records = [];
     for (const row of body) {
       if (!row.length) continue;
       // A blank physical line in a TXT note is a separator, not a table row
@@ -247,6 +302,7 @@ function renderTable(
           tr.appendChild(tableCell('td', String(row[c] ?? ''), align[c]));
         }
       }
+      records.push({ row, tr });
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
@@ -274,6 +330,90 @@ function renderTable(
         topScroll.scrollLeft = scroll.scrollLeft;
       }
     });
+    // Sorting only reorders these already-rendered rows. Nothing here writes
+    // back to the parsed source (or the editor): resetting simply re-appends
+    // the rows in their original `records` order.
+    let sortBar = null;
+    let sortStatus = null;
+    let sortReset = null;
+    const applySort = (column, direction) => {
+      sortState.column = direction === null ? -1 : column;
+      sortState.direction = direction;
+      if (direction === null) delete container.__dataSort;
+      else container.__dataSort = { column, direction };
+      const order =
+        direction === null
+          ? records.map((_, index) => index)
+          : sortRowOrder(
+              records.map((record) => record.row),
+              column,
+              direction
+            );
+      const fragment = document.createDocumentFragment();
+      for (const index of order) fragment.appendChild(records[index].tr);
+      tbody.replaceChildren(fragment);
+      // A reordered table should start at its first row, not at whatever row
+      // happened to sit under the sticky header.
+      scroll.scrollTop = 0;
+      updateSortUi();
+      syncTopScroll();
+    };
+    const cycleSort = (column) => {
+      if (sortState.column !== column || sortState.direction === null) {
+        applySort(column, 'asc');
+      } else if (sortState.direction === 'asc') {
+        applySort(column, 'desc');
+      } else {
+        // Third click returns to the note's own row order.
+        applySort(-1, null);
+      }
+    };
+    const updateSortUi = () => {
+      const sorted = sortState.column >= 0 && sortState.direction !== null;
+      for (let c = 0; c < sortCells.length; c += 1) {
+        const { cell, btn, arrow } = sortCells[c];
+        const active = sorted && c === sortState.column;
+        const ascending = active && sortState.direction === 'asc';
+        cell.setAttribute(
+          'aria-sort',
+          active ? (ascending ? 'ascending' : 'descending') : 'none'
+        );
+        cell.classList.toggle('is-sorted', active);
+        arrow.textContent = active ? (ascending ? '↑' : '↓') : '↕';
+        if (!active) btn.title = t('data.sortAscTitle', { name: columnName(c) });
+        else if (ascending) btn.title = t('data.sortDescTitle', { name: columnName(c) });
+        else btn.title = t('data.sortClearTitle');
+      }
+      if (!sortBar) return;
+      sortBar.hidden = !sorted;
+      sortReset.disabled = !sorted;
+      sortStatus.textContent = !sorted
+        ? ''
+        : sortState.direction === 'asc'
+          ? t('data.sortStatusAsc', { name: columnName(sortState.column) })
+          : t('data.sortStatusDesc', { name: columnName(sortState.column) });
+    };
+    if (canSort) {
+      sortBar = make('div', 'data-sort-bar');
+      sortBar.hidden = true;
+      sortStatus = make('span', 'data-sort-status');
+      sortStatus.setAttribute('aria-live', 'polite');
+      sortReset = make('button', 'data-sort-reset');
+      sortReset.type = 'button';
+      sortReset.disabled = true;
+      sortReset.title = t('data.sortResetTitle');
+      const icon = make('span', 'data-sort-reset-icon', '↺');
+      icon.setAttribute('aria-hidden', 'true');
+      sortReset.appendChild(icon);
+      sortReset.appendChild(
+        make('span', 'data-sort-reset-label', t('data.sortReset'))
+      );
+      sortReset.addEventListener('click', () => applySort(-1, null));
+      sortBar.append(sortStatus, sortReset);
+      view.querySelector('.data-view-head')?.appendChild(sortBar);
+      if (savedSort) applySort(savedSort.column, savedSort.direction);
+      else updateSortUi();
+    }
     // The card, not the viewport, owns the scroll area: a fixed
     // `100vh - Npx` guess ignored the card head, the top scrollbar, the
     // preview padding and the bottom margin, so an 18-row table that filled
@@ -399,7 +539,7 @@ function typeLabel(type) {
   return t(key);
 }
 
-function renderCsv(container, source) {
+function renderCsv(container, source, { sortable = false } = {}) {
   const delimiter = detectDelimiter(source);
   const parsed = parseDelimited(source, delimiter);
   const rows = parsed.rows;
@@ -433,6 +573,7 @@ function renderCsv(container, source) {
     columns: totalColumns,
     stats,
     notices,
+    sortable,
   });
 }
 
@@ -642,9 +783,9 @@ function renderJson(container, source) {
 }
 
 /** Render one of the data note kinds into a preview/export container. */
-export function renderDataView(container, kind, source) {
+export function renderDataView(container, kind, source, options = {}) {
   const text = String(source ?? '');
-  if (kind === 'csv') renderCsv(container, text);
+  if (kind === 'csv') renderCsv(container, text, options);
   else if (kind === 'txt') renderTxt(container, text);
   else renderJson(container, text);
 }
