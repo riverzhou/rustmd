@@ -82,7 +82,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 
 ### Why so small
 
-rustmd does not bundle Chromium. It reuses the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and ships only the app. The trade-off is a platform runtime: WebView2 is usually already present on Windows 10/11, while Linux needs GTK 3 + WebKitGTK 4.1. In exchange, the Windows portable zip is about 14 MB (the v1.12.0 asset is 14,002,535 B); the Linux deb is about 11.7 MB (11,733,880 B), the macOS DMG about 18 MB (18,051,646 B), and the AppImage about 95 MB (94,996,984 B) because it bundles WebKitGTK.
+rustmd does not bundle Chromium. It reuses the system WebView (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and ships only the app. The trade-off is a platform runtime: WebView2 is usually already present on Windows 10/11, while Linux needs GTK 3 + WebKitGTK 4.1. In exchange, the Windows portable zip is about 14 MB (the v1.12.1 asset is 14,004,216 B); the Linux deb is about 11.7 MB (11,730,994 B), the macOS DMG about 18 MB (18,051,976 B), and the AppImage about 95 MB (94,992,888 B) because it bundles WebKitGTK.
 
 ### What rustmd deliberately does not do
 
@@ -239,7 +239,7 @@ Get the latest from [GitHub Releases](https://github.com/riverzhou/rustmd/releas
 
 Windows and macOS assets have a `.sha256`; Linux ships `SHA256SUMS-linux.txt`; releases also include a combined `SHA256SUMS.txt` (it requires all release assets in one folder). For a single-platform download, use that platform’s checksum file.
 
-Sizes of the latest published v1.12.0 assets: Windows zip 14,002,535 B (about 13.35 MiB / 14 MB); macOS DMG 18,051,646 B (about 17.2 MiB / 18 MB); Linux deb 11,733,880 B (about 11.7 MB); AppImage 94,996,984 B (about 95 MB). The unzipped `rustmd.exe` is about 19 MB.
+Sizes of the latest published v1.12.1 assets: Windows zip 14,004,216 B (about 13.36 MiB / 14 MB); macOS DMG 18,051,976 B (about 17.2 MiB / 18 MB); Linux deb 11,730,994 B (about 11.7 MB); AppImage 94,992,888 B (about 95 MB). The unzipped `rustmd.exe` is about 19 MB.
 
 ### Windows
 
@@ -294,7 +294,7 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-The winget manifest (1.12.0) has been submitted as PR [#487582](https://github.com/microsoft/winget-pkgs/pull/487582) and is awaiting moderator review; a `winget install` line will be added once it is accepted. The earlier 1.11.1 PR #486380 has been superseded and closed. The Scoop / Homebrew / AUR manifests in this repository are updated to 1.12.0; the live Scoop bucket and Homebrew tap still point at 1.11.1 until they are synced. The AUR manifest is ready and needs an AUR account before submission. See [packaging/](packaging/README.md).
+The winget manifest (1.12.1) has been submitted as PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536) and is awaiting moderator review; a `winget install` line will be added once it is accepted. The earlier 1.12.0 PR #487582 has been superseded and closed. The Scoop / Homebrew / AUR manifests in this repository are updated to 1.12.1; the live Scoop bucket and Homebrew tap still point at 1.11.1 until they are synced. The AUR manifest is ready and needs an AUR account before submission. See [packaging/](packaging/README.md).
 
 ### Verifying downloads
 
