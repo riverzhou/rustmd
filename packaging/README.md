@@ -9,17 +9,17 @@
 > Linux AppImage）。`npm run check:packaging` 校验一致。
 > winget：PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536)（1.12.1）已提交，
 > 等待 moderator；1.12.0 的 #487582 已被新版本取代并关闭（审核队列里只留一个版本）。
-> Scoop bucket 与 Homebrew tap：**线上仍为 1.11.1**；本仓库清单已更新到 1.12.1，
-> 同步外部仓库后即可安装新版。AUR 清单已就绪，待有 AUR 账号后提交。
+> Scoop bucket 与 Homebrew tap：**线上已同步到 1.12.1**（[riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket)、
+> [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap)）。AUR 清单已就绪，待有 AUR 账号后提交。
 
 ## 目录
 
 | 目录 | 目标 | 用法 | 状态 |
 | --- | --- | --- | --- |
 | `winget/` | [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) | `winget install RiverZhou.rustmd` | PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536)（1.12.1）等待 moderator |
-| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | 清单 1.12.1；线上 1.11.1 待同步 |
+| `scoop/` | [riverzhou/scoop-bucket](https://github.com/riverzhou/scoop-bucket) | `scoop install rustmd` | 清单 1.12.1；线上已同步 |
 | `aur/` | AUR（`rustmd-bin`） | `yay -S rustmd-bin` | 清单 1.12.1；待提交（需 AUR 账号） |
-| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | 清单 1.12.1；线上 1.11.1 待同步 |
+| `homebrew/Casks/` | [riverzhou/homebrew-tap](https://github.com/riverzhou/homebrew-tap) | `brew install --cask riverzhou/tap/rustmd` | 清单 1.12.1；线上已同步 |
 
 ## 版本更新清单
 

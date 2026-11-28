@@ -287,7 +287,7 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-winget 清单（1.12.1）已作为 PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536) 提交，等待 moderator 审核，通过后会补上 `winget install` 一行；此前的 1.12.0 PR #487582 已被新版本取代并关闭。本仓库的 Scoop / Homebrew / AUR 清单已更新到 1.12.1；线上 Scoop bucket 与 Homebrew tap 仍为 1.11.1，同步后可安装。AUR 待有账号后提交。细节见 [packaging/](packaging/README.md)。
+winget 清单（1.12.1）已作为 PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536) 提交，等待 moderator 审核，通过后会补上 `winget install` 一行；此前的 1.12.0 PR #487582 已被新版本取代并关闭。本仓库的 Scoop / Homebrew / AUR 清单已更新到 1.12.1；线上 [Scoop bucket](https://github.com/riverzhou/scoop-bucket) 与 [Homebrew tap](https://github.com/riverzhou/homebrew-tap) 已同步到 1.12.1（`scoop update rustmd` / `brew update && brew upgrade`）。AUR 待有账号后提交。细节见 [packaging/](packaging/README.md)。
 
 ### 校验下载
 

@@ -294,7 +294,7 @@ brew tap riverzhou/tap
 brew install --cask rustmd
 ```
 
-The winget manifest (1.12.1) has been submitted as PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536) and is awaiting moderator review; a `winget install` line will be added once it is accepted. The earlier 1.12.0 PR #487582 has been superseded and closed. The Scoop / Homebrew / AUR manifests in this repository are updated to 1.12.1; the live Scoop bucket and Homebrew tap still point at 1.11.1 until they are synced. The AUR manifest is ready and needs an AUR account before submission. See [packaging/](packaging/README.md).
+The winget manifest (1.12.1) has been submitted as PR [#491536](https://github.com/microsoft/winget-pkgs/pull/491536) and is awaiting moderator review; a `winget install` line will be added once it is accepted. The earlier 1.12.0 PR #487582 has been superseded and closed. The Scoop / Homebrew / AUR manifests in this repository are updated to 1.12.1, and the live [Scoop bucket](https://github.com/riverzhou/scoop-bucket) and [Homebrew tap](https://github.com/riverzhou/homebrew-tap) now point at 1.12.1 as well (`scoop update rustmd` / `brew update && brew upgrade`). The AUR manifest is ready and needs an AUR account before submission. See [packaging/](packaging/README.md).
 
 ### Verifying downloads
 
