@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-当前版本 **1.12.0** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
+当前版本 **1.12.1** · GPL-3.0-or-later · [更新日志](CHANGELOG.md) · [下载最新版](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -31,7 +31,7 @@
 - **五种格式，一个列表**：Markdown（MathJax + Mermaid + 代码高亮）、HTML、CSV、TXT、JSON。CSV/TXT 有智能列宽、数字右对齐和隔行底色，CSV 还能点击表头按数值/日期/文本排序；JSON 是键值分列、可折叠的检查器；搜索同时覆盖标题、文件名、标签和正文。
 - **纯文件存储**：笔记就是文件夹里的普通文件，可以用 Git、Syncthing、iCloud、OneDrive 或任何同步工具管理；没有数据库、账号或专有格式。
 - **本地优先 + 多库**：核心编辑、预览、搜索、导出全部离线可用；最近笔记库、置顶、多库同开、当前文件夹范围、front matter 标签。
-- **小巧轻便**：Windows 绿色包约 **17 MB**，解压即用；Rust + Tauri 2，没有 Electron 运行时。Windows / Linux / macOS（Apple Silicon）都有原生构建。
+- **小巧轻便**：Windows 绿色包约 **14 MB**，解压即用；Rust + Tauri 2，没有 Electron 运行时。Windows / Linux / macOS（Apple Silicon）都有原生构建。
 - **安全边界**：Markdown 消毒、HTML 在 sandbox iframe / 隐藏 WebView 中隔离渲染、CSP、路径封闭、SSRF 防护、导出走原生保存对话框。
 - **迁移成本低**：直接打开 Obsidian / Typora / VS Code 使用的文件夹；Markdown front matter 的其他字段原样保留；UTF-8 / GBK / GB18030 自动解码。
 
@@ -47,7 +47,7 @@
 | HTML | ✅ 整页截图，超长页面分段拼接 | ✅ 隐藏 WebView 按 A4 打印，保留页面排版 | ✅ 源码原样输出 UTF-8，规范化遗留 charset |
 | CSV / TXT / JSON | ✅ 按表格自然宽度扩宽，自动降采样 | ✅ 窄表 A4 矢量；宽表自定义宽纸矢量，超宽才栅格 | ✅ 完整数据视图，按浏览器全宽排版 |
 
-- **PNG**：Markdown 通常 3× 渲染（约 288 DPI）；HTML 笔记按页面高度在 1–3× 间自适应，超长报告分段截取并拼接为单图；CSV/TXT/JSON 的离屏舞台按表格自然宽度扩宽，并在宽度、高度和画布总面积三方面自动降采样，右侧列不会被裁掉。远程图片经 Rust 后端拉取并内联，不会出现空白图。
+- **PNG**：Markdown 通常 3× 渲染（约 288 DPI）；HTML 笔记按页面高度在 1–3× 间自适应，超长报告分段截取并拼接为单图；含表格的笔记（Markdown 名单表与 CSV/TXT/JSON 数据表）在表格超出阅读栏时按实测宽度扩宽离屏舞台，并在宽度、高度和画布总面积三方面自动降采样，右侧列不会被裁掉；Markdown 表格的列宽与预览一致。远程图片经 Rust 后端拉取并内联，不会出现空白图。
 - **PDF**：Markdown、HTML 和数据表都走系统 WebView 的打印管线（Windows：WebView2；macOS：WKWebView；Linux：WebKitGTK）——输出**矢量文字**，可选中、可搜索、任意放大都清晰；A4 排版，由引擎按 CSS 规则分页，文件通常比图片版小一个数量级。打印始终使用浅色配色，深色主题下也是白底深字。Windows 由 WebView2 绘制页眉标题 + 页脚页码；macOS/Linux 打印后由应用补一个居中的「当前页 / 总页数」页脚。HTML 笔记保留自己的排版风格，固定宽度页面会整体缩放以适配纸张。放不进 A4 的数据表会按「表格宽度 + 页边距」申请一张自定义宽纸（宽度随表格，高度保持 A4；上限 55 in，Rust 端钳制到 60 in），打印方向始终保持纵向（portrait），不会把宽纸旋转后重新裁列；表格因此仍按真实文字排版。打印字号固定为屏幕上的 13 px，`vw` 不会把按测量值设定的列宽撑出纸面；页眉、页脚和页码在宽纸上照常工作。只有超过该上限的超宽表才回退为栅格 PDF，超长表格的回退按行分页（每页 3× 正常比例、自带表头）。某个平台或环境不支持原生打印时，回退为按块边界分页的无损 PNG 切片。
 - **HTML**：Markdown 导出为内嵌样式、跟随当前主题、本地图片内联的独立页面；CSV/TXT/JSON 导出保留智能列宽、隔行底色/列文字色和 JSON 检查器样式，并使用整个浏览器宽度；HTML 笔记按源码输出 UTF-8 独立文件，规范化遗留的 `<meta charset="gbk">`（相对 CSS/JS/图片不会随文件复制）。数据 HTML 导出保留完整内容。
 - **零外部依赖**：不需要安装 Edge/Chrome，也不需要 Pandoc/LaTeX；预览、截图、打印都在应用内置的 WebView 中完成。导出目标由系统保存对话框选择，前端不能任意写文件。
@@ -60,7 +60,7 @@
 | 能力 | **rustmd** | Obsidian | Typora | VS Code | Notepad++ | Zettlr | Joplin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 存储 | 文件 | 文件 | 文件 | 文件 | 文件 | 文件 | 数据库 |
-| Windows 包 | **≈17 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
+| Windows 包 | **≈14 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
 | 打开文件夹 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ 导入 |
 | HTML 笔记预览 | ✅ 内置 | ❌ | ❌ | ⚠️ 扩展 | ❌ | ❌ | ❌ |
 | 数据视图 | ✅ | ❌ | ❌ | ⚠️ 部分 | ❌ | ❌ | ❌ |
@@ -74,7 +74,7 @@
 
 > 对比基于 2026 年 11 月的公开信息与各工具官方文档，只列与本项目定位相关的维度；各工具都在持续更新，以官方说明为准。`✅` 原生支持；`⚠️` 需要扩展/插件、仅部分能力或需额外依赖；`❌` 不支持。
 >
-> ¹ Windows x64 官方安装包 / 便携包，单位为 MB，只表示量级；rustmd 为 17 MB 绿色 zip（解压后 exe 约 19 MB）。² VS Code 源码为 MIT，微软发行版另附许可。³ 三端 = Windows / macOS / Linux；rustmd 的 macOS 版仅支持 Apple Silicon（arm64）。* Obsidian 的 Sync/Publish 与 Joplin Cloud 为付费附加服务；Typora 为 $14.99 一次性许可。`⚠️` 在多库行表示多窗口 / 多实例，而不是单窗口汇总。
+> ¹ Windows x64 官方安装包 / 便携包，单位为 MB，只表示量级；rustmd 为 14 MB 绿色 zip（解压后 exe 约 19 MB）。² VS Code 源码为 MIT，微软发行版另附许可。³ 三端 = Windows / macOS / Linux；rustmd 的 macOS 版仅支持 Apple Silicon（arm64）。* Obsidian 的 Sync/Publish 与 Joplin Cloud 为付费附加服务；Typora 为 $14.99 一次性许可。`⚠️` 在多库行表示多窗口 / 多实例，而不是单窗口汇总。
 >
 > 数据视图 = CSV/TXT/JSON 的原生表格 / 检查器；HTML 笔记 = 直接编辑 `.html` 源码并整页渲染。
 

@@ -84,7 +84,7 @@ Windows 的 `Stage flat release assets` 步骤在缺少 zip 或 `.sha256` 时直
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用（zip 根目录直接是文件，没有外层目录）；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`CONTRIBUTING.md`、`SECURITY.md`、`LICENSE`、`packaging/README.md`；自签名构建还含 `rustmd-selfsigned.cer` |
+| Windows | `rustmd-<version>-win-x64-portable.zip` | 解压即用（zip 根目录直接是文件，没有外层目录）；含 `rustmd.exe`、README/CHANGELOG/文档与截图、`CONTRIBUTING.md`、`SECURITY.md`、`LICENSE`、`packaging/README.md`、`scripts/README.md`（脚本索引）；自签名构建还含 `rustmd-selfsigned.cer` |
 | Linux | `rustmd_<version>_amd64.deb` | Debian/Ubuntu 安装包 |
 | Linux | `rustmd_<version>_amd64.AppImage` | 便携包（需要 FUSE，或 `--appimage-extract-and-run`） |
 | macOS | `rustmd-<version>-macos-arm64.dmg` | 仅 Apple Silicon（arm64）；不支持 Intel Mac |

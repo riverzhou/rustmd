@@ -71,6 +71,14 @@ if (Test-Path $packagingReadme) {
   New-Item -ItemType Directory -Force -Path $greenPackaging | Out-Null
   Copy-Item $packagingReadme (Join-Path $greenPackaging 'README.md')
 }
+# README links the script index; ship it so the offline copy has no dead links.
+# Its only relative link (../docs/CONVENTIONS.md) resolves inside the zip.
+$scriptsReadme = Join-Path $root 'scripts/README.md'
+if (Test-Path $scriptsReadme) {
+  $greenScripts = Join-Path $green 'scripts'
+  New-Item -ItemType Directory -Force -Path $greenScripts | Out-Null
+  Copy-Item $scriptsReadme (Join-Path $greenScripts 'README.md')
+}
 # README/RELEASING link the CI/release workflow files; ship them so the
 # offline copy has no dead repository links.
 $workflows = Join-Path $root '.github/workflows'
@@ -126,6 +134,7 @@ try {
     'docs/marketing/GITHUB_PROJECT_COPY.md',
     'docs/marketing/PROMOTION.md',
     'packaging/README.md',
+    'scripts/README.md',
     '.github/workflows/ci.yml',
     '.github/workflows/release.yml'
   )

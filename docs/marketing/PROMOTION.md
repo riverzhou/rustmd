@@ -160,7 +160,7 @@ with no external browser. Markdown gets MathJax, Mermaid and highlighting; CSV/T
 tables; JSON gets a collapsible inspector. Export is HTML/PNG/PDF (PDF text is vector on the
 platform print pipeline).
 
-The Windows build is a ~17 MB portable zip; there are Linux deb/AppImage and macOS (Apple
+The Windows build is a ~14 MB portable zip; there are Linux deb/AppImage and macOS (Apple
 Silicon) builds too. GPL-3.0. Repo: https://github.com/riverzhou/rustmd
 
 I'd especially appreciate feedback on the HTML sandbox / export isolation and on the PDF
@@ -206,7 +206,7 @@ A local-first Markdown/HTML notes app in Tauri 2 — hidden-WebView capture, nat
 正文要点：
 
 ```
-- Tauri 2 app; ~17 MB portable Windows zip, deb/AppImage on Linux, arm64 DMG on macOS.
+- Tauri 2 app; ~14 MB portable Windows zip, deb/AppImage on Linux, arm64 DMG on macOS.
 - HTML notes: sandboxed iframe preview (null origin), hidden WebView export with a label-guarded
   `html_preview_finish` command; segmented full-page PNG capture stitched in Rust.
 - PDF export uses WebView2 PrintToPdfStream / WKWebView NSPrintOperation / WebKitGTK print, then
@@ -245,7 +245,7 @@ rustmd 的取舍：
   图表都能跑），不需要 Edge/Chrome；
 - Markdown 支持 MathJax、Mermaid、代码高亮；CSV/TXT 有智能表格；JSON 有可折叠检查器；
 - 支持 HTML/PNG/PDF 导出、UTF-8/GBK/GB18030、文件夹树、全文搜索、最近/置顶/多库；
-- Rust + Tauri 2，Windows 绿色版约 17 MB，另有 Linux deb/AppImage 和 macOS Apple Silicon。
+- Rust + Tauri 2，Windows 绿色版约 14 MB，另有 Linux deb/AppImage 和 macOS Apple Silicon。
 
 项目是 GPL-3.0 开源的：https://github.com/riverzhou/rustmd
 目前还很早期，想听听大家对“HTML 当笔记格式”这个方向的看法，以及还缺什么功能。
@@ -315,7 +315,7 @@ Tauri Discord `#showcase`：
 Hi! I built rustmd, a local-first notes app in Tauri 2 (Rust + vanilla JS).
 HTML notes are edited as source and rendered as full pages in a hidden/sandboxed WebView;
 PDF export goes through WebView2/WKWebView/WebKitGTK print-to-PDF.
-Windows portable zip is ~17 MB. GPL-3.0-or-later: https://github.com/riverzhou/rustmd
+Windows portable zip is ~14 MB. GPL-3.0-or-later: https://github.com/riverzhou/rustmd
 Happy to share details about the WebView capture/print pipeline if useful.
 ```
 
@@ -324,7 +324,7 @@ X / Twitter 线程：
 1. `rustmd — local-first Markdown & HTML notes that stay plain files. Edit HTML, preview the real page in-app, export PDF. Rust + Tauri 2. GPL. https://github.com/riverzhou/rustmd`
 2. 一张 `html-note.png` + “HTML notes are files, not Markdown snippets.”
 3. 一张 `csv-note.png` + “CSV/TXT get smart tables; JSON gets an inspector.”
-4. 一张 `dark.png` + “Windows portable zip ~17 MB; Linux deb/AppImage; macOS arm64. Feedback welcome.”
+4. 一张 `dark.png` + “Windows portable zip ~14 MB; Linux deb/AppImage; macOS arm64. Feedback welcome.”
 
 ### 5.10 GitHub Discussions 欢迎帖
 

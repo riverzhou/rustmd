@@ -26,8 +26,8 @@ this file is the developer/agent contract.
 | Rust unit tests | `npm run test:rust` (`cargo test --workspace`) |
 | E2E self-test (dev, real WebView) | `RUSTMD_SELFTEST_OUT=<fresh temp dir> npm run selftest` |
 | Verify the self-test report | `npm run selftest:check`（脚本默认加 `--require-html --require-data`；也可直接调 checker） |
-| Version/tag preflight | `node scripts/checks/check-version.mjs v1.12.0` |
-| Release notes preflight | `node scripts/release/release-notes.mjs v1.12.0 >/dev/null` |
+| Version/tag preflight | `node scripts/checks/check-version.mjs v1.12.1` |
+| Release notes preflight | `node scripts/release/release-notes.mjs v1.12.1 >/dev/null` |
 | Windows sign + portable zip | `npx tauri build --no-bundle`, then `powershell -File scripts/release/sign-win.ps1` and `scripts/release/build-win-zip.ps1` |
 | Regenerate app icons (PNG/ICO/ICNS) | `npm run icons` |
 | Regenerate README screenshots | `node scripts/dev/capture-screenshots.mjs` (needs `npm run dev` + headless Edge with CDP on :9333; see the script header) |
@@ -522,7 +522,10 @@ MIT OR Apache-2.0 (`docs/LICENSING.md`). Rules:
   `Origin: null` for CORS subresources and html2canvas uses CORS-mode image
   requests, both of which the strict `rmd` policy rejects.
   `export.js` starts from a 948 px Markdown stage (860 content + 2×44 padding),
-  widens it to a data table's natural width, and adapts the scale with
+  widens it to the widest table's natural width (data or prose: an auto-laid-out
+  table is 100% of the stage until its min-content width exceeds it — a long
+  unbreakable token or many columns — and the preview scrolls there while
+  html2canvas cannot), and adapts the scale with
   `exportgeom.js` (width/height/total-canvas-area caps; normally ≥0.25×, only
   absurd geometry goes lower). `exportPdfVector` measures a data table and, if
   it does not fit A4, asks `print_note_pdf` for a sheet as wide as the table

@@ -12,7 +12,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/riverzhou/rustmd?style=social)](https://github.com/riverzhou/rustmd/stargazers)
 
-Current version **1.12.0** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
+Current version **1.12.1** · GPL-3.0-or-later · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/riverzhou/rustmd/releases/latest)
 
 [![Windows portable](https://img.shields.io/badge/Windows-portable%20zip-0078D6?logo=windows&logoColor=white)](https://github.com/riverzhou/rustmd/releases/latest)
 [![Linux .deb / AppImage](https://img.shields.io/badge/Linux-.deb%20%2F%20AppImage-FCC624?logo=linux&logoColor=black)](https://github.com/riverzhou/rustmd/releases/latest)
@@ -31,7 +31,7 @@ If you want a tool that keeps notes as **plain files** instead of locking them i
 - **Five formats, one list** — Markdown (MathJax + Mermaid + syntax highlighting), HTML, CSV, TXT and JSON. CSV/TXT get smart column widths, right-aligned numbers and row bands, and CSV headers sort by value on click; JSON gets a collapsible key/value inspector. Search covers titles, filenames, tags and body text.
 - **Plain files** — notes are ordinary files in a folder you own; use Git, Syncthing, iCloud, OneDrive or any sync tool. No database, account or proprietary format.
 - **Local-first + multi-vault** — editing, preview, search and export work offline; recent vaults, pinned vaults, a multi-vault view, current-folder scope and front-matter tags.
-- **Small and light** — the Windows portable zip is about **17 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
+- **Small and light** — the Windows portable zip is about **14 MB** and runs after unzipping; Rust + Tauri 2 with no Electron runtime. Native builds for Windows, Linux and macOS (Apple Silicon).
 - **Security-minded** — sanitized Markdown, HTML rendered in an isolated sandboxed iframe / hidden WebView, CSP, path containment, SSRF protection, and exports through the native save dialog.
 - **Easy to migrate to** — open an existing Obsidian/Typora/VS Code folder; unknown Markdown front matter fields (`title:`, `date:`, …) are preserved on save; UTF-8/GBK/GB18030 decoding is automatic.
 
@@ -47,7 +47,7 @@ Export is a first-class feature, not an afterthought: **every note format can be
 | HTML | ✅ full-page capture; tall pages stitched | ✅ hidden WebView prints on A4, page layout preserved | ✅ source written as UTF-8, legacy charset normalized |
 | CSV / TXT / JSON | ✅ stage widens to the table's natural width, auto-downscaled | ✅ vector on A4 or a custom wide sheet; raster only beyond the bound | ✅ complete data view at full browser width |
 
-- **PNG** — Markdown usually renders at 3× (~288 DPI); HTML notes adapt between 1× and 3× by page height, and very tall reports are captured in segments and stitched into one image; CSV/TXT/JSON widen the off-screen stage to the table's natural width and reduce the scale against width, height AND total canvas area, so right-hand columns are never clipped. Remote images are fetched by the Rust backend and inlined, so exports do not show blank images.
+- **PNG** — Markdown usually renders at 3× (~288 DPI); HTML notes adapt between 1× and 3× by page height, and very tall reports are captured in segments and stitched into one image; notes with tables widen the off-screen stage when a table outgrows the reading column (data tables to their natural width, Markdown tables keep the preview's column widths) and reduce the scale against width, height AND total canvas area, so right-hand columns are never clipped. Remote images are fetched by the Rust backend and inlined, so exports do not show blank images.
 - **PDF** — Markdown, HTML and data tables go through the system WebView's print pipeline (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux): **vector text** (selectable, searchable, sharp at any zoom) laid out on A4 and paginated by the engine's CSS rules; files are usually an order of magnitude smaller than the image version. Printing always uses the light palette, so a dark-theme PDF is dark text on white. Windows gets WebView2's title header and page-number footer; macOS/Linux get a centered "current / total" footer stamped by the app. HTML notes keep their own layout, and fixed-width pages scale to fit the paper. A data table that does not fit A4 requests a custom wide sheet (width sized to the table, height kept at A4; up to 55 in, clamped at 60 in in Rust); the print orientation stays portrait, so the sheet is not rotated and columns are not clipped, and the table is still laid out as real text. Print type is pinned at 13 px so `vw` cannot widen the columns past the measured sheet, and headers, footers and page numbers work on the wider page too. Only tables wider than that bound fall back to a raster PDF, where tall tables are chunked by rows at 3× with a repeated header. Platforms without native printing fall back to block-aware lossless PNG slices.
 - **HTML** — Markdown exports as a standalone page with embedded CSS, the current theme and inlined local images; CSV/TXT/JSON keep smart widths, row bands/column ink and the JSON-inspector styling at full browser width; HTML notes export as UTF-8 standalone files with any legacy charset declaration normalized (relative CSS/JS/images are not copied with them). Data HTML exports keep the complete content.
 - **No external dependencies** — no Edge/Chrome, no Pandoc/LaTeX; preview, capture and print all run in the built-in WebView. The destination comes from the native save dialog; the frontend cannot write arbitrary files.
@@ -60,7 +60,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 | Capability | **rustmd** | Obsidian | Typora | VS Code | Notepad++ | Zettlr | Joplin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Storage | Files | Files | Files | Files | Files | Files | Database |
-| Windows package | **≈17 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
+| Windows package | **≈14 MB**¹ | ≈324 MB | ≈114 MB | ≈289 MB | ≈7 MB | ≈159 MB | ≈352 MB |
 | Open folder | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ import |
 | HTML note preview | ✅ built-in | ❌ | ❌ | ⚠️ extension | ❌ | ❌ | ❌ |
 | Data views | ✅ | ❌ | ❌ | ⚠️ partial | ❌ | ❌ | ❌ |
@@ -74,7 +74,7 @@ The table covers the usual local note-taking and editing alternatives: Obsidian,
 
 > Based on public information and official documentation as of November 2026; only dimensions relevant to this project are listed. All tools keep changing — check their official docs. `✅` native; `⚠️` extension/plugin, partial capability or an extra dependency; `❌` not supported.
 >
-> ¹ Official Windows x64 installer / portable package, in MB, order of magnitude only; rustmd is a 17 MB portable zip (the exe is ~19 MB). ² VS Code's source is MIT; Microsoft's distribution carries its own license. ³ 3 OS = Windows, macOS and Linux; rustmd's macOS build is Apple Silicon (arm64) only. * Obsidian Sync/Publish and Joplin Cloud are paid add-ons; Typora is a one-time $14.99 license. On the Multi-vault row, `⚠️` means multiple windows/instances rather than one aggregated list.
+> ¹ Official Windows x64 installer / portable package, in MB, order of magnitude only; rustmd is a 14 MB portable zip (the exe is ~19 MB). ² VS Code's source is MIT; Microsoft's distribution carries its own license. ³ 3 OS = Windows, macOS and Linux; rustmd's macOS build is Apple Silicon (arm64) only. * Obsidian Sync/Publish and Joplin Cloud are paid add-ons; Typora is a one-time $14.99 license. On the Multi-vault row, `⚠️` means multiple windows/instances rather than one aggregated list.
 >
 > Data views = native CSV/TXT/JSON tables or inspector; HTML notes = edit `.html` source and render the full page.
 

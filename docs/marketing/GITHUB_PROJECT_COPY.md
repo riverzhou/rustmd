@@ -149,7 +149,7 @@ README 首屏另有一张 **`docs/assets/demo.gif`（880×550，约 1.3 MB）**�
 ### 微信对比海报
 
 - **`docs/assets/compare-wechat.png`（2880×3600，源自 1440×1800 的 2× 渲染）**：可直接发微信 /
-  群聊的对比海报，突出「五种格式 × 三种导出」和 17 MB 体积。
+  群聊的对比海报，突出「五种格式 × 三种导出」和 14 MB 体积。
 - 源文件：`docs/assets/compare-wechat.html`；修改后用 headless Edge 重新截图，命令见文件头注释。
 - 数据与 README 的对比表同步，体积为 2026-11 官方 Windows 包量级；发图时可直接配一句
   “完整对比见 GitHub”。

@@ -1662,18 +1662,20 @@ body.divider-resizing .html-preview-frame {
   pointer-events: none;
 }
 
-/* html2canvas cannot scroll an element, so tables/long code that overflow
-   horizontally would be clipped in the exported PNG/PDF. Wrap instead. */
+/* html2canvas cannot scroll an element, so a table wider than the stage would
+   be clipped in the exported PNG/PDF. Keep the table's own layout (the
+   preview's automatic column sizing) and let `export.js` widen the capture to
+   the table's measured width instead. `table-layout: fixed` used to be set
+   here to force every table into 860 px: it hands every column the same
+   width, so a table with one prose column (a list note's "入选依据" column)
+   came out as seven half-empty columns plus a text column a few characters
+   wide — the exported image no longer matched the preview and was about twice
+   as tall. Cell-level `word-break`/`overflow-wrap` overrides go with it: they
+   shrink the min-content width, which changes how the auto layout distributes
+   the remaining space (short columns get less than in the preview). */
 .export-stage .markdown-body table {
   display: table;
-  table-layout: fixed;
   width: 100%;
-}
-
-.export-stage .markdown-body th,
-.export-stage .markdown-body td {
-  word-break: break-word;
-  overflow-wrap: anywhere;
 }
 
 .export-stage .markdown-body img {

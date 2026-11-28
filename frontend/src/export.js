@@ -242,16 +242,21 @@ async function renderToCanvas(source, kind = 'markdown', { allowChunking = true 
     normalizeTaskCheckboxes(stage);
     // Pin the article width explicitly (defensive): the stage lives outside
     // .content, so don't rely on the cascade — CONTENT_WIDTH matches
-    // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding. A wide
-    // data table is allowed to widen the whole capture; otherwise html2canvas
-    // would clip every column past the first ~860 CSS px.
-    const dataTable = stage.querySelector('.data-table');
-    const contentWidth = dataTable
-      ? Math.max(
-          CONTENT_WIDTH,
-          Math.ceil(dataTable.getBoundingClientRect().width)
-        )
-      : CONTENT_WIDTH;
+    // .markdown-body's CSS max-width, and 948 = 860 + 2*44 padding. A table is
+    // normally 100% of the stage, but its min-content width can exceed it (a
+    // long unbreakable token, or many columns); the preview scrolls sideways
+    // there, and html2canvas cannot, so widen the whole capture to the widest
+    // table — otherwise the last columns are clipped. Every data table already
+    // relies on this.
+    const tables = [
+      ...stage.querySelectorAll('.data-table, .markdown-body table'),
+    ];
+    const tableWidth = tables.reduce(
+      (widest, table) =>
+        Math.max(widest, table.getBoundingClientRect().width),
+      0
+    );
+    const contentWidth = Math.max(CONTENT_WIDTH, Math.ceil(tableWidth));
     stage.style.width = `${contentWidth + 88}px`;
     stage.firstElementChild.style.maxWidth = `${contentWidth}px`;
     // Remote images are swapped for inline data: URLs (nothing to revoke);
